@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -319,7 +320,8 @@ export function OrdersPage({
                 {selectedOrder.items.length === 0 ? (
                   <EmptyState icon={Package} title="暂无商品" description="订单中没有商品" />
                 ) : (
-                  <div className="space-y-3">
+                  <ScrollArea className="max-h-[50vh]">
+                  <div className="space-y-3 pr-2">
                     {selectedOrder.items.map((item) => (
                       <div key={item.id} className="p-2 bg-muted rounded space-y-1">
                         <div className="flex justify-between text-sm">
@@ -360,6 +362,7 @@ export function OrdersPage({
                       </div>
                     ))}
                   </div>
+                  </ScrollArea>
                 )}
               </div>
             </CardContent>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,7 +132,7 @@ export function ExpensesPage({
           </SelectContent>
         </Select>
         <div className="ml-auto flex items-center gap-2 rounded-lg border px-4 py-2 bg-muted">
-          <span className="text-sm text-muted-foreground">本月合计</span>
+          <span className="text-sm text-muted-foreground">当前筛选合计</span>
           <span className="text-lg font-bold text-destructive">¥{totalAmount.toFixed(2)}</span>
         </div>
       </div>
@@ -181,6 +182,7 @@ export function ExpensesPage({
             {filteredExpenses.length === 0 ? (
               <EmptyState icon={Receipt} title="暂无支出记录" description="从左侧添加第一笔支出" />
             ) : (
+              <ScrollArea className="max-h-[calc(100vh-22rem)]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -210,6 +212,7 @@ export function ExpensesPage({
                   ))}
                 </TableBody>
               </Table>
+              </ScrollArea>
             )}
           </CardContent>
         </Card>

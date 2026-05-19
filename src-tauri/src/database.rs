@@ -1593,6 +1593,15 @@ impl Database {
 
     pub fn delete_material_category(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM materials WHERE category_id = ?1 AND is_active = 1",
+            params![id], |r| r.get(0),
+        )?;
+        if count > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("該分類下有 {} 個活躍原料，刪除前請先更換分類", count),
+            ));
+        }
         conn.execute("UPDATE material_categories SET is_active = 0 WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -2815,6 +2824,30 @@ impl Database {
     }
 
     pub fn check_and_create_alerts(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT m.id, m.name, m.min_qty, COALESCE(SUM(ib.quantity), 0) AS total_qty
+             FROM materials m
+             LEFT JOIN inventory_batches ib ON ib.material_id = m.id
+             WHERE m.is_active = 1 AND m.min_qty > 0
+             GROUP BY m.id
+             HAVING total_qty < m.min_qty"
+        )?;
+        let low_stock: Vec<(i64, String, f64, f64)> = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?.collect::<Result<Vec<_>>>()?;
+        for (material_id, name, min_qty, total_qty) in low_stock {
+            let already: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM notifications WHERE ref_type = 'material' AND ref_id = ?1 AND is_read = 0",
+                params![material_id], |r| r.get(0),
+            ).unwrap_or(0);
+            if already == 0 {
+                conn.execute(
+                    "INSERT INTO notifications (notification_type, title, message, severity, ref_type, ref_id) VALUES ('low_stock', '庫存不足', ?1, 'warning', 'material', ?2)",
+                    params![format!("{} 當前庫存 {:.2}，低於最低庫存 {:.2}", name, total_qty, min_qty), material_id],
+                ).ok();
+            }
+        }
         Ok(())
     }
 
@@ -2930,9 +2963,18 @@ impl Database {
     /// 批量取消訂單
     pub fn batch_cancel_orders(&self, ids: &[i64]) -> Result<usize> {
         let mut failed: Vec<String> = Vec::new();
+        let mut count = 0;
         for &id in ids {
+            let status: String = {
+                let conn = self.conn.lock().unwrap();
+                conn.query_row("SELECT status FROM orders WHERE id = ?1", params![id], |r| r.get(0))
+                    .unwrap_or_default()
+            };
+            if status == "cancelled" { continue; } // already cancelled, skip
             if let Err(e) = self.release_inventory_for_order(id) {
                 failed.push(format!("訂單 {}: {}", id, e));
+            } else {
+                count += 1;
             }
         }
         if !failed.is_empty() {
@@ -2940,7 +2982,7 @@ impl Database {
                 format!("部分訂單取消失敗（{}）：{}", failed.len(), failed.join("；")),
             ));
         }
-        Ok(ids.len())
+        Ok(count)
     }
 
     /// 創建廚房小票（訂單提交時自動拆單）
@@ -3494,9 +3536,9 @@ impl Database {
     pub fn get_purchase_orders(&self, status: Option<&str>) -> Result<Vec<PurchaseOrder>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = if status.is_some() {
-            conn.prepare("SELECT po.id, po.po_no, po.supplier_id, s.name, po.status, po.expected_date, po.total_cost, po.created_at FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id WHERE po.status = ?1 ORDER BY po.created_at DESC")?
+            conn.prepare("SELECT po.id, po.po_no, po.supplier_id, s.name, po.status, po.expected_date, po.total_cost, po.created_at FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id AND s.is_active = 1 WHERE po.status = ?1 ORDER BY po.created_at DESC")?
         } else {
-            conn.prepare("SELECT po.id, po.po_no, po.supplier_id, s.name, po.status, po.expected_date, po.total_cost, po.created_at FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id ORDER BY po.created_at DESC")?
+            conn.prepare("SELECT po.id, po.po_no, po.supplier_id, s.name, po.status, po.expected_date, po.total_cost, po.created_at FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id AND s.is_active = 1 ORDER BY po.created_at DESC")?
         };
         let orders = if let Some(s) = status {
             stmt.query_map(params![s], |row| {
@@ -3689,6 +3731,14 @@ impl Database {
 
     pub fn delete_production_order(&self, production_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let status: String = conn.query_row(
+            "SELECT status FROM production_orders WHERE id = ?1", params![production_id], |r| r.get(0),
+        )?;
+        if status != "draft" {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("只能刪除草稿狀態的生産單，當前狀態：{}", status),
+            ));
+        }
         conn.execute("DELETE FROM production_order_items WHERE production_id = ?1", params![production_id])?;
         conn.execute("DELETE FROM production_orders WHERE id = ?1", params![production_id])?;
         Ok(())

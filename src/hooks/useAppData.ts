@@ -55,42 +55,77 @@ export function useAppData() {
   const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
 
   const loadData = useCallback(async () => {
+    setLoading(true);
+    // Health check is the only thing that sets the connection state
     try {
-      setLoading(true);
       const result = await tracked("health_check", invoke<string>("health_check"));
       setConnected(result === "ok");
-      try { await invoke("check_and_create_alerts"); } catch { /* ignore alert check errors */ }
-      setUnits(await tracked("get_units", invoke<Unit[]>("get_units")));
-      setCategories(await tracked("get_material_categories", invoke<MaterialCategory[]>("get_material_categories")));
-      setTags(await tracked("get_tags", invoke<TagItem[]>("get_tags")));
-      setMaterials(await tracked("get_materials", invoke<Material[]>("get_materials")));
-      setRecipes(await tracked("get_recipes", invoke<Recipe[]>("get_recipes")));
-      setRecipeTypes(await tracked("get_recipe_types", invoke<RecipeType[]>("get_recipe_types")));
-      setMenuCategories(await tracked("get_menu_categories", invoke<MenuCategory[]>("get_menu_categories")));
-      setMenuItems(await tracked("get_menu_items", invoke<MenuItem[]>("get_menu_items")));
-      const fetchedOrders = await tracked("get_orders", invoke<Order[]>("get_orders", { limit: 200, offset: 0 }));
-      setOrders(fetchedOrders);
-      setOrdersHasMore(fetchedOrders.length === 200);
-      setStations(await tracked("get_kitchen_stations", invoke<KitchenStation[]>("get_kitchen_stations")));
-      setInventoryBatches(await tracked("get_inventory_batches", invoke<InventoryBatch[]>("get_inventory_batches")));
-      setInventorySummary(await tracked("get_inventory_summary", invoke<InventorySummary[]>("get_inventory_summary")));
-      setInventoryTxns(await tracked("get_inventory_txns", invoke<InventoryTxn[]>("get_inventory_txns", { limit: 50 })));
-      setAttributeTemplates(await tracked("get_attribute_templates", invoke<AttributeTemplate[]>("get_attribute_templates")));
-      setSuppliers(await tracked("get_suppliers", invoke<Supplier[]>("get_suppliers")));
-      setMaterialStates(await tracked("get_all_material_states", invoke<MaterialState[]>("get_all_material_states")));
-      setPurchaseOrders(await tracked("get_purchase_orders", invoke<PurchaseOrder[]>("get_purchase_orders")));
-      setProductionOrders(await tracked("get_production_orders", invoke<ProductionOrder[]>("get_production_orders")));
-      setStocktakes(await tracked("get_stocktakes", invoke<Stocktake[]>("get_stocktakes")));
-      setExpenses(await tracked("get_expenses", invoke<Expense[]>("get_expenses", { expenseType: null, startDate: null, endDate: null })));
-      setSupplierProducts(await tracked("get_supplier_products", invoke<SupplierProduct[]>("get_supplier_products", { channel: null })));
-      const pendingTickets = await tracked("get_tickets_pending", invoke<TicketWithItems[]>("get_all_tickets_with_items", { status: "pending" }));
-      const startedTickets = await tracked("get_tickets_started", invoke<TicketWithItems[]>("get_all_tickets_with_items", { status: "started" }));
-      setKdsTickets([...pendingTickets, ...startedTickets]);
-    } catch (e) {
+    } catch {
       setConnected(false);
-    } finally {
       setLoading(false);
+      return;
     }
+    try { await invoke("check_and_create_alerts"); } catch { /* ignore */ }
+    // Fetch all data in parallel — each independently so one failure doesn't block others
+    const [
+      unitsR, catsR, tagsR, matsR, recsR, recTypesR,
+      menuCatsR, menuItemsR, ordersR, stationsR,
+      batchesR, summaryR, txnsR, attrsR, suppliersR,
+      statesR, posR, prodsR, stocktakesR, expensesR,
+      supplierProdsR, pendingR, startedR,
+    ] = await Promise.allSettled([
+      tracked("get_units", invoke<Unit[]>("get_units")),
+      tracked("get_material_categories", invoke<MaterialCategory[]>("get_material_categories")),
+      tracked("get_tags", invoke<TagItem[]>("get_tags")),
+      tracked("get_materials", invoke<Material[]>("get_materials")),
+      tracked("get_recipes", invoke<Recipe[]>("get_recipes")),
+      tracked("get_recipe_types", invoke<RecipeType[]>("get_recipe_types")),
+      tracked("get_menu_categories", invoke<MenuCategory[]>("get_menu_categories")),
+      tracked("get_menu_items", invoke<MenuItem[]>("get_menu_items")),
+      tracked("get_orders", invoke<Order[]>("get_orders", { limit: 200, offset: 0 })),
+      tracked("get_kitchen_stations", invoke<KitchenStation[]>("get_kitchen_stations")),
+      tracked("get_inventory_batches", invoke<InventoryBatch[]>("get_inventory_batches")),
+      tracked("get_inventory_summary", invoke<InventorySummary[]>("get_inventory_summary")),
+      tracked("get_inventory_txns", invoke<InventoryTxn[]>("get_inventory_txns", { limit: 50 })),
+      tracked("get_attribute_templates", invoke<AttributeTemplate[]>("get_attribute_templates")),
+      tracked("get_suppliers", invoke<Supplier[]>("get_suppliers")),
+      tracked("get_all_material_states", invoke<MaterialState[]>("get_all_material_states")),
+      tracked("get_purchase_orders", invoke<PurchaseOrder[]>("get_purchase_orders")),
+      tracked("get_production_orders", invoke<ProductionOrder[]>("get_production_orders")),
+      tracked("get_stocktakes", invoke<Stocktake[]>("get_stocktakes")),
+      tracked("get_expenses", invoke<Expense[]>("get_expenses", { expenseType: null, startDate: null, endDate: null })),
+      tracked("get_supplier_products", invoke<SupplierProduct[]>("get_supplier_products", { channel: null })),
+      tracked("get_tickets_pending", invoke<TicketWithItems[]>("get_all_tickets_with_items", { status: "pending" })),
+      tracked("get_tickets_started", invoke<TicketWithItems[]>("get_all_tickets_with_items", { status: "started" })),
+    ]);
+    if (unitsR.status === "fulfilled") setUnits(unitsR.value);
+    if (catsR.status === "fulfilled") setCategories(catsR.value);
+    if (tagsR.status === "fulfilled") setTags(tagsR.value);
+    if (matsR.status === "fulfilled") setMaterials(matsR.value);
+    if (recsR.status === "fulfilled") setRecipes(recsR.value);
+    if (recTypesR.status === "fulfilled") setRecipeTypes(recTypesR.value);
+    if (menuCatsR.status === "fulfilled") setMenuCategories(menuCatsR.value);
+    if (menuItemsR.status === "fulfilled") setMenuItems(menuItemsR.value);
+    if (ordersR.status === "fulfilled") {
+      setOrders(ordersR.value);
+      setOrdersHasMore(ordersR.value.length === 200);
+    }
+    if (stationsR.status === "fulfilled") setStations(stationsR.value);
+    if (batchesR.status === "fulfilled") setInventoryBatches(batchesR.value);
+    if (summaryR.status === "fulfilled") setInventorySummary(summaryR.value);
+    if (txnsR.status === "fulfilled") setInventoryTxns(txnsR.value);
+    if (attrsR.status === "fulfilled") setAttributeTemplates(attrsR.value);
+    if (suppliersR.status === "fulfilled") setSuppliers(suppliersR.value);
+    if (statesR.status === "fulfilled") setMaterialStates(statesR.value);
+    if (posR.status === "fulfilled") setPurchaseOrders(posR.value);
+    if (prodsR.status === "fulfilled") setProductionOrders(prodsR.value);
+    if (stocktakesR.status === "fulfilled") setStocktakes(stocktakesR.value);
+    if (expensesR.status === "fulfilled") setExpenses(expensesR.value);
+    if (supplierProdsR.status === "fulfilled") setSupplierProducts(supplierProdsR.value);
+    if (pendingR.status === "fulfilled" && startedR.status === "fulfilled") {
+      setKdsTickets([...pendingR.value, ...startedR.value]);
+    }
+    setLoading(false);
   }, []);
 
   return {

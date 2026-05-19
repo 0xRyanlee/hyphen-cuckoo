@@ -114,10 +114,15 @@ export function POSPage({
       if (saved) {
         const arr = JSON.parse(saved);
         if (Array.isArray(arr) && arr.length > 0) {
-          const rehydrated = arr.map((item: CartItem) => {
-            const fresh = menuItems.find((m) => m.id === item.menu_item.id);
-            return fresh ? { ...item, menu_item: fresh } : item;
-          });
+          const rehydrated = arr
+            .map((item: CartItem) => {
+              const fresh = menuItems.find((m) => m.id === item.menu_item.id);
+              return fresh ? { ...item, menu_item: fresh } : null;
+            })
+            .filter((item): item is CartItem => item !== null && item.menu_item.is_available);
+          if (rehydrated.length < arr.length) {
+            // some items were removed (deleted or unavailable) — silent cleanup
+          }
           setCart(rehydrated);
         }
       }
@@ -251,7 +256,7 @@ export function POSPage({
             <CardTitle className="text-lg">菜单分类</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-3">
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
               <Button
                 variant={!selectedCategory ? "default" : "outline"}
                 size="sm"
