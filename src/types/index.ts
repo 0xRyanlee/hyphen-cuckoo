@@ -63,6 +63,7 @@ export interface RecipeCostItem {
   cost_per_unit: number;
   wastage_rate: number;
   line_cost: number;
+  item_type: string;
 }
 export interface RecipeCostResult {
   recipe_id: number;

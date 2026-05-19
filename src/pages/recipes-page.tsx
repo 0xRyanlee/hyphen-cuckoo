@@ -65,7 +65,7 @@ interface RecipeWithItems {
   items: RecipeItem[];
 }
 
-interface RecipeCostItem { material_name: string; qty: number; unit: string; cost_per_unit: number; wastage_rate: number; line_cost: number; }
+interface RecipeCostItem { material_name: string; qty: number; unit: string; cost_per_unit: number; wastage_rate: number; line_cost: number; item_type: string; }
 interface RecipeCostResult {
   recipe_id: number;
   recipe_name: string;
@@ -1181,14 +1181,18 @@ export function RecipesPage({
                           {recipeCost.items.map((ci, i) => {
                             const pct = recipeCost.total_cost > 0 ? (ci.line_cost / recipeCost.total_cost) * 100 : 0;
                             const barColor = pct > 50 ? "bg-red-500" : pct > 20 ? "bg-amber-500" : "bg-green-500";
+                            const isSubRecipe = ci.item_type === "sub_recipe";
                             return (
                               <div key={i}>
-                                <div className="flex items-center justify-between text-sm py-1">
-                                  <span className="text-muted-foreground flex-1 truncate">{ci.material_name}</span>
-                                  <span className="font-mono ml-2">¥{ci.line_cost.toFixed(2)} ({pct.toFixed(1)}%)</span>
+                                <div className="flex items-center justify-between text-sm py-1 gap-1">
+                                  <div className="flex items-center gap-1 flex-1 min-w-0">
+                                    {isSubRecipe && <Badge variant="outline" className="text-xs shrink-0">半成品</Badge>}
+                                    <span className="text-muted-foreground truncate">{ci.material_name}</span>
+                                  </div>
+                                  <span className="font-mono shrink-0">¥{ci.line_cost.toFixed(2)} ({pct.toFixed(1)}%)</span>
                                 </div>
                                 <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                                  <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                                  <div className={`h-full ${isSubRecipe ? "bg-purple-500" : barColor} transition-all`} style={{ width: `${pct}%` }} />
                                 </div>
                               </div>
                             );

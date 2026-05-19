@@ -191,6 +191,7 @@ pub struct RecipeCostItem {
     pub cost_per_unit: f64,
     pub wastage_rate: f64,
     pub line_cost: f64,
+    pub item_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2432,15 +2433,50 @@ impl Database {
              WHERE ri.recipe_id = ?1 AND ri.item_type = 'material'
              ORDER BY ri.sort_no",
         )?;
-        let items: Vec<RecipeCostItem> = stmt.query_map(params![recipe_id], |row| {
+        let mut items: Vec<RecipeCostItem> = stmt.query_map(params![recipe_id], |row| {
             let material_name: String = row.get(0)?;
             let qty: f64 = row.get(1)?;
             let unit: String = row.get(2)?;
             let cost_per_unit: f64 = row.get(3)?;
             let wastage_rate: f64 = row.get(4)?;
-            let line_cost = qty * cost_per_unit * (1.0 + wastage_rate / 100.0);
-            Ok(RecipeCostItem { material_name, qty, unit, cost_per_unit, wastage_rate, line_cost })
+            let line_cost = qty * cost_per_unit * (1.0 + wastage_rate);
+            Ok(RecipeCostItem { material_name, qty, unit, cost_per_unit, wastage_rate, line_cost, item_type: "material".to_string() })
         })?.collect::<Result<Vec<_>>>()?;
+
+        // Include sub-recipe cost contributions (one level, using their material avg costs)
+        let mut sub_stmt = conn.prepare(
+            "SELECT r.name,
+                    ri.qty,
+                    COALESCE(u.code, ''),
+                    ri.wastage_rate,
+                    r.output_qty,
+                    COALESCE((
+                        SELECT SUM(ri2.qty *
+                            COALESCE((SELECT AVG(ib.cost_per_unit) FROM inventory_batches ib
+                                      WHERE ib.material_id = ri2.ref_id AND ib.quantity > 0), 0.0)
+                            * (1.0 + ri2.wastage_rate))
+                        FROM recipe_items ri2
+                        WHERE ri2.recipe_id = r.id AND ri2.item_type = 'material'
+                    ), 0.0)
+             FROM recipe_items ri
+             JOIN recipes r ON r.id = ri.ref_id
+             LEFT JOIN units u ON u.id = ri.unit_id
+             WHERE ri.recipe_id = ?1 AND ri.item_type = 'sub_recipe'
+             ORDER BY ri.sort_no"
+        )?;
+        let sub_items: Vec<RecipeCostItem> = sub_stmt.query_map(params![recipe_id], |row| {
+            let material_name: String = row.get(0)?;
+            let qty: f64 = row.get(1)?;
+            let unit: String = row.get(2)?;
+            let wastage_rate: f64 = row.get(3)?;
+            let sub_output_qty: f64 = row.get(4)?;
+            let sub_total_cost: f64 = row.get(5)?;
+            let cost_per_unit = if sub_output_qty > 0.0 { sub_total_cost / sub_output_qty } else { 0.0 };
+            let line_cost = qty * cost_per_unit * (1.0 + wastage_rate);
+            Ok(RecipeCostItem { material_name, qty, unit, cost_per_unit, wastage_rate, line_cost, item_type: "sub_recipe".to_string() })
+        })?.collect::<Result<Vec<_>>>()?;
+        items.extend(sub_items);
+
         let total_cost: f64 = items.iter().map(|i| i.line_cost).sum();
         let cost_per_unit = if output_qty > 0.0 { total_cost / output_qty } else { 0.0 };
         Ok(RecipeCostResult { recipe_id, recipe_name, total_cost, cost_per_unit, output_qty, items })
