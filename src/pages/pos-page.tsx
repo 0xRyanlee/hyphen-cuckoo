@@ -94,6 +94,7 @@ export function POSPage({
   const [specs, setSpecs] = useState<MenuItemSpec[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<MenuItemSpec | null>(null);
   const [tempNote, setTempNote] = useState("");
+  const [clearCartConfirmOpen, setClearCartConfirmOpen] = useState(false);
   const [dineType, setDineType] = useState("dine_in");
 
   const presetModifiers = [
@@ -443,7 +444,7 @@ export function POSPage({
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">合计</span>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { if (cart.length > 0 && confirm("确定要清空购物车吗？")) clearCart(); }} disabled={cart.length === 0} className="text-muted-foreground hover:text-destructive">
+              <Button variant="ghost" size="sm" onClick={() => { if (cart.length > 0) setClearCartConfirmOpen(true); }} disabled={cart.length === 0} className="text-muted-foreground hover:text-destructive">
                 清空
               </Button>
               <span className="text-2xl font-bold text-primary">{formatPrice(cartTotal)}</span>
@@ -495,6 +496,17 @@ export function POSPage({
           </div>
         </div>
       </Card>
+
+      <Dialog open={clearCartConfirmOpen} onOpenChange={setClearCartConfirmOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>清空购物车</DialogTitle></DialogHeader>
+          <p className="py-4 text-sm text-muted-foreground">确定要清空购物车中的所有商品吗？</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearCartConfirmOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={() => { clearCart(); setClearCartConfirmOpen(false); }}>清空</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={specDialogOpen} onOpenChange={setSpecDialogOpen}>
         <DialogContent>

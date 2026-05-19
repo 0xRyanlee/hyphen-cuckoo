@@ -310,7 +310,11 @@ export function useAppActions({
 
   // 訂單
   const handleCreateOrder = async (dineType: string = "dine_in", tableNo: string | null = null) => {
-    try { await invoke("create_order", { req: { source: "pos", dine_type: dineType, table_no: tableNo } }); toast.success("订单已创建"); loadData(); }
+    try {
+      const { order_no } = await invoke<{ id: number; order_no: string }>("create_order", { req: { source: "pos", dine_type: dineType, table_no: tableNo } });
+      toast.success(`订单 ${order_no} 已创建`);
+      loadData();
+    }
     catch (e) { logError("create_order", e, "创建订单失败", { dineType, tableNo }); }
   };
 
@@ -623,12 +627,12 @@ export function useAppActions({
 
   // 訂單修改器
   const handleAddModifier = async (data: { order_item_id: number; modifier_type: string; material_id: number | null; qty: number; price_delta: number }) => {
-    try { await invoke("add_order_item_modifier", { req: data }); toast.success("加料已添加"); }
+    try { await invoke("add_order_item_modifier", { req: data }); toast.success("加料已添加"); loadData(); }
     catch (e) { logError("add_order_item_modifier", e, "添加加料失败", { order_item_id: data.order_item_id }); }
   };
 
   const handleDeleteModifier = async (modifier_id: number) => {
-    try { await invoke("delete_order_item_modifier", { modifierId: modifier_id }); toast.success("加料已删除"); }
+    try { await invoke("delete_order_item_modifier", { modifierId: modifier_id }); toast.success("加料已删除"); loadData(); }
     catch (e) { logError("delete_order_item_modifier", e, "删除加料失败", { modifier_id }); }
   };
 

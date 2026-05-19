@@ -217,6 +217,7 @@ export function RecipesPage({
 
   const [deleteItemConfirm, setDeleteItemConfirm] = useState<number | null>(null);
   const [deleteRecipeConfirm, setDeleteRecipeConfirm] = useState<number | null>(null);
+  const [warningDialog, setWarningDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set<number>());
   const [subRecipes, setSubRecipes] = useState<Record<number, RecipeItem[]>>({});
@@ -363,8 +364,8 @@ export function RecipesPage({
       toast.error("数量必须大于 0");
       return;
     }
-    if (wastage !== null && wastage < 0) {
-      toast.error("损耗率不能为负数");
+    if (wastage !== null && (wastage < 0 || wastage > 100)) {
+      toast.error("损耗率必须在 0–100 之间");
       return;
     }
 
@@ -373,9 +374,15 @@ export function RecipesPage({
       try {
         const count = await invoke<number>("get_recipe_usage_count", { recipeId: currentItem.ref_id });
         if (count > 0) {
-          if (!confirm(`此半成品被 ${count} 个其他配方引用，修改其用量或损耗会影响相关成本，确定修改吗？`)) {
-            return;
-          }
+          const itemId = editingItemId;
+          const recipeId = activeRecipe.recipe.id;
+          const finalQty = qty;
+          const finalWastage = (wastage ?? 0) / 100;
+          setWarningDialog({
+            message: `此半成品被 ${count} 个其他配方引用，修改其用量或损耗会影响相关成本，确定修改吗？`,
+            onConfirm: () => { onUpdateRecipeItem(itemId, recipeId, finalQty, finalWastage); setEditingItemId(null); },
+          });
+          return;
         }
       } catch (e) {
         console.error("检查依赖失败", e);
@@ -403,6 +410,10 @@ export function RecipesPage({
     const wastage = parseSafeFloat(quickAddWastage);
     if (qty === null || qty <= 0) {
       toast.error("数量必须大于 0");
+      return;
+    }
+    if (wastage !== null && (wastage < 0 || wastage > 100)) {
+      toast.error("损耗率必须在 0–100 之间");
       return;
     }
     const isMaterial = quickAddMaterial.startsWith("m_");
@@ -437,9 +448,15 @@ export function RecipesPage({
     try {
       const count = await invoke<number>("get_recipe_usage_count", { recipeId: editRecipeId });
       if (count > 0) {
-        if (!confirm(`此配方作为半成品被 ${count} 个其他配方引用，修改名称或产出量会直接影响相关成本核算，确定继续吗？`)) {
-          return;
-        }
+        const id = editRecipeId;
+        const name = editRecipeName.trim();
+        const type = editRecipeType;
+        const outputQty = parseFloat(editRecipeOutputQty) || 1.0;
+        setWarningDialog({
+          message: `此配方作为半成品被 ${count} 个其他配方引用，修改名称或产出量会直接影响相关成本核算，确定继续吗？`,
+          onConfirm: () => { onUpdateRecipe(id, { name, recipe_type: type, output_qty: outputQty }); setEditRecipeId(null); },
+        });
+        return;
       }
     } catch (e) {
       console.error("检查依赖失败", e);
@@ -1279,6 +1296,17 @@ export function RecipesPage({
               }
               setDeleteRecipeTypeConfirm(null);
             }}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!warningDialog} onOpenChange={() => setWarningDialog(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>操作确认</DialogTitle></DialogHeader>
+          <p className="py-4 text-sm text-muted-foreground">{warningDialog?.message}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWarningDialog(null)}>取消</Button>
+            <Button onClick={() => { warningDialog?.onConfirm(); setWarningDialog(null); }}>确定继续</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

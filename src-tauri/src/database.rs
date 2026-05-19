@@ -1,7 +1,6 @@
 use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use uuid::Uuid;
 
 // ==================== 基礎類型 ====================
 
@@ -1642,40 +1641,79 @@ impl Database {
     }
 
     pub fn get_materials(&self, category_id: Option<i64>) -> Result<Vec<MaterialWithTags>> {
+        use std::collections::HashMap;
         let conn = self.conn.lock().unwrap();
-        let query = if let Some(_cat_id) = category_id {
-            "SELECT m.id, m.code, m.name, m.category_id, m.base_unit_id, m.shelf_life_days, m.min_qty, m.is_active, m.created_at, m.updated_at FROM materials m WHERE m.is_active = 1 AND m.category_id = ?1 ORDER BY m.id"
-        } else {
-            "SELECT m.id, m.code, m.name, m.category_id, m.base_unit_id, m.shelf_life_days, m.min_qty, m.is_active, m.created_at, m.updated_at FROM materials m WHERE m.is_active = 1 ORDER BY m.id"
+
+        // Single query: materials JOIN categories JOIN units
+        let row_to_item = |row: &rusqlite::Row| -> rusqlite::Result<(Material, Option<MaterialCategory>, Option<Unit>)> {
+            let mat = Material {
+                id: row.get(0)?, code: row.get(1)?, name: row.get(2)?,
+                category_id: row.get(3)?, base_unit_id: row.get(4)?,
+                shelf_life_days: row.get(5)?, min_qty: row.get(6)?,
+                is_active: row.get::<_, i32>(7)? != 0,
+                created_at: row.get(8)?, updated_at: row.get(9)?,
+            };
+            let category: Option<MaterialCategory> = match row.get::<_, Option<i64>>(10)? {
+                Some(id) => Some(MaterialCategory {
+                    id,
+                    code: row.get(11)?, name: row.get(12)?,
+                    sort_no: row.get(13)?, is_active: row.get::<_, i32>(14)? != 0,
+                }),
+                None => None,
+            };
+            let base_unit: Option<Unit> = match row.get::<_, Option<i64>>(15)? {
+                Some(id) => Some(Unit {
+                    id,
+                    code: row.get(16)?, name: row.get(17)?,
+                    unit_type: row.get(18)?, ratio_to_base: row.get(19)?,
+                }),
+                None => None,
+            };
+            Ok((mat, category, base_unit))
         };
-        let mut stmt = conn.prepare(query)?;
-        let materials: Vec<Material> = if let Some(cat_id) = category_id {
-            stmt.query_map(params![cat_id], |row| {
-                Ok(Material { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, category_id: row.get(3)?, base_unit_id: row.get(4)?, shelf_life_days: row.get(5)?, min_qty: row.get(6)?, is_active: row.get::<_, i32>(7)? != 0, created_at: row.get(8)?, updated_at: row.get(9)? })
-            })?.collect::<Result<Vec<_>>>()?
+
+        let base_sql = "SELECT m.id, m.code, m.name, m.category_id, m.base_unit_id, m.shelf_life_days, m.min_qty, m.is_active, m.created_at, m.updated_at, \
+            c.id, c.code, c.name, c.sort_no, c.is_active, \
+            u.id, u.code, u.name, u.unit_type, u.ratio_to_base \
+            FROM materials m \
+            LEFT JOIN material_categories c ON m.category_id = c.id \
+            LEFT JOIN units u ON m.base_unit_id = u.id \
+            WHERE m.is_active = 1";
+
+        let rows: Vec<(Material, Option<MaterialCategory>, Option<Unit>)> = if let Some(cat_id) = category_id {
+            let sql = format!("{} AND m.category_id = ?1 ORDER BY m.id", base_sql);
+            conn.prepare(&sql)?.query_map(params![cat_id], row_to_item)?.collect::<Result<Vec<_>>>()?
         } else {
-            stmt.query_map([], |row| {
-                Ok(Material { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, category_id: row.get(3)?, base_unit_id: row.get(4)?, shelf_life_days: row.get(5)?, min_qty: row.get(6)?, is_active: row.get::<_, i32>(7)? != 0, created_at: row.get(8)?, updated_at: row.get(9)? })
-            })?.collect::<Result<Vec<_>>>()?
+            let sql = format!("{} ORDER BY m.id", base_sql);
+            conn.prepare(&sql)?.query_map([], row_to_item)?.collect::<Result<Vec<_>>>()?
         };
-        let mut result = Vec::new();
-        for mat in materials {
-            let mut tag_stmt = conn.prepare(
-                "SELECT t.id, t.code, t.name, t.color, t.is_active FROM tags t JOIN material_tags mt ON t.id = mt.tag_id WHERE mt.material_id = ?1"
-            )?;
-            let tags: Vec<Tag> = tag_stmt.query_map(params![mat.id], |row| {
-                Ok(Tag { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, color: row.get(3)?, is_active: row.get::<_, i32>(4)? != 0 })
-            })?.collect::<Result<Vec<_>>>()?;
-            let category = if let Some(cat_id) = mat.category_id {
-                conn.query_row("SELECT id, code, name, sort_no, is_active FROM material_categories WHERE id = ?1", params![cat_id], |row| {
-                    Ok(MaterialCategory { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, sort_no: row.get(3)?, is_active: row.get::<_, i32>(4)? != 0 })
-                }).ok()
-            } else { None };
-            let base_unit = conn.query_row("SELECT id, code, name, unit_type, ratio_to_base FROM units WHERE id = ?1", params![mat.base_unit_id], |row| {
-                Ok(Unit { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, unit_type: row.get(3)?, ratio_to_base: row.get(4)? })
-            }).ok();
-            result.push(MaterialWithTags { material: mat, tags, category, base_unit });
+
+        // Batch fetch all tags in one query and group by material_id
+        let mut tags_map: HashMap<i64, Vec<Tag>> = HashMap::new();
+        let tag_filter = if let Some(cat_id) = category_id {
+            format!("WHERE mt.material_id IN (SELECT id FROM materials WHERE is_active = 1 AND category_id = {})", cat_id)
+        } else {
+            "WHERE mt.material_id IN (SELECT id FROM materials WHERE is_active = 1)".to_string()
+        };
+        let tag_sql = format!(
+            "SELECT mt.material_id, t.id, t.code, t.name, t.color, t.is_active FROM material_tags mt JOIN tags t ON mt.tag_id = t.id {}",
+            tag_filter
+        );
+        let mut tag_stmt = conn.prepare(&tag_sql)?;
+        let tag_rows = tag_stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, Tag {
+                id: row.get(1)?, code: row.get(2)?, name: row.get(3)?,
+                color: row.get(4)?, is_active: row.get::<_, i32>(5)? != 0,
+            }))
+        })?.collect::<Result<Vec<_>>>()?;
+        for (mat_id, tag) in tag_rows {
+            tags_map.entry(mat_id).or_default().push(tag);
         }
+
+        let result = rows.into_iter().map(|(mat, category, base_unit)| {
+            let tags = tags_map.remove(&mat.id).unwrap_or_default();
+            MaterialWithTags { material: mat, tags, category, base_unit }
+        }).collect();
         Ok(result)
     }
 
@@ -2109,107 +2147,114 @@ impl Database {
         let kg_unit_id = lookup_unit_id("kg")?;
         let l_unit_id = lookup_unit_id("l")?;
 
-        conn.execute(
-            "DELETE FROM recipe_items
-             WHERE recipe_id IN (SELECT id FROM recipes WHERE code IN ('RCP001', 'RCP002', 'RCP003'))",
-            [],
-        )?;
-        conn.execute(
-            "DELETE FROM recipes WHERE code IN ('RCP001', 'RCP002', 'RCP003')",
-            [],
-        )?;
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            conn.execute(
+                "DELETE FROM recipe_items
+                 WHERE recipe_id IN (SELECT id FROM recipes WHERE code IN ('RCP001', 'RCP002', 'RCP003'))",
+                [],
+            )?;
+            conn.execute(
+                "DELETE FROM recipes WHERE code IN ('RCP001', 'RCP002', 'RCP003')",
+                [],
+            )?;
 
-        // 菜品組成結構（Recipe Component Types）
-        let recipe_components = [
-            ("料油", "lsy", "base", "油脂基底，玉米油+香辛料熬製"),
-            ("調味蚝油", "dthy", "base", "蚝油+水+調味料攪拌"),
-            ("醬料", "jiangliao", "base", "辣椒+麻椒+花椒+調味料熬製"),
-            ("食材", "shicai", "main", "主要原材料"),
-            ("調味品", "tiaoweipin", "main", "鹽、糖、醬油等調料"),
-            ("餐盒", "canhe", "packaging", "包裝容器"),
-        ];
-        for (name, code, cat, desc) in recipe_components {
-            conn.execute("INSERT OR IGNORE INTO recipe_component_types (code, name, category, description) VALUES (?1, ?2, ?3, ?4)", params![code, name, cat, desc])?;
+            // 菜品組成結構（Recipe Component Types）
+            let recipe_components = [
+                ("料油", "lsy", "base", "油脂基底，玉米油+香辛料熬製"),
+                ("調味蚝油", "dthy", "base", "蚝油+水+調味料攪拌"),
+                ("醬料", "jiangliao", "base", "辣椒+麻椒+花椒+調味料熬製"),
+                ("食材", "shicai", "main", "主要原材料"),
+                ("調味品", "tiaoweipin", "main", "鹽、糖、醬油等調料"),
+                ("餐盒", "canhe", "packaging", "包裝容器"),
+            ];
+            for (name, code, cat, desc) in recipe_components {
+                conn.execute("INSERT OR IGNORE INTO recipe_component_types (code, name, category, description) VALUES (?1, ?2, ?3, ?4)", params![code, name, cat, desc])?;
+            }
+
+            // 訂單組成結構（Order Component Types）
+            let order_components = [
+                ("外包裝袋", "waibao", false, 0.5, "個"),
+                ("保溫袋", "baowen", false, 1.0, "個"),
+                ("手套", "shoutao", false, 0.1, "雙"),
+                ("牙籤", "yaci", false, 0.05, "支"),
+                ("筷子", "kuaizi", false, 0.2, "雙"),
+                ("芝麻", "zhima", false, 0.3, "克"),
+                ("垃圾袋", "lajidai", false, 0.2, "個"),
+                ("配送費", "peisong", false, 5.0, "元"),
+            ];
+            for (name, code, is_pkg, cost, unit) in order_components {
+                conn.execute("INSERT OR IGNORE INTO order_component_types (code, name, is_packaging, cost_per_unit, unit) VALUES (?1, ?2, ?3, ?4, ?5)", params![code, name, is_pkg, cost, unit])?;
+            }
+
+            conn.execute(
+                "INSERT INTO recipes (code, name, recipe_type, output_qty) VALUES
+                    ('RCP001', '麻辣东风螺', 'menu', 1.0),
+                    ('RCP002', '麻辣毛肚', 'menu', 1.0),
+                    ('RCP003', '麻辣方便面', 'menu', 1.0)",
+                [],
+            )?;
+
+            let recipe1_id: i64 = conn.query_row(
+                "SELECT id FROM recipes WHERE code = 'RCP001'",
+                [],
+                |row| row.get(0),
+            )?;
+            let recipe2_id: i64 = conn.query_row(
+                "SELECT id FROM recipes WHERE code = 'RCP002'",
+                [],
+                |row| row.get(0),
+            )?;
+            let recipe3_id: i64 = conn.query_row(
+                "SELECT id FROM recipes WHERE code = 'RCP003'",
+                [],
+                |row| row.get(0),
+            )?;
+
+            conn.execute(
+                "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES
+                    (?1, 'material', ?2, 0.5, ?3, 0.05, 1),
+                    (?1, 'material', ?4, 0.1, ?3, 0, 2),
+                    (?1, 'material', ?5, 0.02, ?6, 0, 3)",
+                params![recipe1_id, dongfengluo_id, kg_unit_id, maladiliu_id, lajiaoyou_id, l_unit_id],
+            )?;
+
+            conn.execute(
+                "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES
+                    (?1, 'material', ?2, 0.3, ?3, 0.1, 1),
+                    (?1, 'material', ?4, 0.08, ?3, 0, 2),
+                    (?1, 'material', ?5, 0.015, ?6, 0, 3),
+                    (?1, 'material', ?7, 0.05, ?3, 0.1, 4)",
+                params![recipe2_id, maodu_id, kg_unit_id, maladiliu_id, lajiaoyou_id, l_unit_id, xianggu_id],
+            )?;
+
+            conn.execute(
+                "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES
+                    (?1, 'material', ?2, 1.0, ?3, 0, 1),
+                    (?1, 'material', ?4, 0.05, ?5, 0, 2),
+                    (?1, 'material', ?6, 0.01, ?7, 0, 3),
+                    (?1, 'material', ?8, 0.03, ?5, 0.1, 4)",
+                params![recipe3_id, fangbianmian_id, pc_unit_id, maladiliu_id, kg_unit_id, lajiaoyou_id, l_unit_id, jinzhengu_id],
+            )?;
+
+            conn.execute(
+                "UPDATE menu_items
+                 SET recipe_id = CASE code
+                   WHEN 'MENU001' THEN ?1
+                   WHEN 'MENU011' THEN ?2
+                   WHEN 'MENU021' THEN ?3
+                   ELSE recipe_id
+                 END
+                 WHERE code IN ('MENU001', 'MENU011', 'MENU021')",
+                params![recipe1_id, recipe2_id, recipe3_id],
+            )?;
+
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
-
-        // 訂單組成結構（Order Component Types）
-        let order_components = [
-            ("外包裝袋", "waibao", false, 0.5, "個"),
-            ("保溫袋", "baowen", false, 1.0, "個"),
-            ("手套", "shoutao", false, 0.1, "雙"),
-            ("牙籤", "yaci", false, 0.05, "支"),
-            ("筷子", "kuaizi", false, 0.2, "雙"),
-            ("芝麻", "zhima", false, 0.3, "克"),
-            ("垃圾袋", "lajidai", false, 0.2, "個"),
-            ("配送費", "peisong", false, 5.0, "元"),
-        ];
-        for (name, code, is_pkg, cost, unit) in order_components {
-            conn.execute("INSERT OR IGNORE INTO order_component_types (code, name, is_packaging, cost_per_unit, unit) VALUES (?1, ?2, ?3, ?4, ?5)", params![code, name, is_pkg, cost, unit])?;
-        }
-
-        conn.execute(
-            "INSERT INTO recipes (code, name, recipe_type, output_qty) VALUES
-                ('RCP001', '麻辣东风螺', 'menu', 1.0),
-                ('RCP002', '麻辣毛肚', 'menu', 1.0),
-                ('RCP003', '麻辣方便面', 'menu', 1.0)",
-            [],
-        )?;
-
-        let recipe1_id: i64 = conn.query_row(
-            "SELECT id FROM recipes WHERE code = 'RCP001'",
-            [],
-            |row| row.get(0),
-        )?;
-        let recipe2_id: i64 = conn.query_row(
-            "SELECT id FROM recipes WHERE code = 'RCP002'",
-            [],
-            |row| row.get(0),
-        )?;
-        let recipe3_id: i64 = conn.query_row(
-            "SELECT id FROM recipes WHERE code = 'RCP003'",
-            [],
-            |row| row.get(0),
-        )?;
-
-        conn.execute(
-            "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES
-                (?1, 'material', ?2, 0.5, ?3, 0.05, 1),
-                (?1, 'material', ?4, 0.1, ?3, 0, 2),
-                (?1, 'material', ?5, 0.02, ?6, 0, 3)",
-            params![recipe1_id, dongfengluo_id, kg_unit_id, maladiliu_id, lajiaoyou_id, l_unit_id],
-        )?;
-
-        conn.execute(
-            "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES
-                (?1, 'material', ?2, 0.3, ?3, 0.1, 1),
-                (?1, 'material', ?4, 0.08, ?3, 0, 2),
-                (?1, 'material', ?5, 0.015, ?6, 0, 3),
-                (?1, 'material', ?7, 0.05, ?3, 0.1, 4)",
-            params![recipe2_id, maodu_id, kg_unit_id, maladiliu_id, lajiaoyou_id, l_unit_id, xianggu_id],
-        )?;
-
-        conn.execute(
-            "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES
-                (?1, 'material', ?2, 1.0, ?3, 0, 1),
-                (?1, 'material', ?4, 0.05, ?5, 0, 2),
-                (?1, 'material', ?6, 0.01, ?7, 0, 3),
-                (?1, 'material', ?8, 0.03, ?5, 0.1, 4)",
-            params![recipe3_id, fangbianmian_id, pc_unit_id, maladiliu_id, kg_unit_id, lajiaoyou_id, l_unit_id, jinzhengu_id],
-        )?;
-
-        conn.execute(
-            "UPDATE menu_items
-             SET recipe_id = CASE code
-               WHEN 'MENU001' THEN ?1
-               WHEN 'MENU011' THEN ?2
-               WHEN 'MENU021' THEN ?3
-               ELSE recipe_id
-             END
-             WHERE code IN ('MENU001', 'MENU011', 'MENU021')",
-            params![recipe1_id, recipe2_id, recipe3_id],
-        )?;
-
-        Ok(())
     }
 
     pub fn get_recipe_with_items(&self, recipe_id: i64) -> Result<RecipeWithItems> {
@@ -2271,11 +2316,44 @@ impl Database {
 
     pub fn add_recipe_item(&self, recipe_id: i64, item_type: &str, ref_id: i64, qty: f64, unit_id: i64, wastage_rate: f64, sort_no: i32) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
+        if item_type == "sub_recipe" {
+            if ref_id == recipe_id {
+                return Err(rusqlite::Error::InvalidParameterName(
+                    "不能將配方添加為自身的子配方".to_string(),
+                ));
+            }
+            if Self::recipe_has_ancestor(&conn, ref_id, recipe_id)? {
+                return Err(rusqlite::Error::InvalidParameterName(
+                    "添加此子配方會產生循環引用，請檢查配方嵌套關係".to_string(),
+                ));
+            }
+        }
         conn.execute(
             "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no],
         )?;
         Ok(conn.last_insert_rowid())
+    }
+
+    /// BFS: returns true if `ancestor_id` is reachable via sub_recipe links starting from `recipe_id`.
+    /// Depth-capped at 50 nodes to guard against pathological graphs.
+    fn recipe_has_ancestor(conn: &Connection, recipe_id: i64, ancestor_id: i64) -> Result<bool> {
+        use std::collections::HashSet;
+        let mut visited: HashSet<i64> = HashSet::new();
+        let mut queue = vec![recipe_id];
+        while let Some(current) = queue.pop() {
+            if current == ancestor_id { return Ok(true); }
+            if visited.contains(&current) { continue; }
+            visited.insert(current);
+            if visited.len() > 50 { break; }
+            let mut stmt = conn.prepare(
+                "SELECT ref_id FROM recipe_items WHERE recipe_id = ?1 AND item_type = 'sub_recipe'"
+            )?;
+            let children: Vec<i64> = stmt.query_map(params![current], |row| row.get(0))?
+                .collect::<Result<Vec<_>>>()?;
+            queue.extend(children);
+        }
+        Ok(false)
     }
 
     pub fn get_recipe_usage_count(&self, recipe_id: i64) -> Result<i64> {
@@ -2765,6 +2843,24 @@ impl Database {
 
     pub fn delete_recipe(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let menu_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM menu_items WHERE recipe_id = ?1",
+            params![id], |r| r.get(0),
+        )?;
+        if menu_count > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("此配方被 {} 個菜品使用，請先解除菜品與配方的綁定", menu_count),
+            ));
+        }
+        let sub_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM recipe_items WHERE item_type = 'sub_recipe' AND ref_id = ?1",
+            params![id], |r| r.get(0),
+        )?;
+        if sub_count > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("此配方被 {} 個其他配方引用為子配方，請先移除引用", sub_count),
+            ));
+        }
         conn.execute("UPDATE recipes SET is_active = 0 WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -2890,74 +2986,55 @@ impl Database {
     #[allow(dead_code)]
     pub fn confirm_inventory_for_order(&self, order_id: i64) -> Result<Vec<String>> {
         let conn = self.conn.lock().unwrap();
-        
-        // 獲取該訂單的所有預扣交易
-        let mut reserve_stmt = conn.prepare(
-            "SELECT id, lot_id, material_id, qty_delta FROM inventory_txns WHERE ref_type = 'order' AND ref_id = ?1 AND txn_type = 'reserve'"
-        )?;
-        
-        let reserves: Vec<(i64, Option<i64>, i64, f64)> = reserve_stmt.query_map(params![order_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })?.collect::<Result<Vec<_>>>()?;
-        
-        let mut txn_nos = Vec::new();
-        
-        for (_reserve_id, lot_id, material_id, qty_delta) in reserves {
-            let txn_no = format!("TXN{}", &Uuid::new_v4().to_string()[..10].to_uppercase());
-            
-            // 創建實扣交易（qty_delta 已經是負數）
-            conn.execute(
-                "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) VALUES (?1, 'consume', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                params![txn_no, order_id, lot_id, material_id, qty_delta],
-            )?;
-            
-            // 回補預扣（正數）
-            let release_no = format!("TXN{}", &Uuid::new_v4().to_string()[..10].to_uppercase());
-            conn.execute(
-                "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) VALUES (?1, 'release', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                params![release_no, order_id, lot_id, material_id, -qty_delta],
-            )?;
-            
-            txn_nos.push(txn_no);
+        conn.execute_batch("BEGIN")?;
+        let result = Self::consume_order_inventory(&conn, order_id);
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(Vec::new()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
-        
-        Ok(txn_nos)
     }
 
-    /// 回補庫存：訂單取消時回補預扣
+    /// 回補庫存：訂單取消時回補已實扣庫存
     pub fn release_inventory_for_order(&self, order_id: i64) -> Result<Vec<String>> {
         let conn = self.conn.lock().unwrap();
-        
-        // 獲取該訂單的所有預扣交易
-        let mut reserve_stmt = conn.prepare(
-            "SELECT id, lot_id, material_id, qty_delta FROM inventory_txns WHERE ref_type = 'order' AND ref_id = ?1 AND txn_type = 'reserve'"
-        )?;
-        
-        let reserves: Vec<(i64, Option<i64>, i64, f64)> = reserve_stmt.query_map(params![order_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-        })?.collect::<Result<Vec<_>>>()?;
-        
-        let mut txn_nos = Vec::new();
-        
-        for (_reserve_id, lot_id, material_id, qty_delta) in reserves {
-            let txn_no = format!("TXN{}", &Uuid::new_v4().to_string()[..10].to_uppercase());
-            
-            // 回補預扣（正數，因為 qty_delta 是負數）
-            conn.execute(
-                "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) VALUES (?1, 'release', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                params![txn_no, order_id, lot_id, material_id, -qty_delta],
+        conn.execute_batch("BEGIN")?;
+        let result: Result<Vec<String>> = (|| {
+            // Reverse any consume txns already recorded for this order
+            let mut stmt = conn.prepare(
+                "SELECT id, lot_id, material_id, qty_delta FROM inventory_txns \
+                 WHERE ref_type = 'order' AND ref_id = ?1 AND txn_type = 'consume'"
             )?;
-            
-            txn_nos.push(txn_no);
+            let consumes: Vec<(i64, Option<i64>, i64, f64)> = stmt.query_map(params![order_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?.collect::<Result<Vec<_>>>()?;
+
+            let mut txn_nos = Vec::new();
+            for (_consume_id, lot_id, material_id, qty_delta) in consumes {
+                let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+                conn.execute(
+                    "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) \
+                     VALUES (?1, 'release', 'order', ?2, ?3, ?4, ?5, 0.0)",
+                    params![txn_no, order_id, lot_id, material_id, -qty_delta],
+                )?;
+                if let Some(batch_id) = lot_id {
+                    conn.execute(
+                        "UPDATE inventory_batches SET quantity = quantity + ?1 WHERE id = ?2",
+                        params![-qty_delta, batch_id],
+                    )?;
+                }
+                txn_nos.push(txn_no);
+            }
+
+            conn.execute(
+                "UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?1",
+                params![order_id],
+            )?;
+            Ok(txn_nos)
+        })();
+        match result {
+            Ok(v) => { conn.execute_batch("COMMIT")?; Ok(v) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
-        
-        // 更新訂單狀態
-        conn.execute(
-            "UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?1",
-            params![order_id],
-        )?;
-        
-        Ok(txn_nos)
     }
 
     /// 批量取消訂單
@@ -2986,45 +3063,6 @@ impl Database {
     }
 
     /// 創建廚房小票（訂單提交時自動拆單）
-    pub fn create_kitchen_tickets(&self, order_id: i64) -> Result<Vec<i64>> {
-        let conn = self.conn.lock().unwrap();
-
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT smi.station_id
-             FROM order_items oi
-             JOIN station_menu_items smi ON oi.menu_item_id = smi.menu_item_id
-             WHERE oi.order_id = ?1"
-        )?;
-
-        let stations: Vec<i64> = stmt.query_map(params![order_id], |row| {
-            row.get(0)
-        })?.collect::<Result<Vec<_>>>()?;
-
-        let mut ticket_ids = Vec::new();
-
-        for station_id in stations {
-            conn.execute(
-                "INSERT INTO kitchen_tickets (order_id, station_id, status) VALUES (?1, ?2, 'pending')",
-                params![order_id, station_id],
-            )?;
-            ticket_ids.push(conn.last_insert_rowid());
-        }
-
-        if ticket_ids.is_empty() {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_no LIMIT 1"
-            )?;
-            if let Ok(default_station) = stmt.query_row([], |row| row.get::<_, i64>(0)) {
-                conn.execute(
-                    "INSERT INTO kitchen_tickets (order_id, station_id, status) VALUES (?1, ?2, 'pending')",
-                    params![order_id, default_station],
-                )?;
-                ticket_ids.push(conn.last_insert_rowid());
-            }
-        }
-
-        Ok(ticket_ids)
-    }
 
     /// KDS 開始製作
     pub fn start_ticket(&self, ticket_id: i64, _operator: Option<&str>) -> Result<()> {
@@ -3039,63 +3077,94 @@ impl Database {
     /// KDS 完成出餐
     pub fn finish_ticket(&self, ticket_id: i64, _operator: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        
-        // 更新小票狀態
-        conn.execute(
-            "UPDATE kitchen_tickets SET status = 'finished', finished_at = datetime('now') WHERE id = ?1",
-            params![ticket_id],
-        )?;
-        
-        // 獲取訂單ID
+
         let order_id: i64 = conn.query_row(
             "SELECT order_id FROM kitchen_tickets WHERE id = ?1",
-            params![ticket_id],
-            |row| row.get(0),
+            params![ticket_id], |row| row.get(0),
         )?;
-        
-        // 實扣庫存
-        self.confirm_inventory_for_order_internal(&conn, order_id)?;
-        
-        // 檢查訂單是否全部完成
-        let unfinished: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM kitchen_tickets WHERE order_id = ?1 AND status != 'finished'",
-            params![order_id],
-            |row| row.get(0),
-        )?;
-        
-        if unfinished == 0 {
+
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
             conn.execute(
-                "UPDATE orders SET status = 'ready', updated_at = datetime('now') WHERE id = ?1",
-                params![order_id],
+                "UPDATE kitchen_tickets SET status = 'finished', finished_at = datetime('now') WHERE id = ?1",
+                params![ticket_id],
             )?;
+
+            let unfinished: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM kitchen_tickets WHERE order_id = ?1 AND status != 'finished'",
+                params![order_id], |row| row.get(0),
+            )?;
+
+            if unfinished == 0 {
+                // All stations done — consume inventory (FIFO) and mark order ready
+                Self::consume_order_inventory(&conn, order_id)?;
+                conn.execute(
+                    "UPDATE orders SET status = 'ready', updated_at = datetime('now') WHERE id = ?1",
+                    params![order_id],
+                )?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
-        
-        Ok(())
     }
 
-    fn confirm_inventory_for_order_internal(&self, conn: &Connection, order_id: i64) -> Result<()> {
-        let mut reserve_stmt = conn.prepare(
-            "SELECT lot_id, material_id, qty_delta FROM inventory_txns WHERE ref_type = 'order' AND ref_id = ?1 AND txn_type = 'reserve'"
+    /// Consume inventory for a completed order using recipe-based FIFO deduction.
+    /// Idempotent: skips if consume txns already exist for this order.
+    fn consume_order_inventory(conn: &Connection, order_id: i64) -> Result<()> {
+        // Idempotency guard
+        let already_consumed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM inventory_txns WHERE ref_type = 'order' AND ref_id = ?1 AND txn_type = 'consume'",
+            params![order_id], |r| r.get(0),
         )?;
-        
-        let reserves: Vec<(Option<i64>, i64, f64)> = reserve_stmt.query_map(params![order_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?.collect::<Result<Vec<_>>>()?;
-        
-        for (lot_id, material_id, qty_delta) in reserves {
-            let txn_no = format!("TXN{}", &Uuid::new_v4().to_string()[..10].to_uppercase());
-            conn.execute(
-                "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) VALUES (?1, 'consume', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                params![txn_no, order_id, lot_id, material_id, qty_delta],
-            )?;
-            
-            let release_no = format!("TXN{}", &Uuid::new_v4().to_string()[..10].to_uppercase());
-            conn.execute(
-                "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) VALUES (?1, 'release', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                params![release_no, order_id, lot_id, material_id, -qty_delta],
-            )?;
+        if already_consumed > 0 {
+            return Ok(());
         }
-        
+
+        // Compute required qty per material from order items + recipes + wastage
+        let mut mat_stmt = conn.prepare(
+            "SELECT ri.ref_id, SUM(ri.qty * (1.0 + COALESCE(ri.wastage_rate, 0.0)) * oi.qty)
+             FROM order_items oi
+             JOIN menu_items mi ON oi.menu_item_id = mi.id
+             JOIN recipe_items ri ON ri.recipe_id = mi.recipe_id AND ri.item_type = 'material'
+             WHERE oi.order_id = ?1
+             GROUP BY ri.ref_id"
+        )?;
+        let needs: Vec<(i64, f64)> = mat_stmt.query_map(params![order_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.collect::<Result<Vec<_>>>()?;
+
+        for (material_id, mut remaining) in needs {
+            if remaining <= 0.0 { continue; }
+
+            // FIFO: oldest expiry first; ties broken by batch id
+            let mut batch_stmt = conn.prepare(
+                "SELECT id, quantity FROM inventory_batches
+                 WHERE material_id = ?1 AND quantity > 0
+                 ORDER BY COALESCE(expiry_date, '9999-99-99'), id"
+            )?;
+            let batches: Vec<(i64, f64)> = batch_stmt.query_map(params![material_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?.collect::<Result<Vec<_>>>()?;
+
+            for (batch_id, available) in batches {
+                if remaining <= 0.0 { break; }
+                let deduct = available.min(remaining);
+                remaining -= deduct;
+                let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+                conn.execute(
+                    "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) \
+                     VALUES (?1, 'consume', 'order', ?2, ?3, ?4, ?5, 0.0)",
+                    params![txn_no, order_id, batch_id, material_id, -deduct],
+                )?;
+                conn.execute(
+                    "UPDATE inventory_batches SET quantity = quantity - ?1 WHERE id = ?2",
+                    params![deduct, batch_id],
+                )?;
+            }
+        }
         Ok(())
     }
 

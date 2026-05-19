@@ -528,6 +528,36 @@ pub fn build_kitchen_ticket_content(
     builder
 }
 
+/// Build plain-text kitchen ticket for Feie cloud printing (HTTP text API, no binary ESC/POS).
+pub fn build_kitchen_ticket_text(
+    order_no: &str,
+    dine_type: &str,
+    items: &[(String, f64, Option<String>)],
+    note: Option<&str>,
+) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("=== Cuckoo 廚房單 ===\n"));
+    s.push_str(&format!("單號: {}\n", order_no));
+    s.push_str(&format!("類型: {}\n", dine_type));
+    s.push_str(&format!("時間: {}\n", chrono::Local::now().format("%Y-%m-%d %H:%M")));
+    s.push_str("--------------------------------\n");
+    for (name, qty, item_note) in items {
+        if *qty != 1.0 {
+            s.push_str(&format!("{} x{}\n", name, *qty as i32));
+        } else {
+            s.push_str(&format!("{}\n", name));
+        }
+        if let Some(n) = item_note {
+            s.push_str(&format!("  備註: {}\n", n));
+        }
+    }
+    s.push_str("--------------------------------\n");
+    if let Some(n) = note {
+        s.push_str(&format!("訂單備註: {}\n", n));
+    }
+    s
+}
+
 pub fn build_batch_label_content(
     lot_no: &str,
     material_name: &str,

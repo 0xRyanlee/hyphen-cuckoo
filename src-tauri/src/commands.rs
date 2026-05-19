@@ -972,15 +972,11 @@ pub fn scan_lan_printers(_state: State<AppState>, subnet: String, timeout_ms: Op
 
 #[tauri::command]
 pub fn test_feie_printer(_state: State<AppState>, user: String, ukey: String, sn: String) -> Result<String, String> {
-    let mut builder = EscPosBuilder::new();
-    builder.align_center().bold_on().double_height()
-        .text_ln("Cuckoo 打印測試")
-        .normal_size().bold_off()
-        .text_ln(&format!("打印機: {}", sn))
-        .text_ln(&format!("時間: {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")))
-        .feed_lines(3).cut_paper();
-
-    let content = String::from_utf8_lossy(&builder.build()).to_string();
+    let content = format!(
+        "=== Cuckoo 打印測試 ===\n打印機: {}\n時間: {}\n",
+        sn,
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+    );
     printer::feie_print(&user, &ukey, &sn, &content)
 }
 
@@ -1055,15 +1051,12 @@ pub fn print_kitchen_ticket(state: State<AppState>, order_no: String, dine_type:
             .ok_or("未配置默認打印機")?,
     };
 
-    let builder = printer::build_kitchen_ticket_content(&order_no, &dine_type, &items, note.as_deref());
-    let content_bytes = builder.build();
-    let content = String::from_utf8_lossy(&content_bytes).to_string();
-
+    let text_content = printer::build_kitchen_ticket_text(&order_no, &dine_type, &items, note.as_deref());
     let task_id = state.db.create_print_task(
         "kitchen_ticket",
         Some("order"),
         None,
-        &content,
+        &text_content,
         Some(printer.id),
         Some(&printer.name),
     ).map_err(|e| e.to_string())?;
@@ -1073,11 +1066,12 @@ pub fn print_kitchen_ticket(state: State<AppState>, order_no: String, dine_type:
             let user = printer.feie_user.as_deref().ok_or("飛鵝用戶未配置")?;
             let ukey = printer.feie_ukey.as_deref().ok_or("飛鵝 UKEY 未配置")?;
             let sn = printer.feie_sn.as_deref().ok_or("飛鵝 SN 未配置")?;
-            printer::feie_print(user, ukey, sn, &content)
+            printer::feie_print(user, ukey, sn, &text_content)
         }
         "lan" => {
             let ip = printer.lan_ip.as_deref().ok_or("局域網 IP 未配置")?;
             let port = printer.lan_port;
+            let content_bytes = printer::build_kitchen_ticket_content(&order_no, &dine_type, &items, note.as_deref()).build();
             printer::lan_print(ip, port, &content_bytes)
                 .map(|_| "ok".to_string())
         }
