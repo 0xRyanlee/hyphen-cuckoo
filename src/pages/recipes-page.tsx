@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, ChefHat, Trash2, Pencil, Save, X, ChevronRight, ChevronDown, Network } from "lucide-react";
@@ -227,6 +228,8 @@ export function RecipesPage({
   const [warningDialog, setWarningDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [dependsDialog, setDependsDialog] = useState<{ recipeId: number; recipeName: string } | null>(null);
   const [dependents, setDependents] = useState<RecipeDependents | null>(null);
+  const [selectedRecipeIds, setSelectedRecipeIds] = useState<Set<number>>(new Set<number>());
+  const [batchTypeTarget, setBatchTypeTarget] = useState("");
 
   useEffect(() => {
     if (!dependsDialog) { setDependents(null); return; }
@@ -774,9 +777,42 @@ export function RecipesPage({
                     description={recipeListFilter === "pending" ? "当前所有配方都已有明细项" : "先创建一个配方，再补充材料、半成品和成本信息"}
                   />
                 ) : (
+                  <>
+                  {selectedRecipeIds.size > 0 && (
+                    <div className="flex items-center gap-3 mb-3 p-2 bg-muted rounded-lg text-sm">
+                      <span className="text-muted-foreground">已选 {selectedRecipeIds.size} 个配方</span>
+                      <Select value={batchTypeTarget} onValueChange={setBatchTypeTarget}>
+                        <SelectTrigger className="h-8 w-36"><SelectValue placeholder="修改类型" /></SelectTrigger>
+                        <SelectContent>
+                          {recipeTypes.map((type) => (
+                            <SelectItem key={type.id} value={type.code}>{type.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" disabled={!batchTypeTarget} onClick={() => {
+                        const ids = Array.from(selectedRecipeIds);
+                        ids.forEach(id => {
+                          const r = recipes.find(x => x.id === id);
+                          if (r) onUpdateRecipe(id, { name: r.name, recipe_type: batchTypeTarget, output_qty: r.output_qty });
+                        });
+                        setSelectedRecipeIds(new Set());
+                        setBatchTypeTarget("");
+                      }}>应用</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setSelectedRecipeIds(new Set()); setBatchTypeTarget(""); }}>取消</Button>
+                    </div>
+                  )}
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="w-8">
+                          <Checkbox
+                            checked={visibleRecipes.length > 0 && visibleRecipes.every(r => selectedRecipeIds.has(r.id))}
+                            onCheckedChange={(checked) => {
+                              if (checked) setSelectedRecipeIds(new Set(visibleRecipes.map(r => r.id)));
+                              else setSelectedRecipeIds(new Set());
+                            }}
+                          />
+                        </TableHead>
                         <TableHead>代码</TableHead>
                         <TableHead>名称</TableHead>
                         <TableHead>类型</TableHead>
@@ -788,6 +824,16 @@ export function RecipesPage({
                     <TableBody>
                       {visibleRecipes.map((r) => (
                         <TableRow key={r.id}>
+                          <TableCell className="w-8">
+                            <Checkbox
+                              checked={selectedRecipeIds.has(r.id)}
+                              onCheckedChange={(checked) => {
+                                const next = new Set(selectedRecipeIds);
+                                if (checked) next.add(r.id); else next.delete(r.id);
+                                setSelectedRecipeIds(next);
+                              }}
+                            />
+                          </TableCell>
                           <TableCell className="font-mono text-xs">{r.code}</TableCell>
                           <TableCell className="font-medium">
                             {editRecipeId === r.id ? (
@@ -825,6 +871,7 @@ export function RecipesPage({
                       ))}
                     </TableBody>
                   </Table>
+                  </>
                 )}
               </CardContent>
             </Card>
