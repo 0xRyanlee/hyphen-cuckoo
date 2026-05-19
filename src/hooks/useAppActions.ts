@@ -129,11 +129,11 @@ export function useAppActions({
   };
 
   // 配方
-  const handleCreateRecipe = async (data: { code: string; name: string; recipe_type: string }): Promise<number | null> => {
-    try { 
-      const newId = await invoke<number>("create_recipe", { req: { ...data, output_qty: 1.0, output_material_id: null, output_state_id: null, output_unit_id: null, items: null } }); 
-      toast.success("配方已创建", { description: data.name }); 
-      await loadData(); 
+  const handleCreateRecipe = async (data: { code: string; name: string; recipe_type: string; output_material_id?: number | null; output_unit_id?: number | null }): Promise<number | null> => {
+    try {
+      const newId = await invoke<number>("create_recipe", { req: { ...data, output_qty: 1.0, output_material_id: data.output_material_id ?? null, output_state_id: null, output_unit_id: data.output_unit_id ?? null, items: null } });
+      toast.success("配方已创建", { description: data.name });
+      await loadData();
       return newId;
     }
     catch (e) { logError("create_recipe", e, "创建配方失败", { name: data.name }); return null; }

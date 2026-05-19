@@ -105,7 +105,7 @@ interface RecipesPageProps {
   materials: Material[];
   menuItems: MenuItem[];
   units: Unit[];
-  onCreateRecipe: (data: { code: string; name: string; recipe_type: string }) => Promise<number | null>;
+  onCreateRecipe: (data: { code: string; name: string; recipe_type: string; output_material_id?: number | null; output_unit_id?: number | null }) => Promise<number | null>;
   onViewRecipe: (recipe: Recipe) => void;
   onDeleteRecipe: (id: number) => void;
   onUpdateRecipe: (id: number, data: { name: string; recipe_type: string; output_qty: number }) => void;
@@ -162,6 +162,8 @@ export function RecipesPage({
   const [newRecipeName, setNewRecipeName] = useState("");
   const [newRecipeCode, setNewRecipeCode] = useState("");
   const [newRecipeType, setNewRecipeType] = useState("");
+  const [newOutputMaterialId, setNewOutputMaterialId] = useState("");
+  const [newOutputUnitId, setNewOutputUnitId] = useState("");
   const [creatingRecipe, setCreatingRecipe] = useState(false);
   const [guidedRecipeId, setGuidedRecipeId] = useState<number | null>(null);
 
@@ -518,10 +520,18 @@ export function RecipesPage({
 
     setCreatingRecipe(true);
     try {
-      const newId = await onCreateRecipe({ code: newRecipeCode, name: newRecipeName.trim(), recipe_type: newRecipeType });
+      const newId = await onCreateRecipe({
+        code: newRecipeCode,
+        name: newRecipeName.trim(),
+        recipe_type: newRecipeType,
+        output_material_id: newOutputMaterialId ? parseInt(newOutputMaterialId) : null,
+        output_unit_id: newOutputUnitId ? parseInt(newOutputUnitId) : null,
+      });
       if (newId) {
         setPendingRecipeId(newId);
         setNewRecipeName("");
+        setNewOutputMaterialId("");
+        setNewOutputUnitId("");
       }
       const nextCode = await invoke<string>("generate_recipe_code");
       setNewRecipeCode(nextCode);
@@ -844,7 +854,7 @@ export function RecipesPage({
                   </div>
                   <div className="space-y-2">
                     <Label>配方类型</Label>
-                    <Select value={newRecipeType} onValueChange={setNewRecipeType}>
+                    <Select value={newRecipeType} onValueChange={(v) => { setNewRecipeType(v); setNewOutputMaterialId(""); setNewOutputUnitId(""); }}>
                       <SelectTrigger><SelectValue placeholder="选择配方类型" /></SelectTrigger>
                       <SelectContent>
                         {recipeTypes.map((type) => (
@@ -853,6 +863,39 @@ export function RecipesPage({
                       </SelectContent>
                     </Select>
                   </div>
+                  {newRecipeType === "production" && (
+                    <>
+                      <div className="rounded-lg bg-purple-50 border border-purple-200 px-3 py-2 text-xs text-purple-700">
+                        半成品配方需关联产出材料，生产单完成后将入库到对应材料的批次。
+                      </div>
+                      <div className="space-y-2">
+                        <Label>产出材料 <span className="text-muted-foreground text-xs">（生产后入库的目标材料）</span></Label>
+                        <Select value={newOutputMaterialId} onValueChange={setNewOutputMaterialId}>
+                          <SelectTrigger><SelectValue placeholder="选择产出材料（可选）" /></SelectTrigger>
+                          <SelectContent>
+                            {materials.map((m) => (
+                              <SelectItem key={m.id} value={m.id.toString()}>{m.name} ({m.code})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {newOutputMaterialId && (
+                        <div className="space-y-2">
+                          <Label>产出单位</Label>
+                          <Select value={newOutputUnitId} onValueChange={setNewOutputUnitId}>
+                            <SelectTrigger><SelectValue placeholder="选择单位（可选）" /></SelectTrigger>
+                            <SelectContent>
+                              {materials.find(m => m.id === parseInt(newOutputMaterialId))?.base_unit
+                                ? [materials.find(m => m.id === parseInt(newOutputMaterialId))!.base_unit!].map(u => (
+                                  <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.code})</SelectItem>
+                                ))
+                                : null}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <Button className="w-full" onClick={handleCreateRecipeClick} disabled={creatingRecipe || !newRecipeName.trim()}>
                     <Plus className="mr-2 h-4 w-4" />{creatingRecipe ? "创建中..." : "新增配方"}
                   </Button>
