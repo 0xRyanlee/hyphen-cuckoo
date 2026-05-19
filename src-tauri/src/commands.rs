@@ -302,6 +302,19 @@ pub fn create_supplier_product(state: State<AppState>, req: CreateSupplierProduc
     state.db.create_supplier_product(&req.product_name, &req.supplier_name, &req.channel).map_err(|e| e.to_string())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateSupplierProductRequest {
+    pub id: i64,
+    pub product_name: String,
+    pub supplier_name: String,
+    pub channel: String,
+}
+
+#[tauri::command]
+pub fn update_supplier_product(state: State<AppState>, req: UpdateSupplierProductRequest) -> Result<(), String> {
+    state.db.update_supplier_product(req.id, &req.product_name, &req.supplier_name, &req.channel).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn delete_supplier_product(state: State<AppState>, id: i64) -> Result<(), String> {
     state.db.delete_supplier_product(id).map_err(|e| e.to_string())
@@ -759,8 +772,8 @@ pub fn update_menu_item(state: State<AppState>, id: i64, name: Option<String>, c
 }
 
 #[tauri::command]
-pub fn toggle_menu_item_availability(state: State<AppState>, id: i64, is_available: Option<bool>) -> Result<bool, String> {
-    state.db.toggle_menu_item_availability(id, is_available).map_err(|e| e.to_string())
+pub fn toggle_menu_item_availability(state: State<AppState>, id: i64, is_available: bool) -> Result<bool, String> {
+    state.db.set_menu_item_availability(id, is_available).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

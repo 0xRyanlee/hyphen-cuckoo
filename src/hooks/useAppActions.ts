@@ -537,6 +537,14 @@ export function useAppActions({
     } catch (e) { logError("create_supplier_product", e, "添加商品失败", { product_name: data.product_name }); }
   };
 
+  const handleUpdateSupplierProduct = async (id: number, data: { product_name: string; supplier_name: string; channel: string }) => {
+    try {
+      await invoke("update_supplier_product", { req: { id, ...data } });
+      toast.success("商品已更新");
+      loadData();
+    } catch (e) { logError("update_supplier_product", e, "更新商品失败", { id }); }
+  };
+
   const handleDeleteSupplierProduct = async (id: number) => {
     try { await invoke("delete_supplier_product", { id }); toast.success("商品已删除"); loadData(); }
     catch (e) { logError("delete_supplier_product", e, "删除商品失败", { id }); }
@@ -671,7 +679,7 @@ export function useAppActions({
     // 日常支出
     handleCreateExpense, handleUpdateExpense, handleDeleteExpense,
     // 供應商商品
-    handleCreateSupplierProduct, handleDeleteSupplierProduct,
+    handleCreateSupplierProduct, handleUpdateSupplierProduct, handleDeleteSupplierProduct,
     // 批次
     handleCreateBatch, handleAdjustInventory, handleRecordWastage, handleDeleteBatch,
     // KDS

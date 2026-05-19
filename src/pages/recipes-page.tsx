@@ -83,13 +83,15 @@ interface Material {
   base_unit_id: number;
   tags: { id: number; code: string; name: string; color?: string }[];
   category?: { id: number; code: string; name: string };
-  base_unit?: { id: number; code: string; name: string };
+  base_unit?: { id: number; code: string; name: string; unit_type: string; ratio_to_base: number };
 }
 
 interface Unit {
   id: number;
   code: string;
   name: string;
+  unit_type: string;
+  ratio_to_base: number;
 }
 
 interface RecipesPageProps {
@@ -245,6 +247,15 @@ export function RecipesPage({
       .then(setSelectedRecipeUsageCount)
       .catch(() => setSelectedRecipeUsageCount(null));
   }, [activeRecipe?.recipe?.id]);
+
+  // 選擇物料後自動設定單位，並限制只顯示同 unit_type 的單位
+  const quickAddCompatibleUnits = (() => {
+    if (!quickAddMaterial.startsWith("m_")) return units;
+    const materialId = parseInt(quickAddMaterial.substring(2), 10);
+    const material = materials.find((item) => item.id === materialId);
+    if (!material?.base_unit?.unit_type) return units;
+    return units.filter((u) => u.unit_type === material.base_unit!.unit_type);
+  })();
 
   useEffect(() => {
     if (!quickAddMaterial.startsWith("m_")) return;
@@ -1071,7 +1082,7 @@ export function RecipesPage({
                     <Select value={quickAddUnit} onValueChange={setQuickAddUnit}>
                       <SelectTrigger className="w-24"><SelectValue placeholder="单位" /></SelectTrigger>
                       <SelectContent>
-                        {units.map((u) => <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>)}
+                        {quickAddCompatibleUnits.map((u) => <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     <Input className="w-16" type="number" placeholder="0" value={quickAddWastage} onChange={(e) => setQuickAddWastage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveQuickAdd()} />

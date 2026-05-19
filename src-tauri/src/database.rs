@@ -1919,6 +1919,15 @@ impl Database {
         Ok(conn.last_insert_rowid())
     }
 
+    pub fn update_supplier_product(&self, id: i64, product_name: &str, supplier_name: &str, channel: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE supplier_products SET product_name = ?1, supplier_name = ?2, channel = ?3 WHERE id = ?4",
+            params![product_name, supplier_name, channel, id],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_supplier_product(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("UPDATE supplier_products SET is_active = 0 WHERE id = ?1", params![id])?;
@@ -2758,12 +2767,13 @@ impl Database {
         Ok(())
     }
 
-    pub fn toggle_menu_item_availability(&self, id: i64, is_available: Option<bool>) -> Result<bool> {
+    pub fn set_menu_item_availability(&self, id: i64, is_available: bool) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
-        let current: bool = conn.query_row("SELECT is_available FROM menu_items WHERE id = ?1", params![id], |row| row.get::<_, i32>(0).map(|v| v != 0))?;
-        let next = is_available.unwrap_or(!current);
-        conn.execute("UPDATE menu_items SET is_available = ?1 WHERE id = ?2", params![if next { 1 } else { 0 }, id])?;
-        Ok(next)
+        conn.execute(
+            "UPDATE menu_items SET is_available = ?1 WHERE id = ?2",
+            params![if is_available { 1 } else { 0 }, id],
+        )?;
+        Ok(is_available)
     }
 
     pub fn batch_toggle_menu_item_availability(&self, ids: &[i64], is_available: bool) -> Result<usize> {

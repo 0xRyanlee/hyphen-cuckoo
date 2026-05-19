@@ -165,6 +165,7 @@ pub fn run() {
             // 供應商商品
             commands::get_supplier_products,
             commands::create_supplier_product,
+            commands::update_supplier_product,
             commands::delete_supplier_product,
             commands::get_order_cost,
             commands::update_menu_item,

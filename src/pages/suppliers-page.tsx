@@ -28,6 +28,7 @@ interface SuppliersPageProps {
   onUpdateSupplier: (id: number, data: { name?: string; phone?: string | null; contact_person?: string | null; address?: string | null; note?: string | null }) => void;
   onDeleteSupplier: (id: number) => void;
   onCreateSupplierProduct: (data: { product_name: string; supplier_name: string; channel: string }) => void;
+  onUpdateSupplierProduct: (id: number, data: { product_name: string; supplier_name: string; channel: string }) => void;
   onDeleteSupplierProduct: (id: number) => void;
   searchQuery?: string;
 }
@@ -39,6 +40,7 @@ export function SuppliersPage({
   onUpdateSupplier,
   onDeleteSupplier,
   onCreateSupplierProduct,
+  onUpdateSupplierProduct,
   onDeleteSupplierProduct,
   searchQuery,
 }: SuppliersPageProps) {
@@ -58,6 +60,10 @@ export function SuppliersPage({
 
   const [deleteConfirm, setDeleteConfirm] = useState<Supplier | null>(null);
   const [deleteProductConfirm, setDeleteProductConfirm] = useState<SupplierProduct | null>(null);
+  const [editProduct, setEditProduct] = useState<SupplierProduct | null>(null);
+  const [editProductName, setEditProductName] = useState("");
+  const [editProductSupplier, setEditProductSupplier] = useState("");
+  const [editProductChannel, setEditProductChannel] = useState("local");
 
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [newProductName, setNewProductName] = useState("");
@@ -178,9 +184,14 @@ export function SuppliersPage({
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteProductConfirm(p)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditProduct(p); setEditProductName(p.product_name); setEditProductSupplier(p.supplier_name); setEditProductChannel(p.channel); }}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteProductConfirm(p)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -362,6 +373,42 @@ export function SuppliersPage({
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirm(null)}>取消</Button>
             <Button variant="destructive" onClick={() => { if (deleteConfirm) { onDeleteSupplier(deleteConfirm.id); } setDeleteConfirm(null); }}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 编辑商品 */}
+      <Dialog open={!!editProduct} onOpenChange={() => setEditProduct(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>编辑采购商品</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>商品名称</Label>
+              <Input value={editProductName} onChange={(e) => setEditProductName(e.target.value)} placeholder="商品名称" />
+            </div>
+            <div className="space-y-2">
+              <Label>供应商</Label>
+              <Input value={editProductSupplier} onChange={(e) => setEditProductSupplier(e.target.value)} placeholder="供应商名称" />
+            </div>
+            <div className="space-y-2">
+              <Label>渠道</Label>
+              <Select value={editProductChannel} onValueChange={setEditProductChannel}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">本地</SelectItem>
+                  <SelectItem value="online">网络</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditProduct(null)}>取消</Button>
+            <Button onClick={() => {
+              if (editProduct && editProductName.trim() && editProductSupplier.trim()) {
+                onUpdateSupplierProduct(editProduct.id, { product_name: editProductName.trim(), supplier_name: editProductSupplier.trim(), channel: editProductChannel });
+                setEditProduct(null);
+              }
+            }}><Save className="mr-1 h-4 w-4" />保存</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
