@@ -1692,10 +1692,10 @@ impl Database {
 
     pub fn update_material(&self, id: i64, name: Option<&str>, category_id: Option<i64>, shelf_life_days: Option<i32>, min_qty: Option<f64>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        if let Some(n) = name { conn.execute("UPDATE materials SET name = ?1 WHERE id = ?2", params![n, id])?; }
-        if let Some(c) = category_id { conn.execute("UPDATE materials SET category_id = ?1 WHERE id = ?2", params![c, id])?; }
-        if let Some(s) = shelf_life_days { conn.execute("UPDATE materials SET shelf_life_days = ?1 WHERE id = ?2", params![s, id])?; }
-        if let Some(q) = min_qty { conn.execute("UPDATE materials SET min_qty = ?1 WHERE id = ?2", params![q, id])?; }
+        conn.execute(
+            "UPDATE materials SET name = COALESCE(?1, name), category_id = COALESCE(?2, category_id), shelf_life_days = COALESCE(?3, shelf_life_days), min_qty = COALESCE(?4, min_qty), updated_at = datetime('now') WHERE id = ?5",
+            params![name, category_id, shelf_life_days, min_qty, id],
+        )?;
         Ok(())
     }
 
@@ -2486,12 +2486,52 @@ impl Database {
     }
 
     pub fn submit_order_full(&self, order_id: i64) -> Result<Vec<String>> {
-        {
-            let conn = self.conn.lock().unwrap();
-            conn.execute("UPDATE orders SET status = 'submitted', updated_at = datetime('now') WHERE id = ?1", params![order_id])?;
-        } // lock released before calling create_kitchen_tickets (which also locks)
-        self.create_kitchen_tickets(order_id)?;
-        Ok(Vec::new())
+        let conn = self.conn.lock().unwrap();
+        // Prevent double-submission
+        let current_status: String = conn.query_row(
+            "SELECT status FROM orders WHERE id = ?1", params![order_id], |r| r.get(0),
+        )?;
+        if current_status != "pending" {
+            return Ok(Vec::new());
+        }
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            conn.execute(
+                "UPDATE orders SET status = 'submitted', updated_at = datetime('now') WHERE id = ?1",
+                params![order_id],
+            )?;
+            // Inline kitchen ticket creation inside the same transaction
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT smi.station_id FROM order_items oi
+                 JOIN station_menu_items smi ON oi.menu_item_id = smi.menu_item_id
+                 WHERE oi.order_id = ?1"
+            )?;
+            let stations: Vec<i64> = stmt.query_map(params![order_id], |r| r.get(0))?
+                .collect::<Result<Vec<_>>>()?;
+            if stations.is_empty() {
+                if let Ok(default_station) = conn.query_row(
+                    "SELECT id FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_no LIMIT 1",
+                    [], |r| r.get::<_, i64>(0),
+                ) {
+                    conn.execute(
+                        "INSERT INTO kitchen_tickets (order_id, station_id, status) VALUES (?1, ?2, 'pending')",
+                        params![order_id, default_station],
+                    )?;
+                }
+            } else {
+                for station_id in stations {
+                    conn.execute(
+                        "INSERT INTO kitchen_tickets (order_id, station_id, status) VALUES (?1, ?2, 'pending')",
+                        params![order_id, station_id],
+                    )?;
+                }
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(Vec::new()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
     pub fn get_inventory_summary(&self) -> Result<Vec<InventorySummary>> {
@@ -2538,7 +2578,7 @@ impl Database {
 
     pub fn create_inventory_txn(&self, txn_type: &str, ref_type: Option<&str>, ref_id: Option<i64>, lot_id: Option<i64>, material_id: i64, state_id: Option<i64>, qty_delta: f64, cost_delta: Option<f64>, operator: Option<&str>, note: Option<&str>) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
-        let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
         conn.execute(
             "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, state_id, qty_delta, cost_delta, operator, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![txn_no, txn_type, ref_type, ref_id, lot_id, material_id, state_id, qty_delta, cost_delta, operator, note],
@@ -2557,6 +2597,7 @@ impl Database {
 
     pub fn delete_inventory_batch(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM inventory_txns WHERE lot_id = ?1", params![id])?;
         conn.execute("DELETE FROM inventory_batches WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -2565,8 +2606,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let (current_qty, material_id): (f64, i64) = conn.query_row(
             "SELECT quantity, material_id FROM inventory_batches WHERE id = ?1",
-            params![batch_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            params![batch_id], |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         if current_qty + qty_delta < 0.0 {
             return Err(rusqlite::Error::InvalidParameterName(
@@ -2574,23 +2614,29 @@ impl Database {
             ));
         }
         let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
-        conn.execute(
-            "INSERT INTO inventory_txns (txn_no, txn_type, lot_id, material_id, qty_delta, operator, note) VALUES (?1, 'adjustment', ?2, ?3, ?4, ?5, ?6)",
-            params![txn_no, batch_id, material_id, qty_delta, operator, note],
-        )?;
-        conn.execute(
-            "UPDATE inventory_batches SET quantity = quantity + ?1 WHERE id = ?2",
-            params![qty_delta, batch_id],
-        )?;
-        Ok(())
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            conn.execute(
+                "INSERT INTO inventory_txns (txn_no, txn_type, lot_id, material_id, qty_delta, operator, note) VALUES (?1, 'adjustment', ?2, ?3, ?4, ?5, ?6)",
+                params![txn_no, batch_id, material_id, qty_delta, operator, note],
+            )?;
+            conn.execute(
+                "UPDATE inventory_batches SET quantity = quantity + ?1 WHERE id = ?2",
+                params![qty_delta, batch_id],
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
     pub fn record_wastage(&self, batch_id: i64, qty: f64, reason: Option<&str>, operator: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let (current_qty, material_id): (f64, i64) = conn.query_row(
             "SELECT quantity, material_id FROM inventory_batches WHERE id = ?1",
-            params![batch_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            params![batch_id], |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         if qty > current_qty {
             return Err(rusqlite::Error::InvalidParameterName(
@@ -2598,12 +2644,22 @@ impl Database {
             ));
         }
         let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
-        conn.execute(
-            "INSERT INTO inventory_txns (txn_no, txn_type, lot_id, material_id, qty_delta, operator, note) VALUES (?1, 'wastage', ?2, ?3, ?4, ?5, ?6)",
-            params![txn_no, batch_id, material_id, -qty, operator, reason],
-        )?;
-        conn.execute("UPDATE inventory_batches SET quantity = quantity - ?1 WHERE id = ?2", params![qty, batch_id])?;
-        Ok(())
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            conn.execute(
+                "INSERT INTO inventory_txns (txn_no, txn_type, lot_id, material_id, qty_delta, operator, note) VALUES (?1, 'wastage', ?2, ?3, ?4, ?5, ?6)",
+                params![txn_no, batch_id, material_id, -qty, operator, reason],
+            )?;
+            conn.execute(
+                "UPDATE inventory_batches SET quantity = quantity - ?1 WHERE id = ?2",
+                params![qty, batch_id],
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
     pub fn update_menu_item(&self, id: i64, name: Option<&str>, category_id: Option<i64>, recipe_id: Option<i64>, sales_price: Option<f64>) -> Result<()> {
@@ -2637,7 +2693,12 @@ impl Database {
 
     pub fn delete_menu_item(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("UPDATE menu_items SET is_available = 0 WHERE id = ?1", params![id])?;
+        conn.execute("DELETE FROM menu_item_specs WHERE menu_item_id = ?1", params![id])?;
+        conn.execute("DELETE FROM station_menu_items WHERE menu_item_id = ?1", params![id])?;
+        let affected = conn.execute("DELETE FROM menu_items WHERE id = ?1", params![id])?;
+        if affected == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
         Ok(())
     }
 
@@ -2654,6 +2715,7 @@ impl Database {
 
     pub fn delete_menu_category(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE menu_items SET category_id = NULL WHERE category_id = ?1", params![id])?;
         conn.execute("UPDATE menu_categories SET is_active = 0 WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -3463,7 +3525,7 @@ impl Database {
 
     pub fn create_purchase_order(&self, supplier_id: Option<i64>, expected_date: Option<&str>) -> Result<String> {
         let conn = self.conn.lock().unwrap();
-        let po_no = format!("PO{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let po_no = format!("PO{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
         conn.execute("INSERT INTO purchase_orders (po_no, supplier_id, expected_date) VALUES (?1, ?2, ?3)", params![po_no, supplier_id, expected_date])?;
         Ok(po_no)
     }
@@ -3490,44 +3552,42 @@ impl Database {
 
     pub fn receive_purchase_order(&self, po_id: i64, operator: Option<&str>) -> Result<Vec<(i64, String, String, String, f64, Option<String>)>> {
         let conn = self.conn.lock().unwrap();
+        // Read items before opening the write transaction
         let mut stmt = conn.prepare("SELECT poi.id, poi.material_id, poi.qty, poi.unit_id, poi.cost_per_unit, po.supplier_id FROM purchase_order_items poi JOIN purchase_orders po ON poi.po_id = po.id WHERE poi.po_id = ?1 AND poi.received_qty < poi.qty")?;
         let items: Vec<(i64, i64, f64, Option<i64>, f64, Option<i64>)> = stmt.query_map(params![po_id], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
         })?.collect::<Result<Vec<_>>>()?;
-        let mut batch_details = Vec::new();
-        for (_item_id, material_id, qty, _unit_id, cost_per_unit, supplier_id) in &items {
-            let lot_no = format!("LOT_PO_{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
-            let expiry_date: Option<String> = None;
-            let production_date: Option<String> = None;
-            conn.execute("INSERT INTO inventory_batches (material_id, state_id, lot_no, supplier_id, brand, spec, quantity, original_qty, cost_per_unit, production_date, expiry_date, ice_coating_rate, quality_rate, seasonal_factor) VALUES (?1, NULL, ?2, ?3, NULL, NULL, ?4, ?4, ?5, ?6, ?7, NULL, NULL, 1.0)", params![material_id, lot_no, supplier_id, qty, cost_per_unit, production_date, expiry_date])?;
-            let batch_id = conn.last_insert_rowid();
-
-            // 記錄成本歷史（如果單價變化）
-            if let Ok(last_cost) = conn.query_row::<f64, _, _>(
-                "SELECT cost_per_unit FROM material_cost_history WHERE material_id = ?1 ORDER BY created_at DESC LIMIT 1",
-                params![material_id],
-                |row| row.get(0),
-            ) {
-                if (last_cost - cost_per_unit).abs() > 0.001 {
+        conn.execute_batch("BEGIN")?;
+        let result: Result<Vec<(i64, String, String, String, f64, Option<String>)>> = (|| {
+            let mut batch_details = Vec::new();
+            for (_item_id, material_id, qty, _unit_id, cost_per_unit, supplier_id) in &items {
+                let lot_no = format!("LOT_PO_{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
+                conn.execute("INSERT INTO inventory_batches (material_id, state_id, lot_no, supplier_id, brand, spec, quantity, original_qty, cost_per_unit, production_date, expiry_date, ice_coating_rate, quality_rate, seasonal_factor) VALUES (?1, NULL, ?2, ?3, NULL, NULL, ?4, ?4, ?5, NULL, NULL, NULL, NULL, 1.0)", params![material_id, lot_no, supplier_id, qty, cost_per_unit])?;
+                let batch_id = conn.last_insert_rowid();
+                // Record cost history if price changed
+                let last_cost = conn.query_row::<f64, _, _>(
+                    "SELECT cost_per_unit FROM material_cost_history WHERE material_id = ?1 ORDER BY created_at DESC LIMIT 1",
+                    params![material_id], |row| row.get(0),
+                ).ok();
+                if last_cost.map_or(true, |lc| (lc - cost_per_unit).abs() > 0.001) {
                     conn.execute("INSERT INTO material_cost_history (material_id, cost_per_unit, source_type, source_id, batch_no, operator) VALUES (?1, ?2, 'purchase', ?3, ?4, ?5)", params![material_id, cost_per_unit, po_id, lot_no, operator])?;
                 }
-            } else {
-                conn.execute("INSERT INTO material_cost_history (material_id, cost_per_unit, source_type, source_id, batch_no, operator) VALUES (?1, ?2, 'purchase', ?3, ?4, ?5)", params![material_id, cost_per_unit, po_id, lot_no, operator])?;
+                let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+                // Use batch_id variable (not last_insert_rowid() SQL) to avoid stale rowid after cost_history insert
+                conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'purchase_in', 'purchase_order', ?2, ?3, ?4, ?5, 0.0, ?6, '採購入庫')", params![txn_no, po_id, batch_id, material_id, qty, operator])?;
+                conn.execute("UPDATE purchase_order_items SET received_qty = qty WHERE id = ?1", params![_item_id])?;
+                let unit: String = conn.query_row("SELECT u.name FROM units u JOIN materials m ON m.base_unit_id = u.id WHERE m.id = ?1", params![material_id], |r| r.get(0)).unwrap_or_else(|_| "份".to_string());
+                let material_name: String = conn.query_row("SELECT name FROM materials WHERE id = ?1", params![material_id], |r| r.get(0)).unwrap_or_default();
+                let supplier_name: Option<String> = supplier_id.and_then(|sid| conn.query_row("SELECT name FROM suppliers WHERE id = ?1", params![sid], |r| r.get(0)).ok());
+                batch_details.push((batch_id, lot_no.clone(), material_name, unit, *qty, supplier_name));
             }
-
-            let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
-            conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'purchase_in', 'purchase_order', ?2, last_insert_rowid(), ?3, ?4, 0.0, ?5, '採購入庫')", params![txn_no, po_id, material_id, qty, operator])?;
-            conn.execute("UPDATE purchase_order_items SET received_qty = qty WHERE id = ?1", params![_item_id])?;
-            let mut unit_stmt = conn.prepare("SELECT u.name FROM units u JOIN materials m ON m.base_unit_id = u.id WHERE m.id = ?1")?;
-            let unit: String = unit_stmt.query_row(params![material_id], |row| row.get(0)).unwrap_or_else(|_| "份".to_string());
-            let mut name_stmt = conn.prepare("SELECT name FROM materials WHERE id = ?1")?;
-            let material_name: String = name_stmt.query_row(params![material_id], |row| row.get(0)).unwrap_or_default();
-            let mut supp_stmt = conn.prepare("SELECT s.name FROM suppliers s WHERE s.id = ?1")?;
-            let supplier_name: Option<String> = supp_stmt.query_row(params![supplier_id], |row| row.get(0)).ok();
-            batch_details.push((batch_id, lot_no.clone(), material_name, unit, *qty, supplier_name));
+            conn.execute("UPDATE purchase_orders SET status = 'received' WHERE id = ?1", params![po_id])?;
+            Ok(batch_details)
+        })();
+        match result {
+            Ok(val) => { conn.execute_batch("COMMIT")?; Ok(val) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
-        conn.execute("UPDATE purchase_orders SET status = 'received' WHERE id = ?1", params![po_id])?;
-        Ok(batch_details)
     }
 
     // ==================== 生產單 ====================
@@ -3560,7 +3620,7 @@ impl Database {
 
     pub fn create_production_order(&self, recipe_id: i64, planned_qty: f64, operator: Option<&str>) -> Result<String> {
         let conn = self.conn.lock().unwrap();
-        let production_no = format!("PRD{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let production_no = format!("PRD{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
         conn.execute("INSERT INTO production_orders (production_no, recipe_id, planned_qty, operator) VALUES (?1, ?2, ?3, ?4)", params![production_no, recipe_id, planned_qty, operator])?;
         let prod_id = conn.last_insert_rowid();
         let mut recipe_stmt = conn.prepare("SELECT ref_id, qty, unit_id FROM recipe_items WHERE recipe_id = ?1 AND item_type = 'material'")?;
@@ -3582,37 +3642,49 @@ impl Database {
 
     pub fn complete_production_order(&self, production_id: i64, actual_qty: f64, operator: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("UPDATE production_orders SET status = 'completed', completed_at = datetime('now'), actual_qty = ?1 WHERE id = ?2", params![actual_qty, production_id])?;
-        let mut stmt = conn.prepare("SELECT poi.id, poi.material_id, poi.planned_qty FROM production_order_items poi WHERE poi.production_id = ?1")?;
-        let items: Vec<(i64, i64, f64)> = stmt.query_map(params![production_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        // Read consumed items and recipe info before opening transaction
+        let mut stmt = conn.prepare("SELECT poi.material_id, poi.planned_qty FROM production_order_items poi WHERE poi.production_id = ?1")?;
+        let items: Vec<(i64, f64)> = stmt.query_map(params![production_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
         })?.collect::<Result<Vec<_>>>()?;
-        for (_item_id, material_id, qty) in items {
-            let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
-            conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'production_out', 'production_order', ?2, ?3, ?4, 0.0, ?5, '生産耗用')", params![txn_no, production_id, material_id, -qty, operator])?;
-        }
-        
-        // 产出半成品，计算效期
-        let recipe_id: i64 = conn.query_row("SELECT recipe_id FROM production_orders WHERE id = ?1", params![production_id], |row| row.get(0))?;
-        let lot_no = format!("LOT{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
-        
-        // 获取配方的保质期天数
+        let (recipe_id, output_material_id): (i64, Option<i64>) = conn.query_row(
+            "SELECT prd.recipe_id, r.output_material_id FROM production_orders prd JOIN recipes r ON prd.recipe_id = r.id WHERE prd.id = ?1",
+            params![production_id], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
         let shelf_life_days: Option<i64> = conn.query_row(
             "SELECT m.shelf_life_days FROM recipes r JOIN materials m ON r.output_material_id = m.id WHERE r.id = ?1",
-            params![recipe_id],
-            |row| row.get(0),
+            params![recipe_id], |row| row.get(0),
         ).ok().flatten();
-        
-        // 计算到期日
         let expiry_date: Option<String> = shelf_life_days.map(|days| {
             use chrono::Datelike;
             let now = chrono::Local::now();
             let expiry = now + chrono::Duration::days(days);
             format!("{:04}-{:02}-{:02}", expiry.year(), expiry.month(), expiry.day())
         });
-        
-        conn.execute("INSERT INTO inventory_batches (material_id, state_id, lot_no, supplier_id, brand, spec, quantity, original_qty, cost_per_unit, production_date, expiry_date, ice_coating_rate, quality_rate, seasonal_factor) VALUES (?1, NULL, ?2, NULL, NULL, NULL, ?3, ?3, 0.0, datetime('now'), ?4, NULL, NULL, 1.0)", params![recipe_id, lot_no, actual_qty, expiry_date])?;
-Ok(())
+        let output_mid = match output_material_id {
+            Some(mid) => mid,
+            None => return Err(rusqlite::Error::InvalidParameterName(
+                "配方缺少輸出物料，無法完成生産".to_string(),
+            )),
+        };
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            conn.execute(
+                "UPDATE production_orders SET status = 'completed', completed_at = datetime('now'), actual_qty = ?1 WHERE id = ?2",
+                params![actual_qty, production_id],
+            )?;
+            for (material_id, qty) in &items {
+                let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+                conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'production_out', 'production_order', ?2, ?3, ?4, 0.0, ?5, '生産耗用')", params![txn_no, production_id, material_id, -qty, operator])?;
+            }
+            let lot_no = format!("LOT{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+            conn.execute("INSERT INTO inventory_batches (material_id, state_id, lot_no, supplier_id, brand, spec, quantity, original_qty, cost_per_unit, production_date, expiry_date, ice_coating_rate, quality_rate, seasonal_factor) VALUES (?1, NULL, ?2, NULL, NULL, NULL, ?3, ?3, 0.0, datetime('now'), ?4, NULL, NULL, 1.0)", params![output_mid, lot_no, actual_qty, expiry_date])?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
     pub fn delete_production_order(&self, production_id: i64) -> Result<()> {
@@ -3656,7 +3728,7 @@ Ok(())
 
     pub fn create_stocktake(&self, operator: Option<&str>, note: Option<&str>) -> Result<String> {
         let conn = self.conn.lock().unwrap();
-        let stocktake_no = format!("STK{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
+        let stocktake_no = format!("STK{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
         conn.execute("INSERT INTO stocktakes (stocktake_no, operator, note) VALUES (?1, ?2, ?3)", params![stocktake_no, operator, note])?;
         let stocktake_id = conn.last_insert_rowid();
         let mut batch_stmt = conn.prepare("SELECT id, material_id, quantity FROM inventory_batches WHERE quantity > 0")?;
@@ -3677,19 +3749,26 @@ Ok(())
 
     pub fn complete_stocktake(&self, stocktake_id: i64, operator: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT sti.id, sti.lot_id, sti.material_id, sti.diff_qty FROM stocktake_items sti WHERE sti.stocktake_id = ?1 AND ABS(sti.diff_qty) > 0.001")?;
-        let items: Vec<(i64, Option<i64>, i64, f64)> = stmt.query_map(params![stocktake_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        let mut stmt = conn.prepare("SELECT sti.lot_id, sti.material_id, sti.diff_qty FROM stocktake_items sti WHERE sti.stocktake_id = ?1 AND ABS(sti.diff_qty) > 0.001")?;
+        let items: Vec<(Option<i64>, i64, f64)> = stmt.query_map(params![stocktake_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
         })?.collect::<Result<Vec<_>>>()?;
-        for (_item_id, lot_id, material_id, diff_qty) in items {
-            let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
-            if let Some(lot) = lot_id {
-                conn.execute("UPDATE inventory_batches SET quantity = quantity + ?1 WHERE id = ?2", params![diff_qty, lot])?;
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            for (lot_id, material_id, diff_qty) in &items {
+                let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+                if let Some(lot) = lot_id {
+                    conn.execute("UPDATE inventory_batches SET quantity = quantity + ?1 WHERE id = ?2", params![diff_qty, lot])?;
+                }
+                conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'stocktake_adjust', 'stocktake', ?2, ?3, ?4, ?5, 0.0, ?6, '盤點調整')", params![txn_no, stocktake_id, lot_id, material_id, diff_qty, operator])?;
             }
-            conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'stocktake_adjust', 'stocktake', ?2, ?3, ?4, ?5, 0.0, ?6, '盤點調整')", params![txn_no, stocktake_id, lot_id, material_id, diff_qty, operator])?;
+            conn.execute("UPDATE stocktakes SET status = 'completed', completed_at = datetime('now') WHERE id = ?1", params![stocktake_id])?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
-        conn.execute("UPDATE stocktakes SET status = 'completed', completed_at = datetime('now') WHERE id = ?1", params![stocktake_id])?;
-        Ok(())
     }
 
     pub fn delete_stocktake(&self, stocktake_id: i64) -> Result<()> {

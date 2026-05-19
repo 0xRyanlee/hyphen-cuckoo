@@ -299,7 +299,7 @@ export function useAppActions({
   };
 
   const handleUpdateMenuCategory = async (id: number, name: string) => {
-    try { await invoke("update_menu_category", { id, name, sortNo: 0 }); toast.success("分类已更新"); loadData(); }
+    try { await invoke("update_menu_category", { id, name, sortNo: null }); toast.success("分类已更新"); loadData(); }
     catch (e) { logError("update_menu_category", e, "更新分类失败", { id }); }
   };
 
@@ -329,7 +329,7 @@ export function useAppActions({
       }
       await invoke("submit_order", { orderId });
       toast.success("订单已提交");
-      loadData();
+      await loadData();
       return true;
     } catch (e) { logError("pos_create_and_submit", e, "提交订单失败", { cart_size: cart.length, dineType }); return false; }
   };
@@ -382,17 +382,17 @@ export function useAppActions({
   };
 
   const handleCreateSpec = async (data: { menu_item_id: number; spec_code: string; spec_name: string; price_delta: number; qty_multiplier: number }) => {
-    try { await invoke("create_menu_item_spec", { req: data }); toast.success("规格已创建"); }
+    try { await invoke("create_menu_item_spec", { req: data }); toast.success("规格已创建"); await loadData(); }
     catch (e) { logError("create_menu_item_spec", e, "创建规格失败", { menu_item_id: data.menu_item_id }); }
   };
 
   const handleUpdateSpec = async (id: number, data: { spec_code?: string; spec_name?: string; price_delta?: number; qty_multiplier?: number }) => {
-    try { await invoke("update_menu_item_spec", { id, specCode: data.spec_code || null, specName: data.spec_name || null, priceDelta: data.price_delta, qtyMultiplier: data.qty_multiplier }); toast.success("规格已更新"); }
+    try { await invoke("update_menu_item_spec", { id, specCode: data.spec_code || null, specName: data.spec_name || null, priceDelta: data.price_delta, qtyMultiplier: data.qty_multiplier }); toast.success("规格已更新"); await loadData(); }
     catch (e) { logError("update_menu_item_spec", e, "更新规格失败", { id }); }
   };
 
   const handleDeleteSpec = async (id: number) => {
-    try { await invoke("delete_menu_item_spec", { id }); toast.success("规格已删除"); }
+    try { await invoke("delete_menu_item_spec", { id }); toast.success("规格已删除"); await loadData(); }
     catch (e) { logError("delete_menu_item_spec", e, "删除规格失败", { id }); }
   };
 

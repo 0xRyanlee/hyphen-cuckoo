@@ -22,6 +22,13 @@ export interface Recipe {
   name: string;
   recipe_type: string;
   output_qty: number;
+  output_material_id: number | null;
+  output_state_id: number | null;
+  output_unit_id: number | null;
+  cost: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 export interface RecipeType {
   id: number;
@@ -65,13 +72,15 @@ export interface RecipeCostResult {
 }
 export interface MenuItem {
   id: number;
+  code: string | null;
   name: string;
   sales_price: number;
   is_available: boolean;
   recipe_id: number | null;
   category_id: number | null;
+  created_at: string;
 }
-export interface MenuCategory { id: number; name: string; }
+export interface MenuCategory { id: number; name: string; sort_no: number; is_active: boolean; }
 export interface OrderItem {
   id: number;
   order_id: number;
@@ -177,7 +186,11 @@ export interface InventoryTxn {
   ref_id: number | null;
   lot_id: number | null;
   material_id: number;
+  state_id: number | null;
   qty_delta: number;
+  cost_delta: number | null;
+  operator: string | null;
+  note: string | null;
   created_at: string;
 }
 export interface Supplier {

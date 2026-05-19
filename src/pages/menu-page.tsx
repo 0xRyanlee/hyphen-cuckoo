@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Plus, FileText, ToggleRight, ToggleLeft, Link, Pencil, Trash2, Edit2, Tag, Save, X } from "lucide-react";
+import { Plus, FileText, ToggleRight, ToggleLeft, Link, Pencil, Trash2, Edit2, Tag, Save, X, EyeOff, Eye } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -47,7 +47,9 @@ export function MenuPage({
   searchQuery,
 }: MenuPageProps) {
   const navigate = useNavigate();
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const filteredMenuItems = menuItems.filter((item) => {
+    if (!showUnavailable && !item.is_available) return false;
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return item.name.toLowerCase().includes(q) || menuCategories.find((c) => c.id === item.category_id)?.name.toLowerCase().includes(q);
@@ -210,15 +212,19 @@ export function MenuPage({
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2"><FileText className="h-4 w-4" />菜单商品</CardTitle>
-                <CardDescription>共 {filteredMenuItems.length} 个商品{filteredMenuItems.length !== menuItems.length ? `（篩選自 ${menuItems.length} 个）` : ""}</CardDescription>
+                <CardDescription>共 {filteredMenuItems.length} 个商品{menuItems.filter(i => !i.is_available).length > 0 && !showUnavailable ? `（${menuItems.filter(i => !i.is_available).length} 个停售已隐藏）` : ""}</CardDescription>
               </div>
-              {selectedItems.length > 0 && onBatchToggleAvailability && (
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setShowUnavailable(v => !v)} title={showUnavailable ? "隐藏停售商品" : "显示停售商品"}>
+                  {showUnavailable ? <EyeOff className="h-4 w-4 mr-1" /> : <Eye className="h-4 w-4 mr-1" />}
+                  {showUnavailable ? "隐藏停售" : "显示停售"}
+                </Button>
+                {selectedItems.length > 0 && onBatchToggleAvailability && (<>
                   <span className="text-sm text-muted-foreground self-center">已选 {selectedItems.length} 项</span>
                   <Button size="sm" variant="outline" onClick={handleBatchEnable}><ToggleRight className="h-4 w-4 mr-1" />批量上架</Button>
                   <Button size="sm" variant="outline" onClick={handleBatchDisable}><ToggleLeft className="h-4 w-4 mr-1" />批量下架</Button>
-                </div>
-              )}
+                </>)}
+              </div>
             </div>
           </CardHeader>
           <CardContent>

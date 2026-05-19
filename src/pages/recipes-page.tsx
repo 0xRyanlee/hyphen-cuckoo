@@ -22,6 +22,13 @@ interface Recipe {
   name: string;
   recipe_type: string;
   output_qty: number;
+  output_material_id: number | null;
+  output_state_id: number | null;
+  output_unit_id: number | null;
+  cost: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 interface RecipeType {
@@ -1032,7 +1039,7 @@ export function RecipesPage({
                   <div className="flex items-center gap-2 mt-2 p-2 border rounded-md bg-muted/30">
                     <Select value={quickAddMaterial} onValueChange={setQuickAddMaterial}>
                       <SelectTrigger className="flex-1"><SelectValue placeholder="选择材料 / 半成品" /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="max-h-64">
                         <SelectGroup>
                           <SelectLabel>原材料</SelectLabel>
                           {materials.map((m) => <SelectItem key={`m_${m.id}`} value={`m_${m.id}`}>{m.name}</SelectItem>)}

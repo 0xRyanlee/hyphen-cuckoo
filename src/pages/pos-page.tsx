@@ -29,11 +29,13 @@ interface MenuCategory {
 
 interface MenuItem {
   id: number;
+  code: string | null;
   name: string;
   sales_price: number;
   is_available: boolean;
   recipe_id: number | null;
   category_id: number | null;
+  created_at: string;
 }
 
 interface MenuItemSpec {
@@ -326,7 +328,7 @@ export function POSPage({
         </Card>
       </div>
 
-      <Card className="w-96 flex flex-col">
+      <Card className="w-96 flex flex-col min-h-0">
         <CardHeader className="py-3 px-4 flex-shrink-0">
           <CardTitle className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" />
