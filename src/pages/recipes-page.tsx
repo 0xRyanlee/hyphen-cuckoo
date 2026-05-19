@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, ChefHat, Trash2, Pencil, Save, X, ChevronRight, ChevronDown } from "lucide-react";
+import { Plus, ChefHat, Trash2, Pencil, Save, X, ChevronRight, ChevronDown, Network } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
@@ -93,6 +93,9 @@ interface Unit {
   unit_type: string;
   ratio_to_base: number;
 }
+
+interface DependentRef { id: number; name: string; }
+interface RecipeDependents { menu_items: DependentRef[]; parent_recipes: DependentRef[]; }
 
 interface RecipesPageProps {
   recipes: Recipe[];
@@ -220,6 +223,15 @@ export function RecipesPage({
   const [deleteItemConfirm, setDeleteItemConfirm] = useState<number | null>(null);
   const [deleteRecipeConfirm, setDeleteRecipeConfirm] = useState<number | null>(null);
   const [warningDialog, setWarningDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [dependsDialog, setDependsDialog] = useState<{ recipeId: number; recipeName: string } | null>(null);
+  const [dependents, setDependents] = useState<RecipeDependents | null>(null);
+
+  useEffect(() => {
+    if (!dependsDialog) { setDependents(null); return; }
+    invoke<RecipeDependents>("get_recipe_dependents", { recipeId: dependsDialog.recipeId })
+      .then(setDependents)
+      .catch(() => setDependents({ menu_items: [], parent_recipes: [] }));
+  }, [dependsDialog]);
 
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set<number>());
   const [subRecipes, setSubRecipes] = useState<Record<number, RecipeItem[]>>({});
@@ -795,6 +807,7 @@ export function RecipesPage({
                                 <Button variant="outline" size="sm" onClick={() => goToMenuBinding(r)}>去绑定菜单</Button>
                               )}
                               <Button variant="ghost" size="sm" onClick={() => handleSelectRecipe(r)}>查看/编辑</Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" title="查看依赖" onClick={() => setDependsDialog({ recipeId: r.id, recipeName: r.name })}><Network className="h-4 w-4" /></Button>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteRecipeConfirm(r.id)}><Trash2 className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
@@ -1318,6 +1331,60 @@ export function RecipesPage({
           <DialogFooter>
             <Button variant="outline" onClick={() => setWarningDialog(null)}>取消</Button>
             <Button onClick={() => { warningDialog?.onConfirm(); setWarningDialog(null); }}>确定继续</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!dependsDialog} onOpenChange={() => setDependsDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Network className="h-4 w-4 text-blue-500" />
+              依赖视图 — {dependsDialog?.recipeName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <p className="text-sm font-medium mb-2">被哪些菜单商品使用</p>
+              {!dependents ? (
+                <p className="text-sm text-muted-foreground">加载中…</p>
+              ) : dependents.menu_items.length === 0 ? (
+                <p className="text-sm text-muted-foreground">暂无菜单商品引用此配方</p>
+              ) : (
+                <ul className="space-y-1">
+                  {dependents.menu_items.map((item) => (
+                    <li key={item.id} className="text-sm flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">菜单</Badge>
+                      {item.name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <Separator />
+            <div>
+              <p className="text-sm font-medium mb-2">被哪些配方作为子配方引用</p>
+              {!dependents ? (
+                <p className="text-sm text-muted-foreground">加载中…</p>
+              ) : dependents.parent_recipes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">暂无配方将此配方作为半成品引用</p>
+              ) : (
+                <ul className="space-y-1">
+                  {dependents.parent_recipes.map((r) => (
+                    <li key={r.id} className="text-sm flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">配方</Badge>
+                      {r.name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {dependents && dependents.menu_items.length === 0 && dependents.parent_recipes.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-2">该配方未被任何菜单或其他配方引用，可安全删除。</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDependsDialog(null)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

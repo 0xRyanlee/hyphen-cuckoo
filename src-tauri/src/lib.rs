@@ -113,6 +113,8 @@ pub fn run() {
             commands::add_recipe_item,
             commands::calculate_recipe_cost,
             commands::get_recipe_usage_count,
+            commands::get_recipe_dependents,
+            commands::get_material_dependents,
             // 菜單
             commands::get_menu_categories,
             commands::create_menu_category,

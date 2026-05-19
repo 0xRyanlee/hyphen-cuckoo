@@ -1,4 +1,6 @@
 export interface Unit { id: number; code: string; name: string; unit_type: string; ratio_to_base: number; }
+export interface DependentRef { id: number; name: string; }
+export interface RecipeDependents { menu_items: DependentRef[]; parent_recipes: DependentRef[]; }
 export interface MaterialCategory { id: number; code: string; name: string; sort_no: number; is_active: boolean; }
 export interface TagItem { id: number; code: string; name: string; color?: string; }
 export interface Material {

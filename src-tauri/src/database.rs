@@ -2376,6 +2376,42 @@ impl Database {
         Ok(count)
     }
 
+    pub fn get_recipe_dependents(&self, recipe_id: i64) -> Result<(Vec<(i64, String)>, Vec<(i64, String)>)> {
+        let conn = self.conn.lock().unwrap();
+        // Menu items that link to this recipe
+        let mut stmt = conn.prepare(
+            "SELECT mi.id, mi.name FROM menu_items mi WHERE mi.recipe_id = ?1 AND mi.is_active = 1"
+        )?;
+        let menu_items: Vec<(i64, String)> = stmt.query_map(params![recipe_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+
+        // Parent recipes that use this recipe as a sub-recipe
+        let mut stmt2 = conn.prepare(
+            "SELECT r.id, r.name FROM recipes r
+             JOIN recipe_items ri ON ri.recipe_id = r.id
+             WHERE ri.item_type = 'sub_recipe' AND ri.ref_id = ?1"
+        )?;
+        let parent_recipes: Vec<(i64, String)> = stmt2.query_map(params![recipe_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+
+        Ok((menu_items, parent_recipes))
+    }
+
+    pub fn get_material_dependents(&self, material_id: i64) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT r.id, r.name FROM recipes r
+             JOIN recipe_items ri ON ri.recipe_id = r.id
+             WHERE ri.item_type = 'material' AND ri.ref_id = ?1"
+        )?;
+        let recipes: Vec<(i64, String)> = stmt.query_map(params![material_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?.filter_map(|r| r.ok()).collect();
+        Ok(recipes)
+    }
+
     pub fn calculate_recipe_cost(&self, recipe_id: i64) -> Result<RecipeCostResult> {
         let conn = self.conn.lock().unwrap();
         let (recipe_name, output_qty): (String, f64) = conn.query_row(

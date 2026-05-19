@@ -463,9 +463,35 @@ pub fn calculate_recipe_cost(state: State<AppState>, recipe_id: i64) -> Result<R
 
 #[tauri::command]
 pub fn get_recipe_usage_count(state: State<AppState>, recipe_id: i64) -> Result<i64, String> {
-    // 查詢 recipe_items 表中 item_type='sub_recipe' 且 ref_id 等於該 recipe_id 的數量
     let count = state.db.get_recipe_usage_count(recipe_id).map_err(|e| e.to_string())?;
     Ok(count)
+}
+
+#[derive(serde::Serialize)]
+pub struct RecipeDependents {
+    pub menu_items: Vec<DependentRef>,
+    pub parent_recipes: Vec<DependentRef>,
+}
+
+#[derive(serde::Serialize)]
+pub struct DependentRef {
+    pub id: i64,
+    pub name: String,
+}
+
+#[tauri::command]
+pub fn get_recipe_dependents(state: State<AppState>, recipe_id: i64) -> Result<RecipeDependents, String> {
+    let (menu_items, parent_recipes) = state.db.get_recipe_dependents(recipe_id).map_err(|e| e.to_string())?;
+    Ok(RecipeDependents {
+        menu_items: menu_items.into_iter().map(|(id, name)| DependentRef { id, name }).collect(),
+        parent_recipes: parent_recipes.into_iter().map(|(id, name)| DependentRef { id, name }).collect(),
+    })
+}
+
+#[tauri::command]
+pub fn get_material_dependents(state: State<AppState>, material_id: i64) -> Result<Vec<DependentRef>, String> {
+    let recipes = state.db.get_material_dependents(material_id).map_err(|e| e.to_string())?;
+    Ok(recipes.into_iter().map(|(id, name)| DependentRef { id, name }).collect())
 }
 
 // ==================== 菜單 API ====================
@@ -855,11 +881,11 @@ fn telemetry_endpoint(candidate: Option<&str>) -> String {
         .collect::<Vec<_>>();
 
     if let Some(url) = candidate {
-        if allowlist.iter().any(|allowed| allowed == url) {
+        if allowlist.iter().any(|allowed| allowed == url) && url.starts_with("https://") {
             return url.to_string();
         }
     }
-    default
+    if default.starts_with("https://") { default } else { DEFAULT_URL.to_string() }
 }
 
 #[tauri::command]
