@@ -75,7 +75,7 @@ export function PrintTicketsPage() {
   async function handleSetDefault(id: number) {
     try {
       await invoke("set_default_ticket_type", { id });
-      toast.success("已設為默認");
+      toast.success("已设为默认");
       loadData();
     } catch (e) {
       toast.error("设置失败", { description: String(e) });
@@ -154,8 +154,8 @@ export function PrintTicketsPage() {
                 <span className="text-muted-foreground">显示项:</span>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {ticket.show_order_no && <Badge variant="outline">订单号</Badge>}
-                  {ticket.show_table_no && <Badge variant="outline">桌號</Badge>}
-                  {ticket.show_dine_type && <Badge variant="outline">用餐類型</Badge>}
+                  {ticket.show_table_no && <Badge variant="outline">桌号</Badge>}
+                  {ticket.show_dine_type && <Badge variant="outline">用餐类型</Badge>}
                   {ticket.show_item_name && <Badge variant="outline">菜品</Badge>}
                   {ticket.show_item_qty && <Badge variant="outline">數量</Badge>}
 {ticket.show_item_price && <Badge variant="outline">单价</Badge>}
@@ -167,7 +167,7 @@ export function PrintTicketsPage() {
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => handleSetDefault(ticket.id)} disabled={ticket.is_default}>
                   <Settings className="h-3 w-3 mr-1" />
-                  設為默認
+                  设为默认
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setEditDialog(ticket)}>
                   <Edit className="h-3 w-3 mr-1" />
@@ -279,7 +279,7 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
             </div>
             <div className="space-y-2">
               <Label>名稱</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如: 出餐單" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如: 出餐单" />
             </div>
           </div>
           <div className="space-y-2">
@@ -454,23 +454,23 @@ function EditTicketTypeDialog({ ticket, open, stations, onSubmit, onCancel }: { 
           <div className="grid grid-cols-4 gap-2">
             <div className="flex items-center gap-2">
               <Checkbox id="showPrice" checked={showPrice} onCheckedChange={(v) => setShowPrice(!!v)} />
-              <Label htmlFor="showPrice">單價</Label>
+              <Label htmlFor="showPrice">单价</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showSeq" checked={showSeq} onCheckedChange={(v) => setShowSeq(!!v)} />
-              <Label htmlFor="showSeq">序號</Label>
+              <Label htmlFor="showSeq">序号</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showOrderNo" checked={showOrderNo} onCheckedChange={(v) => setShowOrderNo(!!v)} />
-              <Label htmlFor="showOrderNo">訂單號</Label>
+              <Label htmlFor="showOrderNo">订单号</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showTableNo" checked={showTableNo} onCheckedChange={(v) => setShowTableNo(!!v)} />
-              <Label htmlFor="showTableNo">桌號</Label>
+              <Label htmlFor="showTableNo">桌号</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showDineType" checked={showDineType} onCheckedChange={(v) => setShowDineType(!!v)} />
-              <Label htmlFor="showDineType">用餐類型</Label>
+              <Label htmlFor="showDineType">用餐类型</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showItemName" checked={showItemName} onCheckedChange={(v) => setShowItemName(!!v)} />
@@ -478,7 +478,7 @@ function EditTicketTypeDialog({ ticket, open, stations, onSubmit, onCancel }: { 
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showItemQty" checked={showItemQty} onCheckedChange={(v) => setShowItemQty(!!v)} />
-              <Label htmlFor="showItemQty">數量</Label>
+              <Label htmlFor="showItemQty">数量</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showItemPrice" checked={showItemPrice} onCheckedChange={(v) => setShowItemPrice(!!v)} />
@@ -486,19 +486,19 @@ function EditTicketTypeDialog({ ticket, open, stations, onSubmit, onCancel }: { 
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showItemSubtotal" checked={showItemSubtotal} onCheckedChange={(v) => setShowItemSubtotal(!!v)} />
-              <Label htmlFor="showItemSubtotal">小計</Label>
+              <Label htmlFor="showItemSubtotal">小计</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showItemSpec" checked={showItemSpec} onCheckedChange={(v) => setShowItemSpec(!!v)} />
-              <Label htmlFor="showItemSpec">規格</Label>
+              <Label htmlFor="showItemSpec">规格</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showItemNote" checked={showItemNote} onCheckedChange={(v) => setShowItemNote(!!v)} />
-              <Label htmlFor="showItemNote">備註</Label>
+              <Label htmlFor="showItemNote">备注</Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="showTotalAmount" checked={showTotalAmount} onCheckedChange={(v) => setShowTotalAmount(!!v)} />
-              <Label htmlFor="showTotalAmount">合計</Label>
+              <Label htmlFor="showTotalAmount">合计</Label>
             </div>
           </div>
         </div>

@@ -786,7 +786,7 @@ export function PrintSettingsPage() {
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
           {error}
-          <Button variant="link" onClick={() => setError(null)} className="ml-2">關閉</Button>
+          <Button variant="link" onClick={() => setError(null)} className="ml-2">关闭</Button>
         </div>
       )}
 

@@ -90,7 +90,7 @@ export function MaterialStatesPage({
 
   function getUnitName(unitId: number | null): string {
     if (!unitId) return "-";
-    return units.find((u) => u.id === unitId)?.name || `單位 #${unitId}`;
+    return units.find((u) => u.id === unitId)?.name || `单位 #${unitId}`;
   }
 
   const filteredStates = materialStates.filter((s) => {
@@ -104,16 +104,16 @@ export function MaterialStatesPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">材料狀態管理</h2>
-          <p className="text-sm text-muted-foreground">管理材料的加工狀態、出成率和成本係數</p>
+          <h2 className="text-2xl font-semibold tracking-tight">材料状态管理</h2>
+          <p className="text-sm text-muted-foreground">管理材料的加工状态、出成率和成本系数</p>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Layers className="h-4 w-4" />材料狀態列表</CardTitle>
-            <CardDescription>共 {filteredStates.length} 個狀態{filteredStates.length !== materialStates.length ? `（篩選自 ${materialStates.length} 個）` : ""}</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Layers className="h-4 w-4" />材料状态列表</CardTitle>
+            <CardDescription>共 {filteredStates.length} 个状态{filteredStates.length !== materialStates.length ? `（筛选自 ${materialStates.length} 个）` : ""}</CardDescription>
           </CardHeader>
           <CardContent>
             {filteredStates.length === 0 ? (
@@ -123,11 +123,11 @@ export function MaterialStatesPage({
                 <TableHeader>
                   <TableRow>
                     <TableHead>材料</TableHead>
-                    <TableHead>代碼</TableHead>
-                    <TableHead>狀態名稱</TableHead>
-                    <TableHead>單位</TableHead>
+                    <TableHead>代码</TableHead>
+                    <TableHead>状态名称</TableHead>
+                    <TableHead>单位</TableHead>
                     <TableHead className="text-right">出成率</TableHead>
-                    <TableHead className="text-right">成本係數</TableHead>
+                    <TableHead className="text-right">成本系数</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -155,29 +155,29 @@ export function MaterialStatesPage({
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>新增材料狀態</CardTitle></CardHeader>
+          <CardHeader><CardTitle>新增材料状态</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>材料</Label>
               <Select value={newMaterialId} onValueChange={setNewMaterialId}>
-                <SelectTrigger><SelectValue placeholder="選擇材料" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="选择原料" /></SelectTrigger>
                 <SelectContent>
                   {materials.map((m) => <SelectItem key={m.id} value={m.id.toString()}>{m.name} ({m.code})</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>狀態代碼</Label>
+              <Label>状态代码</Label>
               <Input value={newStateCode} onChange={(e) => setNewStateCode(e.target.value)} placeholder="如: raw, processed" />
             </div>
             <div className="space-y-2">
-              <Label>狀態名稱</Label>
+              <Label>状态名称</Label>
               <Input value={newStateName} onChange={(e) => setNewStateName(e.target.value)} placeholder="如: 生料, 半成品" />
             </div>
             <div className="space-y-2">
-              <Label>單位（可選）</Label>
+              <Label>单位（可选）</Label>
               <Select value={newUnitId} onValueChange={setNewUnitId}>
-                <SelectTrigger><SelectValue placeholder="選擇單位" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="选择单位" /></SelectTrigger>
                 <SelectContent>
                   {units.map((u) => <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.code})</SelectItem>)}
                 </SelectContent>
@@ -189,7 +189,7 @@ export function MaterialStatesPage({
                 <Input type="number" value={newYieldRate} onChange={(e) => setNewYieldRate(e.target.value)} placeholder="1.0" step="0.01" />
               </div>
               <div className="space-y-2">
-                <Label>成本係數</Label>
+                <Label>成本系数</Label>
                 <Input type="number" value={newCostMultiplier} onChange={(e) => setNewCostMultiplier(e.target.value)} placeholder="1.0" step="0.01" />
               </div>
             </div>
@@ -213,20 +213,20 @@ export function MaterialStatesPage({
 
       <Dialog open={!!editingState} onOpenChange={() => setEditingState(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>編輯材料狀態</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>编辑材料状态</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>狀態代碼</Label>
+              <Label>状态代码</Label>
               <Input value={editStateCode} onChange={(e) => setEditStateCode(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>狀態名稱</Label>
+              <Label>状态名称</Label>
               <Input value={editStateName} onChange={(e) => setEditStateName(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>單位</Label>
+              <Label>单位</Label>
               <Select value={editUnitId} onValueChange={setEditUnitId}>
-                <SelectTrigger><SelectValue placeholder="選擇單位" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="选择单位" /></SelectTrigger>
                 <SelectContent>
                   {units.map((u) => <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.code})</SelectItem>)}
                 </SelectContent>
@@ -238,7 +238,7 @@ export function MaterialStatesPage({
                 <Input type="number" value={editYieldRate} onChange={(e) => setEditYieldRate(e.target.value)} step="0.01" />
               </div>
               <div className="space-y-2">
-                <Label>成本係數</Label>
+                <Label>成本系数</Label>
                 <Input type="number" value={editCostMultiplier} onChange={(e) => setEditCostMultiplier(e.target.value)} step="0.01" />
               </div>
             </div>
@@ -252,11 +252,11 @@ export function MaterialStatesPage({
 
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>確認刪除</DialogTitle></DialogHeader>
-          <p className="py-4 text-sm text-muted-foreground">確定要刪除材料狀態「{deleteConfirm?.state_name}」嗎？</p>
+          <DialogHeader><DialogTitle>确认删除</DialogTitle></DialogHeader>
+          <p className="py-4 text-sm text-muted-foreground">确定要删除材料状态「{deleteConfirm?.state_name}」吗？</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteConfirm(null)}>取消</Button>
-            <Button variant="destructive" onClick={() => { if (deleteConfirm) { onDeleteState(deleteConfirm.id); } setDeleteConfirm(null); }}>刪除</Button>
+            <Button variant="destructive" onClick={() => { if (deleteConfirm) { onDeleteState(deleteConfirm.id); } setDeleteConfirm(null); }}>删除</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

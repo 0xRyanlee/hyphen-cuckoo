@@ -116,10 +116,10 @@ export function PurchaseOrdersPage({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>單號</TableHead>
-                    <TableHead>供應商</TableHead>
-                    <TableHead>狀態</TableHead>
-                    <TableHead className="text-right">總金額</TableHead>
+                    <TableHead>单号</TableHead>
+                    <TableHead>供应商</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead className="text-right">总金额</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -157,7 +157,7 @@ export function PurchaseOrdersPage({
             <CardHeader><CardTitle>新增采购单</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>供應商（可選）</Label>
+                <Label>供应商（可选）</Label>
                 <Select value={newSupplierId} onValueChange={setNewSupplierId}>
                   <SelectTrigger><SelectValue placeholder="选择供应商" /></SelectTrigger>
                   <SelectContent>
@@ -166,7 +166,7 @@ export function PurchaseOrdersPage({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>預計到貨日期</Label>
+                <Label>预计到货日期</Label>
                 <Input type="date" value={newExpectedDate} onChange={(e) => setNewExpectedDate(e.target.value)} />
               </div>
               <Button className="w-full" onClick={() => {
@@ -189,12 +189,12 @@ export function PurchaseOrdersPage({
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">供應商</span><span>{selectedOrder.order.supplier_name || "-"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">狀態</span>{getStatusBadge(selectedOrder.order.status)}</div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">總金額</span><span className="font-medium">¥{selectedOrder.order.total_cost.toFixed(2)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">供应商</span><span>{selectedOrder.order.supplier_name || "-"}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">状态</span>{getStatusBadge(selectedOrder.order.status)}</div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">总金额</span><span className="font-medium">¥{selectedOrder.order.total_cost.toFixed(2)}</span></div>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-1"><Package className="h-3 w-3" />材料明細</h4>
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-1"><Package className="h-3 w-3" />材料明细</h4>
                   {selectedOrder.items.length === 0 ? (
                     <EmptyState icon={Package} title="暂无材料" description="采购单中没有材料" />
                   ) : (
@@ -229,16 +229,16 @@ export function PurchaseOrdersPage({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>數量</Label>
+                <Label>数量</Label>
                 <Input type="number" value={addItemQty} onChange={(e) => setAddItemQty(e.target.value)} step="0.01" />
               </div>
               <div className="space-y-2">
-                <Label>單價</Label>
+                <Label>单价</Label>
                 <Input type="number" value={addItemCost} onChange={(e) => setAddItemCost(e.target.value)} step="0.01" />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>單位（可選）</Label>
+              <Label>单位（可选）</Label>
               <Select value={addItemUnitId} onValueChange={setAddItemUnitId}>
                 <SelectTrigger><SelectValue placeholder="选择单位" /></SelectTrigger>
                 <SelectContent>
@@ -279,19 +279,19 @@ export function PurchaseOrdersPage({
 
       <Dialog open={!!receivePoId} onOpenChange={() => setReceivePoId(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>收貨入庫</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>收货入库</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>批次號前綴（可選）</Label>
+              <Label>批次号前缀（可选）</Label>
               <Input 
                 value={receiveLotPrefix} 
                 onChange={(e) => setReceiveLotPrefix(e.target.value)} 
-                placeholder="自動生成批次號"
+                placeholder="自动生成批次号"
               />
-              <p className="text-xs text-muted-foreground">將自動添加日期時間後綴，如: PO20260427-1430</p>
+              <p className="text-xs text-muted-foreground">将自动添加日期时间后缀，如: PO20260427-1430</p>
             </div>
             <div className="space-y-2">
-              <Label>過期日期（可選）</Label>
+              <Label>过期日期（可选）</Label>
               <Input 
                 type="date" 
                 value={receiveExpiryDate} 
@@ -304,7 +304,7 @@ export function PurchaseOrdersPage({
                 checked={receiveAutoBatch}
                 onCheckedChange={(checked) => setReceiveAutoBatch(checked as boolean)}
               />
-              <Label htmlFor="autoBatch" className="text-sm font-normal">自動為每項材料生成獨立批次</Label>
+              <Label htmlFor="autoBatch" className="text-sm font-normal">自动为每项材料生成独立批次</Label>
             </div>
           </div>
           <DialogFooter>

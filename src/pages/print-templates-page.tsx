@@ -521,9 +521,9 @@ const defaultBatchLabelTemplate = {
     { type: "text", content: "{{material_name}}", align: "center", bold: true, size: "large" },
     { type: "separator" },
     { type: "text", content: "批次: {{lot_no}}" },
-    { type: "text", content: "數量: {{quantity}} {{unit}}" },
+    { type: "text", content: "数量: {{quantity}} {{unit}}" },
     { type: "text", content: "到期: {{expiry_date}}" },
-    { type: "text", content: "供應商: {{supplier_name}}" },
+    { type: "text", content: "供应商: {{supplier_name}}" },
     { type: "blank_lines", count: 2 },
   ],
 };

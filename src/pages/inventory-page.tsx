@@ -368,7 +368,7 @@ function handleAdjust() {
         <Card>
           <CardHeader>
             <CardTitle>批次库存</CardTitle>
-            <CardDescription>{filteredBatches.length} 个批次{filteredBatches.length !== inventoryBatches.length ? `（篩選自 ${inventoryBatches.length} 个）` : ""}</CardDescription>
+            <CardDescription>{filteredBatches.length} 个批次{filteredBatches.length !== inventoryBatches.length ? `（筛选自 ${inventoryBatches.length} 个）` : ""}</CardDescription>
           </CardHeader>
           <CardContent>
             {filteredBatches.length === 0 ? (
@@ -439,7 +439,7 @@ function handleAdjust() {
       <Card>
         <CardHeader>
           <CardTitle>库存交易流水</CardTitle>
-          <CardDescription>最近 {filteredTxns.length} 条记录{filteredTxns.length !== inventoryTxns.length ? `（篩選自 ${inventoryTxns.length} 条）` : ""}</CardDescription>
+          <CardDescription>最近 {filteredTxns.length} 条记录{filteredTxns.length !== inventoryTxns.length ? `（筛选自 ${inventoryTxns.length} 条）` : ""}</CardDescription>
         </CardHeader>
         <CardContent>
           {filteredTxns.length === 0 ? (

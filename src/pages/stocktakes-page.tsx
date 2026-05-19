@@ -133,7 +133,7 @@ export function StocktakesPage({
             <CardHeader><CardTitle>新增盘点</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>操作人（可選）</Label>
+                <Label>操作人（可选）</Label>
                 <Input value={newOperator} onChange={(e) => setNewOperator(e.target.value)} placeholder="操作人姓名" />
               </div>
               <div className="space-y-2">
@@ -149,7 +149,7 @@ export function StocktakesPage({
               }}>
                 <Plus className="mr-2 h-4 w-4" />新增盘点单
               </Button>
-              <p className="text-xs text-muted-foreground">自動帶入所有有库存的批次，實際數量預設等於系統數量</p>
+              <p className="text-xs text-muted-foreground">自动带入所有有库存的批次，实际数量预设等于系统数量</p>
             </CardContent>
           </Card>
 
@@ -201,7 +201,7 @@ export function StocktakesPage({
                               <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => {
                                 setEditingItemId(item.id);
                                 setEditingActualQty(item.actual_qty.toString());
-                              }}>實際: {item.actual_qty} ✏️</Button>
+                              }}>实际: {item.actual_qty} ✏️</Button>
                             )}
                           </div>
                         </div>

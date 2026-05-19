@@ -129,8 +129,8 @@ export function KDSPage({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "pending": return <Badge variant="outline" className="border-amber-500 text-amber-500">待製作</Badge>;
-      case "started": return <Badge className="bg-blue-600">製作中</Badge>;
+      case "pending": return <Badge variant="outline" className="border-amber-500 text-amber-500">待制作</Badge>;
+      case "started": return <Badge className="bg-blue-600">制作中</Badge>;
       case "finished": return <Badge className="bg-emerald-600">已完成</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
@@ -144,7 +144,7 @@ export function KDSPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">廚房顯示系統</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">厨房显示系统</h2>
           <p className="text-sm text-muted-foreground">{pendingTickets.length} 张待处理工单</p>
         </div>
         <div className="flex items-center gap-2">
@@ -170,7 +170,7 @@ export function KDSPage({
       {pendingTickets.length === 0 ? (
         <Card>
           <CardContent className="py-8">
-            <EmptyState icon={Layers} title="暫無待處理工單" description="所有訂單已完成" />
+            <EmptyState icon={Layers} title="暂无待处理工单" description="所有订单已完成" />
           </CardContent>
         </Card>
       ) : (
@@ -186,7 +186,7 @@ export function KDSPage({
                       <CardTitle className="text-base">{ticket.order_no}</CardTitle>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="outline" className="text-xs">{ticket.dine_type}</Badge>
-                        {ticket.table_no && <Badge variant="outline" className="text-xs">桌號 {ticket.table_no}</Badge>}
+                        {ticket.table_no && <Badge variant="outline" className="text-xs">桌号 {ticket.table_no}</Badge>}
                       </div>
                     </div>
                     {getStatusBadge(ticket.status)}
@@ -224,7 +224,7 @@ export function KDSPage({
                   <div className="flex gap-2">
                     {ticket.status === "pending" && (
                       <Button size="sm" className="flex-1" onClick={() => onStartTicket(ticket.id)}>
-                        <Play className="mr-2 h-3 w-3" />開始製作
+                        <Play className="mr-2 h-3 w-3" />开始制作
                       </Button>
                     )}
                     {ticket.status === "started" && (

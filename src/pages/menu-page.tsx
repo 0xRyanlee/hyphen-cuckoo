@@ -128,12 +128,12 @@ export function MenuPage({
   function saveEditItem() {
     if (!editMenuItem) return;
     if (editMenuItemName !== undefined && !editMenuItemName.trim()) {
-      toast.error("名稱不能為空");
+      toast.error("名称不能为空");
       return;
     }
     const price = parseSafeFloat(editMenuItemPrice);
     if (price !== null && price < 0) {
-      toast.error("單價不能為負數");
+      toast.error("单价不能为负数");
       return;
     }
     onUpdateMenuItem(editMenuItem.id, { name: editMenuItemName || undefined, category_id: editMenuItemCategory ? parseInt(editMenuItemCategory) : null, recipe_id: editMenuItemRecipe ? parseInt(editMenuItemRecipe) : null, sales_price: price ?? 0 });
@@ -169,7 +169,7 @@ export function MenuPage({
     }
     const priceDelta = parseSafeFloat(newSpecPriceDelta);
     if (priceDelta === null) {
-      toast("價格調整無效，已設為 0", { icon: "⚠️" });
+      toast("价格调整无效，已设为 0", { icon: "⚠️" });
     }
     onCreateSpec({ menu_item_id: specMenuItem.id, spec_code: newSpecCode.trim(), spec_name: newSpecName.trim(), price_delta: priceDelta ?? 0, qty_multiplier: qtyMultiplier });
     setNewSpecCode(""); setNewSpecName(""); setNewSpecPriceDelta("0"); setNewSpecQtyMultiplier("1");

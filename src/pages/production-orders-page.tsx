@@ -105,9 +105,9 @@ export function ProductionOrdersPage({
                   <TableRow>
                     <TableHead>单号</TableHead>
                     <TableHead>配方</TableHead>
-                    <TableHead>狀態</TableHead>
-                    <TableHead className="text-right">計劃量</TableHead>
-                    <TableHead className="text-right">實際量</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead className="text-right">计划量</TableHead>
+                    <TableHead className="text-right">实际量</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -159,7 +159,7 @@ export function ProductionOrdersPage({
                 <Input type="number" value={newPlannedQty} onChange={(e) => setNewPlannedQty(e.target.value)} step="0.01" />
               </div>
               <div className="space-y-2">
-                <Label>操作人（可選）</Label>
+                <Label>操作人（可选）</Label>
                 <Input value={newOperator} onChange={(e) => setNewOperator(e.target.value)} placeholder="操作人姓名" />
               </div>
               <Button className="w-full" onClick={() => {
@@ -186,9 +186,9 @@ export function ProductionOrdersPage({
               <CardContent className="space-y-3">
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">配方</span><span>{selectedOrder.order.recipe_name || "-"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">狀態</span>{getStatusBadge(selectedOrder.order.status)}</div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">計劃量</span><span>{selectedOrder.order.planned_qty}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">實際量</span><span>{selectedOrder.order.actual_qty ?? "-"}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">状态</span>{getStatusBadge(selectedOrder.order.status)}</div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">计划量</span><span>{selectedOrder.order.planned_qty}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">实际量</span><span>{selectedOrder.order.actual_qty ?? "-"}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">操作人</span><span>{selectedOrder.order.operator || "-"}</span></div>
                 </div>
                 <div>
@@ -214,7 +214,7 @@ export function ProductionOrdersPage({
 
       <Dialog open={!!completeId} onOpenChange={() => setCompleteId(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>完成生產單</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>完成生产单</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>实际产量</Label>
