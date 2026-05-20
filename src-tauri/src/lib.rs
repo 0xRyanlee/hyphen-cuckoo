@@ -138,6 +138,7 @@ pub fn run() {
             commands::get_station_tickets,
             commands::get_all_tickets,
             commands::get_all_tickets_with_items,
+            commands::get_tickets_for_order,
             commands::start_ticket,
             commands::finish_ticket,
             // 庫存

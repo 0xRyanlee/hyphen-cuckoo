@@ -7,6 +7,37 @@ pub struct AppState {
     pub db: Database,
 }
 
+fn db_err(e: rusqlite::Error) -> String {
+    let s = e.to_string();
+    if s.contains("UNIQUE constraint failed: materials.code") { return "原料编号已存在，请更换编号后重试".to_string(); }
+    if s.contains("UNIQUE constraint failed: materials.name") { return "原料名称已存在".to_string(); }
+    if s.contains("UNIQUE constraint failed: recipes.code") { return "配方编号已存在，请更换编号后重试".to_string(); }
+    if s.contains("UNIQUE constraint failed: menu_items.code") { return "菜品编号已存在".to_string(); }
+    if s.contains("UNIQUE constraint failed: suppliers.name") { return "供应商名称已存在".to_string(); }
+    if s.contains("UNIQUE constraint failed: tags.code") { return "标签编号已存在".to_string(); }
+    if s.contains("UNIQUE constraint failed: material_categories.code") { return "分类编号已存在".to_string(); }
+    if s.contains("UNIQUE constraint failed") { return "记录已存在，请修改后重试".to_string(); }
+    if s.contains("FOREIGN KEY constraint failed") { return "关联数据不存在或已被删除".to_string(); }
+    if s.contains("NOT NULL constraint failed") { return "必填字段不能为空".to_string(); }
+    s
+}
+
+fn print_err(raw: String) -> String {
+    let s = raw.to_lowercase();
+    if s.contains("飛鵝") || s.contains("feie") || s.contains("api") {
+        if s.contains("不在线") || s.contains("offline") { return "打印机不在线，请检查打印机电源和网络".to_string(); }
+        if s.contains("sn") && (s.contains("错") || s.contains("invalid") || s.contains("exist")) { return "打印机 SN 无效或未注册，请重新绑定".to_string(); }
+        if s.contains("user") || s.contains("ukey") || s.contains("sig") { return "飞鹅账号凭证错误（USER/UKEY），请检查打印设置".to_string(); }
+        if s.contains("timeout") || s.contains("超时") || s.contains("timed out") { return "连接飞鹅服务器超时，请检查网络".to_string(); }
+        if s.contains("print") && s.contains("fail") { return "打印任务发送失败，打印机可能正在处理其他任务".to_string(); }
+    }
+    if s.contains("connection refused") || s.contains("connection reset") { return "无法连接到打印机，请检查 IP 地址和端口".to_string(); }
+    if s.contains("timed out") || s.contains("timeout") { return "连接打印机超时，请确认打印机已开机且在同一局域网".to_string(); }
+    if s.contains("未配置") || s.contains("not configured") { return "打印机未配置，请在打印设置中添加打印机".to_string(); }
+    if s.contains("no printer") || s.contains("找不到") { return "未找到默认打印机，请在打印设置中设置默认打印机".to_string(); }
+    raw
+}
+
 // ==================== 請求體 ====================
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -160,7 +191,7 @@ pub fn get_material_categories(state: State<AppState>) -> Result<Vec<MaterialCat
 #[tauri::command]
 pub fn create_material_category(state: State<AppState>, req: CreateCategoryRequest) -> Result<i64, String> {
     let sort_no = req.sort_no.unwrap_or(0);
-    state.db.create_material_category(&req.code, &req.name, sort_no).map_err(|e| e.to_string())
+    state.db.create_material_category(&req.code, &req.name, sort_no).map_err(db_err)
 }
 
 // ==================== 標籤 API ====================
@@ -172,7 +203,7 @@ pub fn get_tags(state: State<AppState>) -> Result<Vec<Tag>, String> {
 
 #[tauri::command]
 pub fn create_tag(state: State<AppState>, req: CreateTagRequest) -> Result<i64, String> {
-    state.db.create_tag(&req.code, &req.name, req.color.as_deref()).map_err(|e| e.to_string())
+    state.db.create_tag(&req.code, &req.name, req.color.as_deref()).map_err(db_err)
 }
 
 // ==================== 材料 API ====================
@@ -190,7 +221,7 @@ pub fn create_material(state: State<AppState>, req: CreateMaterialRequest) -> Re
         req.category_id,
         req.base_unit_id,
         req.shelf_life_days,
-    ).map_err(|e| e.to_string())?;
+    ).map_err(db_err)?;
     
     if let Some(tag_ids) = req.tag_ids {
         state.db.add_material_tags(id, &tag_ids).map_err(|e| e.to_string())?;
@@ -249,7 +280,7 @@ pub fn get_suppliers(state: State<AppState>) -> Result<Vec<Supplier>, String> {
 
 #[tauri::command]
 pub fn create_supplier(state: State<AppState>, req: CreateSupplierRequest) -> Result<i64, String> {
-    state.db.create_supplier(&req.name, req.phone.as_deref(), req.contact_person.as_deref()).map_err(|e| e.to_string())
+    state.db.create_supplier(&req.name, req.phone.as_deref(), req.contact_person.as_deref()).map_err(db_err)
 }
 
 // ==================== 日常支出 API ====================
@@ -436,7 +467,7 @@ pub fn create_recipe(state: State<AppState>, req: CreateRecipeRequest) -> Result
         req.output_material_id,
         req.output_state_id,
         req.output_unit_id,
-    ).map_err(|e| e.to_string())?;
+    ).map_err(db_err)?;
     
     if let Some(items) = req.items {
         for item in items {
@@ -513,7 +544,7 @@ pub fn get_menu_items(state: State<AppState>, category_id: Option<i64>) -> Resul
 
 #[tauri::command]
 pub fn create_menu_item(state: State<AppState>, req: CreateMenuItemRequest) -> Result<i64, String> {
-    state.db.create_menu_item(&req.name, req.category_id, req.recipe_id, req.sales_price).map_err(|e| e.to_string())
+    state.db.create_menu_item(&req.name, req.category_id, req.recipe_id, req.sales_price).map_err(db_err)
 }
 
 #[tauri::command]
@@ -635,6 +666,18 @@ pub fn get_all_tickets_with_items(state: State<AppState>, status: Option<String>
                 table_no: order.table_no,
                 items,
             });
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn get_tickets_for_order(state: State<AppState>, order_id: i64) -> Result<Vec<TicketWithItems>, String> {
+    let tickets = state.db.get_tickets_for_order(order_id).map_err(|e| e.to_string())?;
+    let mut result = Vec::new();
+    for ticket in tickets {
+        if let Ok((order, items)) = state.db.get_order_with_items(ticket.order_id) {
+            result.push(TicketWithItems { ticket, order_no: order.order_no, dine_type: order.dine_type, table_no: order.table_no, items });
         }
     }
     Ok(result)
@@ -1016,7 +1059,7 @@ pub fn test_feie_printer(_state: State<AppState>, user: String, ukey: String, sn
         sn,
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
     );
-    printer::feie_print(&user, &ukey, &sn, &content)
+    printer::feie_print(&user, &ukey, &sn, &content).map_err(print_err)
 }
 
 #[tauri::command]
@@ -1032,6 +1075,7 @@ pub fn test_lan_printer(_state: State<AppState>, ip: String, port: Option<i32>) 
 
     printer::lan_print_escpos(&ip, port, builder)
         .map(|_| "測試頁發送成功".to_string())
+        .map_err(print_err)
 }
 
 #[tauri::command]
@@ -1074,7 +1118,7 @@ pub fn send_print_task(state: State<AppState>, req: SendPrintTaskRequest) -> Res
         }
         Err(e) => {
             state.db.update_print_task_status(task_id, "failed", Some(&e)).map_err(|e| e.to_string())?;
-            Err(e)
+            Err(print_err(e))
         }
     }
 }
@@ -1124,7 +1168,7 @@ pub fn print_kitchen_ticket(state: State<AppState>, order_no: String, dine_type:
         }
         Err(e) => {
             state.db.update_print_task_status(task_id, "failed", Some(&e)).map_err(|e| e.to_string())?;
-            Err(e)
+            Err(print_err(e))
         }
     }
 }
@@ -1182,7 +1226,7 @@ pub fn print_batch_label(state: State<AppState>, lot_no: String, material_name: 
         }
         Err(e) => {
             state.db.update_print_task_status(task_id, "failed", Some(&e)).map_err(|e| e.to_string())?;
-            Err(e)
+            Err(print_err(e))
         }
     }
 }
@@ -1535,7 +1579,7 @@ pub fn bind_feie_printer(state: State<AppState>, printer_id: i64, printer_key: S
     let ukey = printer.feie_ukey.as_deref().ok_or("飛鵝 UKEY 未配置")?;
     let sn = printer.feie_sn.as_deref().ok_or("飛鵝 SN 未配置")?;
     
-    printer::feie_add_printer(user, ukey, sn, &printer_key)
+    printer::feie_add_printer(user, ukey, sn, &printer_key).map_err(print_err)
 }
 
 #[allow(dead_code)]

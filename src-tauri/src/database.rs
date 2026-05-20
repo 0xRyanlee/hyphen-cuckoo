@@ -3360,6 +3360,17 @@ impl Database {
     }
 
     /// 獲取所有廚房小票
+    pub fn get_tickets_for_order(&self, order_id: i64) -> Result<Vec<KitchenTicket>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, order_id, station_id, status, priority, printed_at, started_at, finished_at, created_at FROM kitchen_tickets WHERE order_id = ?1 ORDER BY id"
+        )?;
+        let tickets = stmt.query_map(params![order_id], |row| {
+            Ok(KitchenTicket { id: row.get(0)?, order_id: row.get(1)?, station_id: row.get(2)?, status: row.get(3)?, priority: row.get(4)?, printed_at: row.get(5)?, started_at: row.get(6)?, finished_at: row.get(7)?, created_at: row.get(8)? })
+        })?.collect::<Result<Vec<_>>>()?;
+        Ok(tickets)
+    }
+
     pub fn get_all_tickets(&self, status: Option<&str>) -> Result<Vec<KitchenTicket>> {
         let conn = self.conn.lock().unwrap();
         let (query, param): (&str, Option<&str>) = match status {

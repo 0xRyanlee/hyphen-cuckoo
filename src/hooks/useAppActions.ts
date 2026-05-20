@@ -318,6 +318,16 @@ export function useAppActions({
     catch (e) { logError("create_order", e, "创建订单失败", { dineType, tableNo }); }
   };
 
+  const printTicket = async (ticket: TicketWithItems, dineType: string) => {
+    const printItems: [string, number, string | null][] = ticket.items.map((item) => [
+      menuItems.find((m) => m.id === item.menu_item_id)?.name || `商品 #${item.menu_item_id}`,
+      item.qty,
+      item.note || null,
+    ]);
+    const dineLabel = dineType === "dine_in" ? "堂食" : dineType === "takeout" ? "外卖" : "外送";
+    await invoke("print_kitchen_ticket", { orderNo: ticket.order_no, dineType: dineLabel, items: printItems, note: null, printerId: null });
+  };
+
   const handlePOSAndSubmit = async (cart: POSCartItem[], dineType: string = "dine_in", tableNo: string | null = null) => {
     try {
       const { id: orderId } = await invoke<{ id: number; order_no: string }>("create_order", { req: { source: "pos", dine_type: dineType, table_no: tableNo } });
@@ -333,9 +343,24 @@ export function useAppActions({
       }
       await invoke("submit_order", { orderId });
       toast.success("订单已提交");
+      if (localStorage.getItem("auto_print_kitchen") === "true") {
+        try {
+          const tickets = await invoke<TicketWithItems[]>("get_tickets_for_order", { orderId });
+          for (const ticket of tickets) await printTicket(ticket, dineType);
+        } catch (pe) {
+          appLogger.logInvokeError("auto_print_kitchen_ticket", pe, { orderId });
+        }
+      }
       await loadData();
       return true;
     } catch (e) { logError("pos_create_and_submit", e, "提交订单失败", { cart_size: cart.length, dineType }); return false; }
+  };
+
+  const handleReprintTicket = async (ticket: TicketWithItems) => {
+    try {
+      await printTicket(ticket, ticket.dine_type);
+      toast.success("补打印已发送");
+    } catch (e) { logError("reprint_kitchen_ticket", e, "补打印失败", { ticket_id: ticket.id }); }
   };
 
   const handlePOSOrder = async (cart: POSCartItem[], dineType: string = "dine_in", tableNo: string | null = null) => {
@@ -683,7 +708,7 @@ export function useAppActions({
     // 批次
     handleCreateBatch, handleAdjustInventory, handleRecordWastage, handleDeleteBatch,
     // KDS
-    handleLoadKDS, handleFinishTicket,
+    handleLoadKDS, handleFinishTicket, handleReprintTicket,
     // 訂單修改器
     handleAddModifier, handleDeleteModifier, handleLoadModifiers,
     // 遙測

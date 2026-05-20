@@ -264,7 +264,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="flex items-center justify-between py-3">
+          <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-3">
               <Monitor className="h-4 w-4 text-muted-foreground" />
               <div>
@@ -275,7 +275,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
             <span className="text-sm font-mono text-muted-foreground">v{appVersion}</span>
           </div>
           <Separator />
-          <div className="flex items-center justify-between py-3">
+          <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-3">
               <Database className="h-4 w-4 text-muted-foreground" />
               <div>
@@ -288,7 +288,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
             </Badge>
           </div>
           <Separator />
-          <div className="flex items-center justify-between py-3">
+          <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-3">
               {connected ? (
                 <Wifi className="h-4 w-4 text-emerald-500" />

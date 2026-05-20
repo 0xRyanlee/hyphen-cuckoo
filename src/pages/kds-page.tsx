@@ -4,11 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Layers, Play, Check, Clock, MessageSquare, AlertCircle } from "lucide-react";
+import { Layers, Play, Check, Clock, MessageSquare, AlertCircle, Printer } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 
 interface OrderItem {
   id: number;
+  order_id: number;
   menu_item_id: number;
   spec_code: string | null;
   qty: number;
@@ -45,6 +46,7 @@ interface KDSPageProps {
   menuItemNames: Record<number, string>;
   onStartTicket: (ticketId: number) => void;
   onFinishTicket: (ticketId: number) => void;
+  onReprintTicket: (ticket: TicketWithItems) => void;
   onRefresh: () => void;
 }
 
@@ -75,6 +77,7 @@ export function KDSPage({
   menuItemNames,
   onStartTicket,
   onFinishTicket,
+  onReprintTicket,
   onRefresh,
 }: KDSPageProps) {
   const [selectedStationId, setSelectedStationId] = useState<string>("all");
@@ -232,6 +235,9 @@ export function KDSPage({
                         <Check className="mr-2 h-3 w-3" />完成出餐
                       </Button>
                     )}
+                    <Button size="sm" variant="outline" onClick={() => onReprintTicket(ticket)} title="补打印">
+                      <Printer className="h-3 w-3" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

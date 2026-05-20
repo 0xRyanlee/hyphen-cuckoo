@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2, Scan, TestTube2, History, Printer, Wand2, Cloud, Wifi,
-         CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+         CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight, Zap } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 
 interface PrinterConfig {
@@ -599,6 +599,7 @@ export function PrintSettingsPage() {
   const [scanning, setScanning] = useState(false);
   const [scanSubnet, setScanSubnet] = useState("192.168.1");
   const [error, setError] = useState<string | null>(null);
+  const [autoPrint, setAutoPrint] = useState(() => localStorage.getItem("auto_print_kitchen") === "true");
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -758,6 +759,29 @@ export function PrintSettingsPage() {
         <h2 className="text-2xl font-semibold tracking-tight">打印设置</h2>
         <p className="text-sm text-muted-foreground">管理打印机、连接配置和打印任务</p>
       </div>
+
+      {/* Auto-print setting */}
+      <Card>
+        <CardContent className="flex items-center justify-between pt-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/10">
+              <Zap className="h-5 w-5 text-amber-500" />
+            </div>
+            <div>
+              <p className="font-semibold">POS 下单自动打印厨房工单</p>
+              <p className="text-sm text-muted-foreground">提交订单后立即将工单发送到打印机，无需手动在 KDS 触发</p>
+            </div>
+          </div>
+          <Checkbox
+            checked={autoPrint}
+            onCheckedChange={(v) => {
+              const next = !!v;
+              setAutoPrint(next);
+              localStorage.setItem("auto_print_kitchen", next ? "true" : "false");
+            }}
+          />
+        </CardContent>
+      </Card>
 
       {/* Quick setup wizard card */}
       <Card className="border-primary/30 bg-primary/5">
