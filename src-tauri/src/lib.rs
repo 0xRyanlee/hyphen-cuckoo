@@ -132,6 +132,7 @@ pub fn run() {
             commands::add_order_item,
             commands::submit_order,
             commands::cancel_order,
+            commands::update_order_payment,
             commands::batch_cancel_orders,
             // KDS
             commands::get_kitchen_stations,
@@ -209,6 +210,7 @@ pub fn run() {
             commands::update_purchase_order_status,
             commands::delete_purchase_order,
             commands::receive_purchase_order,
+            commands::receive_purchase_order_items,
             // 生產單
             commands::get_production_orders,
             commands::get_production_order_with_items,

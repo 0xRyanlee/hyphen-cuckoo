@@ -111,6 +111,9 @@ export interface Order {
   status: string;
   amount_total: number;
   note: string | null;
+  payment_status: string;
+  payment_method: string | null;
+  amount_paid: number;
   created_at: string;
   updated_at: string;
 }
@@ -301,6 +304,7 @@ export interface StocktakeItem {
   system_qty: number;
   actual_qty: number;
   diff_qty: number | null;
+  is_counted: boolean;
   note: string | null;
 }
 export interface StocktakeWithItems {

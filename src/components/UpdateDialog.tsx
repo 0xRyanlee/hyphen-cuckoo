@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpCircle, Download, CheckCircle2, XCircle, Loader2, ExternalLink } from "lucide-react";
+import { ArrowUpCircle, Download, CheckCircle2, XCircle, Loader2, Sparkles, Bug, Zap } from "lucide-react";
 
 export interface UpdateInfo {
   current_version: string;
@@ -20,46 +20,82 @@ type Phase = "idle" | "downloading" | "done" | "error";
 interface Props {
   info: UpdateInfo;
   onDismiss: () => void;
+  onSkip?: () => void;
 }
 
-export function UpdateDialog({ info, onDismiss }: Props) {
+// ── Release notes parser ─────────────────────────────────────────────────────
+
+interface Section {
+  heading: string | null;
+  items: string[];
+}
+
+function parseReleaseNotes(body: string): Section[] {
+  const sections: Section[] = [];
+  let current: Section = { heading: null, items: [] };
+
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (/^#{1,3}\s/.test(line)) {
+      if (current.heading !== null || current.items.length > 0) sections.push(current);
+      current = { heading: line.replace(/^#+\s*/, ""), items: [] };
+    } else if (/^[-*]\s/.test(line)) {
+      current.items.push(line.slice(2).trim());
+    } else if (current.heading !== null) {
+      current.items.push(line);
+    }
+  }
+
+  if (current.heading !== null || current.items.length > 0) sections.push(current);
+  return sections.filter((s) => s.items.length > 0);
+}
+
+function sectionMeta(heading: string | null): { Icon: React.ElementType; color: string } {
+  const h = (heading ?? "").toLowerCase();
+  if (/✨|新功能|新增|feature|new/.test(h))
+    return { Icon: Sparkles, color: "text-violet-500" };
+  if (/🐛|🔧|修復|修正|fix|bug/.test(h))
+    return { Icon: Bug, color: "text-rose-500" };
+  if (/⚡|改善|優化|improve|perf|performance/.test(h))
+    return { Icon: Zap, color: "text-amber-500" };
+  return { Icon: ArrowUpCircle, color: "text-muted-foreground" };
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export function UpdateDialog({ info, onDismiss, onSkip }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
   const unlistenRef = useRef<(() => void)[]>([]);
 
-  useEffect(() => {
-    return () => unlistenRef.current.forEach((u) => u());
-  }, []);
+  useEffect(() => () => { unlistenRef.current.forEach((u) => u()); }, []);
 
   async function handleUpdate() {
     setPhase("downloading");
     setProgress(0);
-
     const unlisteners: (() => void)[] = [];
 
-    const ulProgress = await listen<{ downloaded: number; total: number }>(
-      "update-progress",
-      (e) => {
-        const { downloaded, total } = e.payload;
-        if (total > 0) setProgress(Math.round((downloaded / total) * 100));
-      }
-    );
-    unlisteners.push(ulProgress);
+    const ulP = await listen<{ downloaded: number; total: number }>("update-progress", (e) => {
+      const { downloaded, total } = e.payload;
+      if (total > 0) setProgress(Math.round((downloaded / total) * 100));
+    });
+    unlisteners.push(ulP);
 
-    const ulDone = await listen("update-complete", () => {
+    const ulD = await listen("update-complete", () => {
       setPhase("done");
       unlisteners.forEach((u) => u());
     });
-    unlisteners.push(ulDone);
+    unlisteners.push(ulD);
 
-    const ulErr = await listen<string>("update-error", (e) => {
+    const ulE = await listen<string>("update-error", (e) => {
       setErrorMsg(e.payload);
       setPhase("error");
       unlisteners.forEach((u) => u());
     });
-    unlisteners.push(ulErr);
-
+    unlisteners.push(ulE);
     unlistenRef.current = unlisteners;
 
     try {
@@ -71,16 +107,13 @@ export function UpdateDialog({ info, onDismiss }: Props) {
     }
   }
 
-  function handleSkip() {
-    localStorage.setItem("cuckoo_skipped_version", info.new_version);
-    onDismiss();
-  }
+  const sections = parseReleaseNotes(info.release_notes);
+  const hasSections = sections.length > 0;
 
-  const notes = info.release_notes
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .slice(0, 10);
+  // Fallback: plain lines if no markdown structure detected
+  const plainLines = !hasSections
+    ? info.release_notes.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 12)
+    : [];
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o && phase === "idle") onDismiss(); }}>
@@ -88,24 +121,47 @@ export function UpdateDialog({ info, onDismiss }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowUpCircle className="h-5 w-5 text-primary" />
-            发现新版本
+            版本更新
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 py-1">
           {/* Version badges */}
           <div className="flex items-center gap-3">
             <Badge variant="secondary" className="font-mono">v{info.current_version}</Badge>
-            <span className="text-muted-foreground">→</span>
+            <span className="text-muted-foreground text-sm">→</span>
             <Badge variant="default" className="font-mono">v{info.new_version}</Badge>
           </div>
 
           {/* Release notes */}
-          {notes.length > 0 && (
-            <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1 max-h-40 overflow-y-auto">
-              {notes.map((line, i) => (
-                <p key={i} className="text-muted-foreground leading-relaxed">{line}</p>
-              ))}
+          {(hasSections || plainLines.length > 0) && (
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-3 max-h-52 overflow-y-auto text-sm">
+              {hasSections
+                ? sections.map((sec, i) => {
+                    const { Icon, color } = sectionMeta(sec.heading);
+                    return (
+                      <div key={i} className="space-y-1.5">
+                        {sec.heading && (
+                          <p className={`flex items-center gap-1.5 text-xs font-semibold ${color}`}>
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                            {sec.heading}
+                          </p>
+                        )}
+                        <ul className="space-y-1 pl-1">
+                          {sec.items.map((item, j) => (
+                            <li key={j} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })
+                : plainLines.map((line, i) => (
+                    <p key={i} className="text-xs text-muted-foreground leading-relaxed">{line}</p>
+                  ))
+              }
             </div>
           )}
 
@@ -115,7 +171,7 @@ export function UpdateDialog({ info, onDismiss }: Props) {
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  正在下载...
+                  正在下載...
                 </span>
                 <span>{progress}%</span>
               </div>
@@ -126,7 +182,7 @@ export function UpdateDialog({ info, onDismiss }: Props) {
           {phase === "done" && (
             <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-600">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              下载完成！安装程序已自动打开，请按提示完成安装。
+              下載完成！安裝程式已自動開啓，請按提示完成安裝。
             </div>
           )}
 
@@ -134,7 +190,7 @@ export function UpdateDialog({ info, onDismiss }: Props) {
             <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
               <XCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <div>
-                <p className="font-medium">下载失败</p>
+                <p className="font-medium">下載失敗</p>
                 <p className="mt-0.5 text-xs opacity-80">{errorMsg}</p>
               </div>
             </div>
@@ -144,8 +200,10 @@ export function UpdateDialog({ info, onDismiss }: Props) {
         <DialogFooter className="gap-2">
           {phase === "idle" && (
             <>
-              <Button variant="ghost" size="sm" onClick={handleSkip}>跳过此版本</Button>
-              <Button variant="outline" size="sm" onClick={onDismiss}>稍后提醒</Button>
+              {onSkip && (
+                <Button variant="ghost" size="sm" onClick={onSkip}>跳過此版本</Button>
+              )}
+              <Button variant="outline" size="sm" onClick={onDismiss}>稍後</Button>
               <Button onClick={handleUpdate}>
                 <Download className="mr-2 h-4 w-4" />立即更新
               </Button>
@@ -153,12 +211,12 @@ export function UpdateDialog({ info, onDismiss }: Props) {
           )}
           {phase === "downloading" && (
             <Button disabled>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />下载中...
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />下載中...
             </Button>
           )}
           {phase === "done" && (
             <Button onClick={onDismiss}>
-              <CheckCircle2 className="mr-2 h-4 w-4" />关闭
+              <CheckCircle2 className="mr-2 h-4 w-4" />關閉
             </Button>
           )}
           {phase === "error" && (
@@ -169,9 +227,9 @@ export function UpdateDialog({ info, onDismiss }: Props) {
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
               >
-                <ExternalLink className="h-3 w-3" />手动下载
+                手動下載
               </a>
-              <Button onClick={handleUpdate}>重试</Button>
+              <Button onClick={handleUpdate}>重試</Button>
             </>
           )}
         </DialogFooter>

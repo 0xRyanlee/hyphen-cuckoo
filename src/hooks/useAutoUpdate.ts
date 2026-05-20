@@ -4,6 +4,7 @@ import type { UpdateInfo } from "@/components/UpdateDialog";
 
 const STORAGE_KEY = "cuckoo_auto_update";
 const SKIP_KEY = "cuckoo_skipped_version";
+export const PENDING_KEY = "cuckoo_pending_update";
 
 export function useAutoUpdate() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -28,8 +29,19 @@ export function useAutoUpdate() {
   }, []);
 
   function dismiss() {
+    if (updateInfo) {
+      localStorage.setItem(PENDING_KEY, JSON.stringify(updateInfo));
+    }
     setUpdateInfo(null);
   }
 
-  return { updateInfo, dismiss };
+  function skip() {
+    if (updateInfo) {
+      localStorage.setItem(SKIP_KEY, updateInfo.new_version);
+      localStorage.removeItem(PENDING_KEY);
+    }
+    setUpdateInfo(null);
+  }
+
+  return { updateInfo, dismiss, skip };
 }

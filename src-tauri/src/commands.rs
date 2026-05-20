@@ -616,9 +616,41 @@ pub fn submit_order(state: State<AppState>, order_id: i64) -> Result<Vec<String>
 #[tauri::command]
 pub fn cancel_order(state: State<AppState>, order_id: i64, is_served: bool) -> Result<Vec<String>, String> {
     if is_served {
-        state.db.confirm_inventory_for_order(order_id).map_err(|e| e.to_string())?;
+        // Food was made; keep inventory consumed, just mark cancelled
+        state.db.cancel_order_confirmed(order_id).map_err(|e| e.to_string())
+    } else {
+        // Not yet served; restore inventory
+        state.db.release_inventory_for_order(order_id).map_err(|e| e.to_string())
     }
-    state.db.release_inventory_for_order(order_id).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateOrderPaymentRequest {
+    pub order_id: i64,
+    pub payment_status: String,
+    pub payment_method: Option<String>,
+    pub amount_paid: f64,
+}
+
+#[tauri::command]
+pub fn update_order_payment(state: State<AppState>, req: UpdateOrderPaymentRequest) -> Result<(), String> {
+    state.db.update_order_payment(req.order_id, &req.payment_status, req.payment_method.as_deref(), req.amount_paid)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReceivePOItemRequest {
+    pub item_id: i64,
+    pub received_qty: f64,
+    pub lot_no: Option<String>,
+}
+
+#[tauri::command]
+pub fn receive_purchase_order_items(state: State<AppState>, po_id: i64, items: Vec<ReceivePOItemRequest>, operator: Option<String>) -> Result<Vec<String>, String> {
+    let mapped: Vec<(i64, f64, Option<String>)> = items.into_iter().map(|r| (r.item_id, r.received_qty, r.lot_no)).collect();
+    state.db.receive_purchase_order_items(po_id, mapped, operator.as_deref())
+        .map(|details| details.into_iter().map(|(_, lot, name, _, _, _)| format!("{}: {}", name, lot)).collect())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

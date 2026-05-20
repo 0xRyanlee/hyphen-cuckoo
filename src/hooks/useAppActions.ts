@@ -483,6 +483,22 @@ export function useAppActions({
     catch (e) { logError("receive_purchase_order", e, "入库失败", { po_id }); }
   };
 
+  const handleReceivePurchaseOrderItems = async (po_id: number, items: { item_id: number; received_qty: number; lot_no: string | null }[]) => {
+    try {
+      const result = await invoke<string[]>("receive_purchase_order_items", { poId: po_id, items, operator: null });
+      toast.success(`已入库 ${result.length} 项`, { description: result.join("，") || undefined });
+      loadData();
+    } catch (e) { logError("receive_purchase_order_items", e, "部分收货失败", { po_id }); }
+  };
+
+  const handleUpdateOrderPayment = async (id: number, payment_status: string, payment_method: string | null, amount_paid: number) => {
+    try {
+      await invoke("update_order_payment", { req: { order_id: id, payment_status, payment_method, amount_paid } });
+      toast.success("收款已登记");
+      loadData();
+    } catch (e) { logError("update_order_payment", e, "收款登记失败", { id }); }
+  };
+
   // 生產單
   const handleCreateProductionOrder = async (data: { recipe_id: number; planned_qty: number; operator: string | null }) => {
     try { await invoke("create_production_order", { recipeId: data.recipe_id, plannedQty: data.planned_qty, operator: data.operator }); toast.success("生产单已创建"); loadData(); }
@@ -696,7 +712,9 @@ export function useAppActions({
     // 材料狀態
     handleCreateMaterialState, handleUpdateMaterialState, handleDeleteMaterialState,
     // 採購單
-    handleCreatePurchaseOrder, handleAddPurchaseOrderItem, handleViewPurchaseOrder, handleDeletePurchaseOrder, handleReceivePurchaseOrder,
+    handleCreatePurchaseOrder, handleAddPurchaseOrderItem, handleViewPurchaseOrder, handleDeletePurchaseOrder, handleReceivePurchaseOrder, handleReceivePurchaseOrderItems,
+    // 收款
+    handleUpdateOrderPayment,
     // 生產單
     handleCreateProductionOrder, handleStartProductionOrder, handleCompleteProductionOrder, handleViewProductionOrder, handleDeleteProductionOrder,
     // 盤點

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, ShoppingCart, Eye, Trash2, Truck, Package, FileBox } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
@@ -55,13 +55,14 @@ interface PurchaseOrdersPageProps {
   onViewOrder: (po_id: number) => void;
   onDeleteOrder: (po_id: number) => void;
   onReceiveOrder: (po_id: number) => void;
+  onReceiveItems: (po_id: number, items: { item_id: number; received_qty: number; lot_no: string | null }[]) => void;
   selectedOrder: PurchaseOrderWithItems | null;
   searchQuery?: string;
 }
 
 export function PurchaseOrdersPage({
   orders, materials, units, suppliers,
-  onCreateOrder, onAddItem, onViewOrder, onDeleteOrder, onReceiveOrder,
+  onCreateOrder, onAddItem, onViewOrder, onDeleteOrder, onReceiveOrder: _onReceiveOrder, onReceiveItems,
   selectedOrder,
   searchQuery,
 }: PurchaseOrdersPageProps) {
@@ -80,15 +81,16 @@ export function PurchaseOrdersPage({
   const [addItemCost, setAddItemCost] = useState("0");
 
   const [receivePoId, setReceivePoId] = useState<number | null>(null);
-  const [receiveLotPrefix, setReceiveLotPrefix] = useState("");
   const [receiveExpiryDate, setReceiveExpiryDate] = useState("");
-  const [receiveAutoBatch, setReceiveAutoBatch] = useState(true);
+  const [receiveOrderItems, setReceiveOrderItems] = useState<PurchaseOrderItem[]>([]);
+  const [receiveItemQtys, setReceiveItemQtys] = useState<Record<number, string>>({});
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft": return <Badge variant="outline">草稿</Badge>;
       case "confirmed": return <Badge className="bg-blue-600">已确认</Badge>;
       case "received": return <Badge className="bg-emerald-600">已收貨</Badge>;
+      case "partial": return <Badge className="bg-amber-500">部分收貨</Badge>;
       case "cancelled": return <Badge variant="destructive">已取消</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
@@ -134,10 +136,21 @@ export function PurchaseOrdersPage({
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewOrder(order.id)}><Eye className="h-4 w-4" /></Button>
                           {order.status === "draft" && (
-                            <>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => { setAddItemPoId(order.id); setAddItemMaterialId(""); setAddItemQty("1"); setAddItemCost("0"); }}><Plus className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => { setReceivePoId(order.id); setReceiveLotPrefix(`PO${order.po_no.replace(/-/g, "").slice(-6)}`); setReceiveExpiryDate(""); }}><Truck className="h-4 w-4" /></Button>
-                            </>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => { setAddItemPoId(order.id); setAddItemMaterialId(""); setAddItemQty("1"); setAddItemCost("0"); }}><Plus className="h-4 w-4" /></Button>
+                          )}
+                          {(order.status === "draft" || order.status === "partial") && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={async () => {
+                              setReceivePoId(order.id);
+                              setReceiveExpiryDate("");
+                              try {
+                                const data = await invoke<PurchaseOrderWithItems>("get_purchase_order_with_items", { poId: order.id });
+                                const items = data.items.filter(i => i.qty - i.received_qty > 0.001);
+                                setReceiveOrderItems(items);
+                                const initQtys: Record<number, string> = {};
+                                items.forEach(i => { initQtys[i.id] = (i.qty - i.received_qty).toFixed(2); });
+                                setReceiveItemQtys(initQtys);
+                              } catch { setReceiveOrderItems([]); setReceiveItemQtys({}); }
+                            }}><Truck className="h-4 w-4" /></Button>
                           )}
                           {order.status === "draft" && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDeleteOrder(order.id)}><Trash2 className="h-4 w-4" /></Button>
@@ -277,43 +290,50 @@ export function PurchaseOrdersPage({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!receivePoId} onOpenChange={() => setReceivePoId(null)}>
-        <DialogContent>
+      <Dialog open={!!receivePoId} onOpenChange={(open) => { if (!open) { setReceivePoId(null); setReceiveOrderItems([]); setReceiveItemQtys({}); } }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>收货入库</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
+            {receiveOrderItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground">加载中…</p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">请确认各材料的实收数量（只有数量 &gt; 0 的项会入库）</p>
+                {receiveOrderItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <div className="flex-1 text-sm">
+                      <div className="font-medium">{item.material_name || `材料 #${item.material_id}`}</div>
+                      <div className="text-xs text-muted-foreground">已订 {item.qty} {item.unit_name || ""} · 已收 {item.received_qty}</div>
+                    </div>
+                    <div className="w-24">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="h-7 text-xs"
+                        value={receiveItemQtys[item.id] ?? ""}
+                        onChange={(e) => setReceiveItemQtys((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="space-y-2">
-              <Label>批次号前缀（可选）</Label>
-              <Input 
-                value={receiveLotPrefix} 
-                onChange={(e) => setReceiveLotPrefix(e.target.value)} 
-                placeholder="自动生成批次号"
-              />
-              <p className="text-xs text-muted-foreground">将自动添加日期时间后缀，如: PO20260427-1430</p>
-            </div>
-            <div className="space-y-2">
-              <Label>过期日期（可选）</Label>
-              <Input 
-                type="date" 
-                value={receiveExpiryDate} 
-                onChange={(e) => setReceiveExpiryDate(e.target.value)} 
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="autoBatch"
-                checked={receiveAutoBatch}
-                onCheckedChange={(checked) => setReceiveAutoBatch(checked as boolean)}
-              />
-              <Label htmlFor="autoBatch" className="text-sm font-normal">自动为每项材料生成独立批次</Label>
+              <Label>过期日期（统一，可选）</Label>
+              <Input type="date" value={receiveExpiryDate} onChange={(e) => setReceiveExpiryDate(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReceivePoId(null)}>取消</Button>
+            <Button variant="outline" onClick={() => { setReceivePoId(null); setReceiveOrderItems([]); setReceiveItemQtys({}); }}>取消</Button>
             <Button onClick={() => {
-              if (receivePoId) {
-                onReceiveOrder(receivePoId);
-              }
-              setReceivePoId(null);
+              if (!receivePoId) return;
+              const itemsToReceive = receiveOrderItems
+                .map((item) => ({ item_id: item.id, received_qty: parseFloat(receiveItemQtys[item.id] ?? "0") || 0, lot_no: null as string | null }))
+                .filter((i) => i.received_qty > 0);
+              if (itemsToReceive.length === 0) { toast.error("请至少输入一项的收货数量"); return; }
+              onReceiveItems(receivePoId, itemsToReceive);
+              setReceivePoId(null); setReceiveOrderItems([]); setReceiveItemQtys({});
             }}>
               <Truck className="mr-2 h-4 w-4" />确认收货
             </Button>

@@ -27,6 +27,7 @@ interface StocktakeItem {
   system_qty: number;
   actual_qty: number;
   diff_qty: number | null;
+  is_counted: boolean;
   note: string | null;
 }
 
@@ -149,7 +150,7 @@ export function StocktakesPage({
               }}>
                 <Plus className="mr-2 h-4 w-4" />新增盘点单
               </Button>
-              <p className="text-xs text-muted-foreground">自动带入所有有库存的批次，实际数量预设等于系统数量</p>
+              <p className="text-xs text-muted-foreground">自动带入所有有库存的批次。点击各项「填入实际数量」后才会计入差异调整，未填项不影响库存。</p>
             </CardContent>
           </Card>
 
@@ -166,16 +167,33 @@ export function StocktakesPage({
                   <div className="flex justify-between"><span className="text-muted-foreground">備註</span><span>{selectedStocktake.stocktake.note || "-"}</span></div>
                 </div>
                 <div>
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />盘点明细</h4>
+                  {selectedStocktake.items.length > 0 && (() => {
+                    const counted = selectedStocktake.items.filter(i => i.is_counted).length;
+                    return (
+                      <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        盘点明细
+                        <span className={`ml-auto text-xs font-normal ${counted === selectedStocktake.items.length ? "text-emerald-600" : "text-amber-500"}`}>
+                          {counted}/{selectedStocktake.items.length} 已盘
+                        </span>
+                      </h4>
+                    );
+                  })()}
+                  {selectedStocktake.items.length === 0 && (
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />盘点明细</h4>
+                  )}
                   {selectedStocktake.items.length === 0 ? (
                     <EmptyState icon={Package} title="暂无材料" description="盘点单中没有材料" />
                   ) : (
                     <div className="space-y-2">
                       {selectedStocktake.items.map((item) => (
-                        <div key={item.id} className="p-2 bg-muted rounded space-y-1">
+                        <div key={item.id} className={`p-2 rounded space-y-1 ${item.is_counted ? "bg-muted" : "bg-muted/40 border border-dashed border-muted-foreground/30"}`}>
                           <div className="flex justify-between text-sm">
-                            <span className="font-medium">{item.material_name || `材料 #${item.material_id}`}</span>
-                            {item.diff_qty !== null && Math.abs(item.diff_qty) > 0.001 && (
+                            <span className={`font-medium ${!item.is_counted ? "text-muted-foreground" : ""}`}>
+                              {item.material_name || `材料 #${item.material_id}`}
+                              {!item.is_counted && <span className="ml-1 text-xs text-muted-foreground font-normal">未盘</span>}
+                            </span>
+                            {item.is_counted && item.diff_qty !== null && Math.abs(item.diff_qty) > 0.001 && (
                               <span className="text-xs text-amber-500">差異: {item.diff_qty > 0 ? "+" : ""}{item.diff_qty.toFixed(2)}</span>
                             )}
                           </div>
@@ -200,8 +218,8 @@ export function StocktakesPage({
                             ) : (
                               <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => {
                                 setEditingItemId(item.id);
-                                setEditingActualQty(item.actual_qty.toString());
-                              }}>实际: {item.actual_qty} ✏️</Button>
+                                setEditingActualQty("");
+                              }}>{item.is_counted ? `实际: ${item.actual_qty} ✏️` : "点击填入实际数量"}</Button>
                             )}
                           </div>
                         </div>

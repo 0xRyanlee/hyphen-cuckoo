@@ -8,11 +8,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash2,
-         ArrowUpCircle, CheckCircle2, Loader2 } from "lucide-react";
+         ArrowUpCircle, Sparkles, Bug as BugIcon, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { appLogger, type LogEntry, type ErrorCategory } from "@/lib/logger";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import type { UpdateInfo } from "@/components/UpdateDialog";
+import { PENDING_KEY } from "@/hooks/useAutoUpdate";
 
 const AUTO_UPDATE_KEY = "cuckoo_auto_update";
 const SKIP_KEY = "cuckoo_skipped_version";
@@ -52,6 +53,142 @@ function timeAgo(isoStr: string): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h} 小时前`;
   return `${Math.floor(h / 24)} 天前`;
+}
+
+// ── Release notes renderer (shared with banner) ──────────────────────────────
+
+interface ReleaseSection { heading: string | null; items: string[] }
+
+function parseNotes(body: string): ReleaseSection[] {
+  const sections: ReleaseSection[] = [];
+  let cur: ReleaseSection = { heading: null, items: [] };
+  for (const raw of body.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/^#{1,3}\s/.test(line)) {
+      if (cur.heading !== null || cur.items.length > 0) sections.push(cur);
+      cur = { heading: line.replace(/^#+\s*/, ""), items: [] };
+    } else if (/^[-*]\s/.test(line)) {
+      cur.items.push(line.slice(2).trim());
+    } else if (cur.heading !== null) {
+      cur.items.push(line);
+    }
+  }
+  if (cur.heading !== null || cur.items.length > 0) sections.push(cur);
+  return sections.filter((s) => s.items.length > 0);
+}
+
+function sectionIcon(heading: string | null) {
+  const h = (heading ?? "").toLowerCase();
+  if (/✨|新功能|新增|feature|new/.test(h)) return <Sparkles className="h-3.5 w-3.5 text-violet-500" />;
+  if (/🐛|🔧|修復|修正|fix|bug/.test(h)) return <BugIcon className="h-3.5 w-3.5 text-rose-500" />;
+  if (/⚡|改善|優化|improve|perf/.test(h)) return <Zap className="h-3.5 w-3.5 text-amber-500" />;
+  return <ArrowUpCircle className="h-3.5 w-3.5 text-muted-foreground" />;
+}
+
+// ── Pending update card ───────────────────────────────────────────────────────
+
+function PendingUpdateCard() {
+  const [info, setInfo] = useState<UpdateInfo | null>(null);
+  const [showDialog, setShowDialog] = useState(false);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (raw) {
+      try { setInfo(JSON.parse(raw)); } catch { /* ignore */ }
+    }
+  }, []);
+
+  function handleSkip() {
+    if (!info) return;
+    localStorage.setItem(SKIP_KEY, info.new_version);
+    localStorage.removeItem(PENDING_KEY);
+    setInfo(null);
+  }
+
+  function handleDismissDialog() {
+    setShowDialog(false);
+    // If update was completed, clear pending
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) setInfo(null);
+  }
+
+  if (!info) return null;
+
+  const sections = parseNotes(info.release_notes);
+  const plainLines = sections.length === 0
+    ? info.release_notes.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 8)
+    : [];
+
+  return (
+    <>
+      <Card className="border-primary/30 bg-primary/5">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center justify-between gap-2 text-base">
+            <span className="flex items-center gap-2">
+              <ArrowUpCircle className="h-4 w-4 text-primary" />
+              有可用更新
+            </span>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="font-mono text-xs">v{info.current_version}</Badge>
+              <span className="text-xs text-muted-foreground">→</span>
+              <Badge variant="default" className="font-mono text-xs">v{info.new_version}</Badge>
+            </div>
+          </CardTitle>
+          <CardDescription>此更新在之前的提示中被暫緩，可在此繼續安裝。</CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          {/* Release notes */}
+          {(sections.length > 0 || plainLines.length > 0) && (
+            <div className="rounded-lg border bg-background/60 p-3 space-y-3 max-h-52 overflow-y-auto text-sm">
+              {sections.length > 0
+                ? sections.map((sec, i) => (
+                    <div key={i} className="space-y-1.5">
+                      {sec.heading && (
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                          {sectionIcon(sec.heading)}
+                          {sec.heading}
+                        </p>
+                      )}
+                      <ul className="space-y-1 pl-1">
+                        {sec.items.map((item, j) => (
+                          <li key={j} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                            <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                : plainLines.map((line, i) => (
+                    <p key={i} className="text-xs text-muted-foreground leading-relaxed">{line}</p>
+                  ))
+              }
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={handleSkip}>
+              跳過此版本
+            </Button>
+            <Button size="sm" className="flex-1 gap-1.5" onClick={() => setShowDialog(true)}>
+              <ArrowUpCircle className="h-3.5 w-3.5" />
+              立即更新
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {showDialog && (
+        <UpdateDialog
+          info={info}
+          onDismiss={handleDismissDialog}
+          onSkip={handleSkip}
+        />
+      )}
+    </>
+  );
 }
 
 // ── Error log panel ──────────────────────────────────────────────────────────
@@ -210,9 +347,6 @@ export function SettingsPage({ connected }: SettingsPageProps) {
   const [autoUpdate, setAutoUpdate] = useState(
     localStorage.getItem(AUTO_UPDATE_KEY) !== "false"
   );
-  const [checking, setChecking] = useState(false);
-  const [manualUpdateInfo, setManualUpdateInfo] = useState<UpdateInfo | null>(null);
-  const [latestChecked, setLatestChecked] = useState(false);
 
   useEffect(() => {
     invoke<string>("health_check")
@@ -227,25 +361,6 @@ export function SettingsPage({ connected }: SettingsPageProps) {
     setAutoUpdate(val);
     localStorage.setItem(AUTO_UPDATE_KEY, val ? "true" : "false");
     if (val) localStorage.removeItem(SKIP_KEY);
-  }
-
-  async function handleCheckNow() {
-    setChecking(true);
-    setLatestChecked(false);
-    setManualUpdateInfo(null);
-    try {
-      const info = await invoke<UpdateInfo | null>("check_for_update");
-      if (info) {
-        setManualUpdateInfo(info);
-      } else {
-        setLatestChecked(true);
-        toast.success("已是最新版本");
-      }
-    } catch (e) {
-      toast.error("检查失败", { description: String(e) });
-    } finally {
-      setChecking(false);
-    }
   }
 
   return (
@@ -307,20 +422,23 @@ export function SettingsPage({ connected }: SettingsPageProps) {
         </CardContent>
       </Card>
 
+      {/* Pending update card (shown when user dismissed the banner) */}
+      <PendingUpdateCard />
+
       {/* Auto-update settings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ArrowUpCircle className="h-4 w-4" />
-            自动更新
+            自動更新
           </CardTitle>
-          <CardDescription>应用启动后自动检查 GitHub 是否有新版本</CardDescription>
+          <CardDescription>應用啓動後自動檢查 GitHub 是否有新版本</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <div className="flex items-center justify-between">
             <Label htmlFor="auto-update-switch" className="flex flex-col gap-0.5 cursor-pointer">
-              <span className="text-sm font-medium">启动时自动检查更新</span>
-              <span className="text-xs text-muted-foreground">有新版本时会弹窗提示，可选择立即更新或跳过</span>
+              <span className="text-sm font-medium">啓動時自動檢查更新</span>
+              <span className="text-xs text-muted-foreground">有新版本時會在右下角彈出提示，可選擇立即更新或稍後在此查看</span>
             </Label>
             <Switch
               id="auto-update-switch"
@@ -328,35 +446,8 @@ export function SettingsPage({ connected }: SettingsPageProps) {
               onCheckedChange={handleAutoUpdateToggle}
             />
           </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">立即检查</p>
-              <p className="text-xs text-muted-foreground">手动检查是否有可用更新</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {latestChecked && (
-                <span className="flex items-center gap-1 text-xs text-emerald-600">
-                  <CheckCircle2 className="h-3 w-3" />已是最新版
-                </span>
-              )}
-              <Button variant="outline" size="sm" onClick={handleCheckNow} disabled={checking}>
-                {checking
-                  ? <><Loader2 className="mr-2 h-3 w-3 animate-spin" />检查中...</>
-                  : <><RefreshCw className="mr-2 h-3 w-3" />检查更新</>
-                }
-              </Button>
-            </div>
-          </div>
         </CardContent>
       </Card>
-
-      {manualUpdateInfo && (
-        <UpdateDialog
-          info={manualUpdateInfo}
-          onDismiss={() => setManualUpdateInfo(null)}
-        />
-      )}
 
       {/* Error Log Panel */}
       <Card>

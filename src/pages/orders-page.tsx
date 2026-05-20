@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package } from "lucide-react";
+import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
@@ -44,6 +44,9 @@ interface Order {
   status: string;
   amount_total: number;
   note: string | null;
+  payment_status: string;
+  payment_method: string | null;
+  amount_paid: number;
   created_at: string;
   updated_at: string;
 }
@@ -69,6 +72,7 @@ interface OrdersPageProps {
   onAddModifier: (data: { order_item_id: number; modifier_type: string; material_id: number | null; qty: number; price_delta: number }) => void;
   onDeleteModifier: (modifier_id: number) => void;
   onLoadModifiers: (order_item_id: number) => Promise<OrderItemModifier[]>;
+  onUpdatePayment: (id: number, payment_status: string, payment_method: string | null, amount_paid: number) => void;
   onLoadMore: () => void;
   hasMore: boolean;
   searchQuery?: string;
@@ -88,6 +92,7 @@ export function OrdersPage({
   onAddModifier,
   onDeleteModifier,
   onLoadModifiers,
+  onUpdatePayment,
   onLoadMore,
   hasMore,
 }: OrdersPageProps) {
@@ -105,6 +110,11 @@ export function OrdersPage({
   const [cancelIsServed, setCancelIsServed] = useState(false);
   const [batchCancelDialogOpen, setBatchCancelDialogOpen] = useState(false);
   const [orderCost, setOrderCost] = useState<number | null>(null);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentTargetOrder, setPaymentTargetOrder] = useState<Order | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState("paid");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentAmountPaid, setPaymentAmountPaid] = useState("");
 
   const [itemModifiers, setItemModifiers] = useState<Record<number, OrderItemModifier[]>>({});
 
@@ -159,6 +169,14 @@ export function OrdersPage({
         return <Badge variant="destructive">已取消</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const getPaymentBadge = (ps: string) => {
+    switch (ps) {
+      case "paid": return <Badge className="bg-emerald-600 text-xs">已收款</Badge>;
+      case "partial": return <Badge className="bg-amber-500 text-xs">部分收款</Badge>;
+      default: return <Badge variant="secondary" className="text-xs">未收款</Badge>;
     }
   };
 
@@ -233,6 +251,7 @@ export function OrdersPage({
                     <TableHead>订单号</TableHead>
                     <TableHead>类型</TableHead>
                     <TableHead>状态</TableHead>
+                    <TableHead>收款</TableHead>
                     <TableHead className="text-right">总额</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
@@ -244,6 +263,7 @@ export function OrdersPage({
                       <TableCell className="font-mono text-xs">{order.order_no}</TableCell>
                       <TableCell className="text-muted-foreground">{order.dine_type}</TableCell>
                       <TableCell>{getStatusBadge(order.status)}</TableCell>
+                      <TableCell>{getPaymentBadge(order.payment_status ?? "unpaid")}</TableCell>
                       <TableCell className="text-right font-medium">
                         ¥{order.amount_total.toFixed(2)}
                       </TableCell>
@@ -253,14 +273,19 @@ export function OrdersPage({
                             <Eye className="h-4 w-4" />
                           </Button>
                           {order.status === "pending" && (
-                            <>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => onSubmitOrder(order.id)}>
-                                <Send className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setCancelTargetOrder(order); setCancelIsServed(false); setCancelDialogOpen(true); }}>
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => onSubmitOrder(order.id)}>
+                              <Send className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {(order.status === "submitted" || order.status === "ready") && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => { setPaymentTargetOrder(order); setPaymentStatus(order.payment_status === "paid" ? "paid" : "paid"); setPaymentMethod(order.payment_method || "cash"); setPaymentAmountPaid(order.amount_total.toFixed(2)); setPaymentDialogOpen(true); }}>
+                              <CreditCard className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {order.status !== "cancelled" && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setCancelTargetOrder(order); setCancelIsServed(order.status === "ready"); setCancelDialogOpen(true); }}>
+                              <X className="h-4 w-4" />
+                            </Button>
                           )}
                         </div>
                       </TableCell>
@@ -289,6 +314,22 @@ export function OrdersPage({
                   <span className="text-muted-foreground">状态</span>
                   {getStatusBadge(selectedOrder.order.status)}
                 </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">收款状态</span>
+                  {getPaymentBadge(selectedOrder.order.payment_status ?? "unpaid")}
+                </div>
+                {selectedOrder.order.payment_method && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">付款方式</span>
+                    <span>{selectedOrder.order.payment_method}</span>
+                  </div>
+                )}
+                {selectedOrder.order.amount_paid > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">已收金额</span>
+                    <span className="text-emerald-600 font-medium">¥{selectedOrder.order.amount_paid.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">类型</span>
                   <span>{selectedOrder.order.dine_type}</span>
@@ -424,6 +465,53 @@ export function OrdersPage({
           <DialogFooter>
             <Button variant="outline" onClick={() => setBatchCancelDialogOpen(false)}>返回</Button>
             <Button variant="destructive" onClick={confirmBatchCancel}>确认取消</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>收款登记</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-muted-foreground">订单「{paymentTargetOrder?.order_no}」· 应收 ¥{paymentTargetOrder?.amount_total.toFixed(2)}</p>
+            <div className="space-y-2">
+              <Label>收款状态</Label>
+              <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="paid">已全额收款</SelectItem>
+                  <SelectItem value="partial">部分收款</SelectItem>
+                  <SelectItem value="unpaid">未收款</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>付款方式</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">现金</SelectItem>
+                  <SelectItem value="wechat">微信支付</SelectItem>
+                  <SelectItem value="alipay">支付宝</SelectItem>
+                  <SelectItem value="card">银行卡</SelectItem>
+                  <SelectItem value="other">其他</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>实收金额</Label>
+              <Input type="number" step="0.01" value={paymentAmountPaid} onChange={(e) => setPaymentAmountPaid(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>取消</Button>
+            <Button onClick={() => {
+              if (!paymentTargetOrder) return;
+              const amt = parseFloat(paymentAmountPaid);
+              if (isNaN(amt) || amt < 0) { toast.error("请输入有效金额"); return; }
+              onUpdatePayment(paymentTargetOrder.id, paymentStatus, paymentStatus === "unpaid" ? null : paymentMethod, amt);
+              setPaymentDialogOpen(false);
+            }}>确认收款</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
