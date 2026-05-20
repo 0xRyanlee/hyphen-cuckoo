@@ -1691,22 +1691,21 @@ impl Database {
 
         // Batch fetch all tags in one query and group by material_id
         let mut tags_map: HashMap<i64, Vec<Tag>> = HashMap::new();
-        let tag_filter = if let Some(cat_id) = category_id {
-            format!("WHERE mt.material_id IN (SELECT id FROM materials WHERE is_active = 1 AND category_id = {})", cat_id)
+        let tag_rows: Vec<(i64, Tag)> = if let Some(cat_id) = category_id {
+            let mut tag_stmt = conn.prepare(
+                "SELECT mt.material_id, t.id, t.code, t.name, t.color, t.is_active FROM material_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.material_id IN (SELECT id FROM materials WHERE is_active = 1 AND category_id = ?1)"
+            )?;
+            let x = tag_stmt.query_map(params![cat_id], |row| {
+                Ok((row.get::<_, i64>(0)?, Tag { id: row.get(1)?, code: row.get(2)?, name: row.get(3)?, color: row.get(4)?, is_active: row.get::<_, i32>(5)? != 0 }))
+            })?.collect::<Result<Vec<_>>>()?; x
         } else {
-            "WHERE mt.material_id IN (SELECT id FROM materials WHERE is_active = 1)".to_string()
+            let mut tag_stmt = conn.prepare(
+                "SELECT mt.material_id, t.id, t.code, t.name, t.color, t.is_active FROM material_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.material_id IN (SELECT id FROM materials WHERE is_active = 1)"
+            )?;
+            let x = tag_stmt.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, Tag { id: row.get(1)?, code: row.get(2)?, name: row.get(3)?, color: row.get(4)?, is_active: row.get::<_, i32>(5)? != 0 }))
+            })?.collect::<Result<Vec<_>>>()?; x
         };
-        let tag_sql = format!(
-            "SELECT mt.material_id, t.id, t.code, t.name, t.color, t.is_active FROM material_tags mt JOIN tags t ON mt.tag_id = t.id {}",
-            tag_filter
-        );
-        let mut tag_stmt = conn.prepare(&tag_sql)?;
-        let tag_rows = tag_stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, Tag {
-                id: row.get(1)?, code: row.get(2)?, name: row.get(3)?,
-                color: row.get(4)?, is_active: row.get::<_, i32>(5)? != 0,
-            }))
-        })?.collect::<Result<Vec<_>>>()?;
         for (mat_id, tag) in tag_rows {
             tags_map.entry(mat_id).or_default().push(tag);
         }
@@ -1799,11 +1798,10 @@ impl Database {
 
     pub fn update_material_state(&self, id: i64, state_code: Option<&str>, state_name: Option<&str>, unit_id: Option<i64>, yield_rate: Option<f64>, cost_multiplier: Option<f64>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        if let Some(sc) = state_code { conn.execute("UPDATE material_states SET state_code = ?1 WHERE id = ?2", params![sc, id])?; }
-        if let Some(sn) = state_name { conn.execute("UPDATE material_states SET state_name = ?1 WHERE id = ?2", params![sn, id])?; }
-        if let Some(u) = unit_id { conn.execute("UPDATE material_states SET unit_id = ?1 WHERE id = ?2", params![u, id])?; }
-        if let Some(y) = yield_rate { conn.execute("UPDATE material_states SET yield_rate = ?1 WHERE id = ?2", params![y, id])?; }
-        if let Some(c) = cost_multiplier { conn.execute("UPDATE material_states SET cost_multiplier = ?1 WHERE id = ?2", params![c, id])?; }
+        conn.execute(
+            "UPDATE material_states SET state_code = COALESCE(?1, state_code), state_name = COALESCE(?2, state_name), unit_id = COALESCE(?3, unit_id), yield_rate = COALESCE(?4, yield_rate), cost_multiplier = COALESCE(?5, cost_multiplier) WHERE id = ?6",
+            params![state_code, state_name, unit_id, yield_rate, cost_multiplier, id],
+        )?;
         Ok(())
     }
 
@@ -1830,11 +1828,10 @@ impl Database {
 
     pub fn update_supplier(&self, id: i64, name: Option<&str>, phone: Option<&str>, contact_person: Option<&str>, address: Option<&str>, note: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        if let Some(n) = name { conn.execute("UPDATE suppliers SET name = ?1 WHERE id = ?2", params![n, id])?; }
-        if let Some(p) = phone { conn.execute("UPDATE suppliers SET phone = ?1 WHERE id = ?2", params![p, id])?; }
-        if let Some(c) = contact_person { conn.execute("UPDATE suppliers SET contact_person = ?1 WHERE id = ?2", params![c, id])?; }
-        if let Some(a) = address { conn.execute("UPDATE suppliers SET address = ?1 WHERE id = ?2", params![a, id])?; }
-        if let Some(n) = note { conn.execute("UPDATE suppliers SET note = ?1 WHERE id = ?2", params![n, id])?; }
+        conn.execute(
+            "UPDATE suppliers SET name = COALESCE(?1, name), phone = COALESCE(?2, phone), contact_person = COALESCE(?3, contact_person), address = COALESCE(?4, address), note = COALESCE(?5, note) WHERE id = ?6",
+            params![name, phone, contact_person, address, note, id],
+        )?;
         Ok(())
     }
 
@@ -1881,10 +1878,10 @@ impl Database {
 
     pub fn update_expense(&self, id: i64, expense_type: Option<&str>, amount: Option<f64>, expense_date: Option<&str>, note: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        if let Some(t) = expense_type { conn.execute("UPDATE expenses SET expense_type = ?1 WHERE id = ?2", params![t, id])?; }
-        if let Some(a) = amount { conn.execute("UPDATE expenses SET amount = ?1 WHERE id = ?2", params![a, id])?; }
-        if let Some(d) = expense_date { conn.execute("UPDATE expenses SET expense_date = ?1 WHERE id = ?2", params![d, id])?; }
-        if let Some(n) = note { conn.execute("UPDATE expenses SET note = ?1 WHERE id = ?2", params![n, id])?; }
+        conn.execute(
+            "UPDATE expenses SET expense_type = COALESCE(?1, expense_type), amount = COALESCE(?2, amount), expense_date = COALESCE(?3, expense_date), note = COALESCE(?4, note) WHERE id = ?5",
+            params![expense_type, amount, expense_date, note, id],
+        )?;
         Ok(())
     }
 
@@ -4857,7 +4854,7 @@ mod tests {
         db.add_recipe_item(recipe_id, "material", material.material.id, 2.0, unit_id, 0.0, 0).unwrap();
 
         let cost = db.calculate_recipe_cost(recipe_id).unwrap();
-        assert!(cost >= 0.0);
+        assert!(cost.total_cost >= 0.0);
     }
 
     #[test]
@@ -4867,7 +4864,7 @@ mod tests {
         let items = db.get_menu_items(None).unwrap();
         if items.is_empty() { return; }
         let item = &items[0];
-        db.toggle_menu_item_availability(item.id, None).unwrap();
+        db.batch_toggle_menu_item_availability(&[item.id], false).unwrap();
         let all_items = db.get_menu_items(None).unwrap();
         let found = all_items.iter().find(|i| i.id == item.id);
         assert!(found.is_some());
@@ -4945,6 +4942,7 @@ mod tests {
             show_service_charge: None,
             item_sort: None,
             modifiers_color: None,
+            is_active: Some(true),
         }).unwrap();
         assert_eq!(db.get_print_templates(None).unwrap().len(), count_before + 1);
 
@@ -4978,6 +4976,7 @@ mod tests {
             show_service_charge: None,
             item_sort: None,
             modifiers_color: None,
+            is_active: Some(true),
         }).unwrap();
 
         let data = serde_json::json!({
@@ -5001,11 +5000,11 @@ mod tests {
         let (db, _dir) = test_db();
         seed_minimal(&db);
 
-        let order_no = db.create_order("POS", "堂食", Some("A01")).unwrap();
+        let (order_id, order_no) = db.create_order("POS", "堂食", Some("A01")).unwrap();
         assert!(order_no.starts_with("ORD"));
 
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
         assert_eq!(order.status, "pending");
         assert_eq!(order.dine_type, "堂食");
         assert_eq!(order.table_no.as_deref(), Some("A01"));
@@ -5017,7 +5016,7 @@ mod tests {
         }
 
         db.submit_order_full(order.id).unwrap();
-        let updated_orders = db.get_orders().unwrap();
+        let updated_orders = db.get_orders(1000, 0).unwrap();
         let updated = updated_orders.iter().find(|o| o.id == order.id).unwrap();
         assert_eq!(updated.status, "submitted");
     }
@@ -5122,11 +5121,18 @@ mod tests {
         let (db, _dir) = test_db();
         seed_minimal(&db);
 
-        let recipes = db.get_recipes(None).unwrap();
-        if recipes.is_empty() { return; }
-        let recipe = &recipes[0];
+        // Need a recipe with output_material_id — create one explicitly
+        let materials = db.get_materials(None).unwrap();
+        if materials.is_empty() { return; }
+        let output_material = &materials[0];
+        let units = db.get_units().unwrap();
+        let unit_id = if units.is_empty() { 1 } else { units[0].id };
+        let recipe_id = db.create_recipe(
+            "PRD_TEST", "生産測試配方", "半成品", 1.0,
+            Some(output_material.material.id), None, Some(unit_id),
+        ).unwrap();
 
-        let prod_no = db.create_production_order(recipe.id, 2.0, Some("測試操作員")).unwrap();
+        let prod_no = db.create_production_order(recipe_id, 2.0, Some("測試操作員")).unwrap();
         assert!(prod_no.starts_with("PRD"));
 
         let prods = db.get_production_orders(None).unwrap();
@@ -5243,14 +5249,14 @@ mod tests {
         let batches = db.get_inventory_batches(Some(material.material.id)).unwrap();
         let batch = batches.iter().find(|b| b.lot_no == lot_no).unwrap();
 
-        db.adjust_inventory(batch.id, 90.0, Some("測試操作員"), Some("測試調整")).unwrap();
+        db.adjust_inventory(batch.id, -10.0, Some("測試操作員"), Some("測試調整")).unwrap();
 
         let batches_after = db.get_inventory_batches(Some(material.material.id)).unwrap();
         let batch_after = batches_after.iter().find(|b| b.id == batch.id).unwrap();
         assert_eq!(batch_after.quantity, 90.0);
 
         let txns = db.get_inventory_txns(Some(material.material.id), 100).unwrap();
-        let adjust_txn = txns.iter().find(|t| t.txn_type == "adjust");
+        let adjust_txn = txns.iter().find(|t| t.txn_type == "adjustment");
         assert!(adjust_txn.is_some());
         assert_eq!(adjust_txn.unwrap().qty_delta, -10.0);
     }
@@ -5264,9 +5270,9 @@ mod tests {
         if items.is_empty() { return; }
         let item = &items[0];
 
-        let order_no = db.create_order("POS", "堂食", None).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", None).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
 
         db.add_order_item(order.id, item.id, 2.0, 50.0, None, None).unwrap();
         db.submit_order_full(order.id).unwrap();
@@ -5274,7 +5280,7 @@ mod tests {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let report = db.get_sales_report(&today, &today).unwrap();
         assert!(!report.is_empty());
-        let (date, total, count) = &report[0];
+        let (_date, total, count) = &report[0];
         assert_eq!(*count, 1);
         assert!(*total >= 100.0);
     }
@@ -5288,10 +5294,10 @@ mod tests {
         if items.len() < 2 { return; }
 
         for item in &items[..2.min(items.len())] {
-            let order_no = db.create_order("POS", "外賣", None).unwrap();
+            let (order_id, _) = db.create_order("POS", "外賣", None).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(1100));
-            let orders = db.get_orders().unwrap();
-            let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+            let orders = db.get_orders(1000, 0).unwrap();
+            let order = orders.iter().find(|o| o.id == order_id).unwrap();
             db.add_order_item(order.id, item.id, 3.0, item.sales_price, None, None).unwrap();
             db.submit_order_full(order.id).unwrap();
         }
@@ -5354,7 +5360,7 @@ mod tests {
         db.add_recipe_item(recipe_id, "material", material.material.id, 2.0, unit_id, 0.0, 0).unwrap();
 
         let cost = db.calculate_recipe_cost(recipe_id).unwrap();
-        assert!(cost >= 0.0);
+        assert!(cost.total_cost >= 0.0);
 
         db.delete_recipe(recipe_id).unwrap();
         let recipes_after = db.get_recipes(None).unwrap();
@@ -5403,9 +5409,9 @@ mod tests {
         let (db, _dir) = test_db();
         seed_minimal(&db);
 
-        let order_no = db.create_order("POS", "堂食", Some("A01")).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", Some("A01")).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
 
         let items = db.get_menu_items(None).unwrap();
         if items.is_empty() { return; }
@@ -5429,9 +5435,9 @@ mod tests {
         let (db, _dir) = test_db();
         seed_minimal(&db);
 
-        let order_no = db.create_order("POS", "堂食", None).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", None).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
 
         let items = db.get_menu_items(None).unwrap();
         if !items.is_empty() {
@@ -5440,14 +5446,14 @@ mod tests {
         }
 
         db.submit_order_full(order.id).unwrap();
-        let orders_after = db.get_orders().unwrap();
+        let orders_after = db.get_orders(1000, 0).unwrap();
         let order_after = orders_after.iter().find(|o| o.id == order.id).unwrap();
         assert_eq!(order_after.status, "submitted");
 
         let cancel_result = db.release_inventory_for_order(order.id);
         assert!(cancel_result.is_ok());
 
-        let orders_final = db.get_orders().unwrap();
+        let orders_final = db.get_orders(1000, 0).unwrap();
         let order_final = orders_final.iter().find(|o| o.id == order.id).unwrap();
         assert_eq!(order_final.status, "cancelled");
     }
@@ -5457,17 +5463,17 @@ mod tests {
         let (db, _dir) = test_db();
         seed_minimal(&db);
 
-        let order_no1 = db.create_order("POS", "堂食", Some("A01")).unwrap();
+        let (order_id1, _) = db.create_order("POS", "堂食", Some("A01")).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        let order_no2 = db.create_order("POS", "堂食", Some("A01")).unwrap();
+        let (order_id2, _) = db.create_order("POS", "堂食", Some("A01")).unwrap();
 
-        let orders = db.get_orders().unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
         let table_a01_orders: Vec<_> = orders.iter()
             .filter(|o| o.table_no.as_deref() == Some("A01"))
             .collect();
         assert_eq!(table_a01_orders.len(), 2);
-        assert!(table_a01_orders.iter().any(|o| o.order_no == order_no1));
-        assert!(table_a01_orders.iter().any(|o| o.order_no == order_no2));
+        assert!(table_a01_orders.iter().any(|o| o.id == order_id1));
+        assert!(table_a01_orders.iter().any(|o| o.id == order_id2));
     }
 
     #[test]
@@ -5551,9 +5557,9 @@ mod tests {
         if items.is_empty() { return; }
         let item = &items[0];
 
-        let order_no = db.create_order("POS", "堂食", None).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", None).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
         db.add_order_item(order.id, item.id, 2.0, 50.0, None, None).unwrap();
         db.submit_order_full(order.id).unwrap();
 
@@ -5571,9 +5577,9 @@ mod tests {
         if items.is_empty() { return; }
         let item = &items[0];
 
-        let order_no = db.create_order("POS", "堂食", None).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", None).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
         db.add_order_item(order.id, item.id, 1.0, 50.0, None, None).unwrap();
         db.submit_order_full(order.id).unwrap();
 
@@ -5607,9 +5613,9 @@ mod tests {
         if stations.is_empty() { return; }
         let station = &stations[0];
 
-        let order_no = db.create_order("POS", "堂食", None).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", None).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
 
         let items = db.get_menu_items(None).unwrap();
         if !items.is_empty() {
@@ -5721,14 +5727,14 @@ mod tests {
         let (db, _dir) = test_db();
         seed_minimal(&db);
 
-        let order_no = db.create_order("POS", "堂食", None).unwrap();
-        let orders = db.get_orders().unwrap();
-        let order = orders.iter().find(|o| o.order_no == order_no).unwrap();
+        let (order_id, _) = db.create_order("POS", "堂食", None).unwrap();
+        let orders = db.get_orders(1000, 0).unwrap();
+        let order = orders.iter().find(|o| o.id == order_id).unwrap();
 
         let submit_result = db.submit_order_full(order.id);
         assert!(submit_result.is_ok());
 
-        let orders_after = db.get_orders().unwrap();
+        let orders_after = db.get_orders(1000, 0).unwrap();
         let order_after = orders_after.iter().find(|o| o.id == order.id).unwrap();
         assert_eq!(order_after.status, "submitted");
     }
@@ -5820,13 +5826,14 @@ mod tests {
             show_service_charge: None,
             item_sort: None,
             modifiers_color: None,
+            is_active: Some(true),
         }).unwrap();
 
         let templates = db.get_print_templates(None).unwrap();
         let tpl = templates.iter().find(|t| t.id == tpl_id).unwrap();
         assert_eq!(tpl.name, "更新測試");
 
-        db.update_print_template(tpl_id, Some("已更新".to_string()), None, Some("58mm".to_string()), None, None, None, None, None, None, None, None, None, None, None).unwrap();
+        db.update_print_template(tpl_id, Some("已更新".to_string()), None, Some("58mm".to_string()), None, None, None, None, None, None, None, None, None, None, None, None).unwrap();
 
         let templates_after = db.get_print_templates(None).unwrap();
         let tpl_after = templates_after.iter().find(|t| t.id == tpl_id).unwrap();
@@ -5855,6 +5862,7 @@ mod tests {
             show_service_charge: None,
             item_sort: None,
             modifiers_color: None,
+            is_active: Some(true),
         }).unwrap();
 
         db.create_print_template(&CreatePrintTemplateRequest {
@@ -5873,6 +5881,7 @@ mod tests {
             show_service_charge: None,
             item_sort: None,
             modifiers_color: None,
+            is_active: Some(true),
         }).unwrap();
 
         let kitchen_templates = db.get_print_templates(Some("kitchen_ticket")).unwrap();

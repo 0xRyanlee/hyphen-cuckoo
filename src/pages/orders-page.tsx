@@ -103,6 +103,7 @@ export function OrdersPage({
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelTargetOrder, setCancelTargetOrder] = useState<Order | null>(null);
   const [cancelIsServed, setCancelIsServed] = useState(false);
+  const [batchCancelDialogOpen, setBatchCancelDialogOpen] = useState(false);
   const [orderCost, setOrderCost] = useState<number | null>(null);
 
   const [itemModifiers, setItemModifiers] = useState<Record<number, OrderItemModifier[]>>({});
@@ -128,10 +129,14 @@ export function OrdersPage({
     }
   };
   const handleBatchCancel = () => {
+    if (selectedOrders.length > 0) setBatchCancelDialogOpen(true);
+  };
+  const confirmBatchCancel = () => {
     if (onBatchCancelOrder && selectedOrders.length > 0) {
       onBatchCancelOrder(selectedOrders);
       setSelectedOrders([]);
     }
+    setBatchCancelDialogOpen(false);
   };
 
   const filteredOrders = orders.filter((order) => {
@@ -404,6 +409,21 @@ export function OrdersPage({
               if (cancelTargetOrder) onCancelOrder(cancelTargetOrder.id, cancelIsServed);
               setCancelDialogOpen(false);
             }}>确认取消</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchCancelDialogOpen} onOpenChange={setBatchCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>批量取消订单</DialogTitle></DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              确定要取消已选的 {selectedOrders.length} 笔订单吗？此操作将释放相关库存，不可撤销。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchCancelDialogOpen(false)}>返回</Button>
+            <Button variant="destructive" onClick={confirmBatchCancel}>确认取消</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
