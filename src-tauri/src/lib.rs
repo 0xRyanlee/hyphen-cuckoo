@@ -5,7 +5,8 @@ mod updater_check;
 
 use commands::AppState;
 use database::Database;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::panic;
 
@@ -42,7 +43,9 @@ fn setup_panic_hook() {
             panic_info,
             panic_info.location()
         );
-        let _ = fs::write(&log_file, &message);
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file) {
+            let _ = file.write_all(message.as_bytes());
+        }
         eprintln!("{}", message);
     }));
 }
@@ -71,6 +74,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // 健康檢查
             commands::health_check,
+            commands::backup_database,
             commands::report_telemetry,
             // 單位
             commands::get_units,
@@ -112,6 +116,8 @@ pub fn run() {
             commands::get_order_component_types,
             commands::add_recipe_item,
             commands::calculate_recipe_cost,
+            commands::get_recipe_item_counts,
+            commands::get_all_recipe_costs,
             commands::get_recipe_usage_count,
             commands::get_recipe_dependents,
             commands::get_material_dependents,
@@ -132,10 +138,12 @@ pub fn run() {
             commands::add_order_item,
             commands::submit_order,
             commands::cancel_order,
+            commands::mark_order_ready,
             commands::update_order_payment,
             commands::batch_cancel_orders,
             // KDS
             commands::get_kitchen_stations,
+            commands::update_station_printer,
             commands::get_station_tickets,
             commands::get_all_tickets,
             commands::get_all_tickets_with_items,
@@ -200,6 +208,7 @@ pub fn run() {
             commands::download_and_open_update,
             commands::send_print_task,
             commands::print_kitchen_ticket,
+            commands::print_order_receipt,
             commands::print_batch_label,
             commands::get_print_tasks,
             // 採購單
@@ -218,6 +227,7 @@ pub fn run() {
             commands::start_production_order,
             commands::complete_production_order,
             commands::delete_production_order,
+            commands::check_production_materials,
             // 盤點
             commands::get_stocktakes,
             commands::get_stocktake_with_items,

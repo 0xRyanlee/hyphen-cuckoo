@@ -3,7 +3,7 @@ import { appLogger, formatError } from "@/lib/logger";
 import type {
   MaterialCategory, RecipeCostResult, MenuItem, MenuCategory, POSCartItem, MenuItemSpec,
   TicketWithItems, Order, OrderWithItems, OrderItemModifier, Recipe, RecipeWithItems,
-  PurchaseOrderWithItems, ProductionOrderWithItems, StocktakeWithItems, Material, Supplier, Unit, InventoryBatch, Expense, SupplierProduct
+  PurchaseOrderWithItems, ProductionOrderWithItems, StocktakeWithItems, Material, Supplier, Unit, InventoryBatch, Expense, SupplierProduct, KitchenStation
 } from "../types";
 import { toast } from "sonner";
 
@@ -28,6 +28,7 @@ export interface UseAppActionsParams {
   setSelectedStocktake: React.Dispatch<React.SetStateAction<StocktakeWithItems | null>>;
   setExpenses: React.Dispatch<React.SetStateAction<Expense[]>>;
   setSupplierProducts: React.Dispatch<React.SetStateAction<SupplierProduct[]>>;
+  stations: KitchenStation[];
 }
 
 export function useAppActions({
@@ -51,6 +52,7 @@ export function useAppActions({
   setSelectedStocktake,
   setExpenses: _setExpenses,
   setSupplierProducts: _setSupplierProducts,
+  stations,
 }: UseAppActionsParams) {
   function normalizeRecipeWithItems(raw: unknown): RecipeWithItems {
     if (raw && typeof raw === "object" && "recipe" in raw && "items" in raw) {
@@ -325,7 +327,15 @@ export function useAppActions({
       item.note || null,
     ]);
     const dineLabel = dineType === "dine_in" ? "堂食" : dineType === "takeout" ? "外卖" : "外送";
-    await invoke("print_kitchen_ticket", { orderNo: ticket.order_no, dineType: dineLabel, items: printItems, note: null, printerId: null });
+    const stationPrinterId = stations.find((s) => s.id === ticket.station_id)?.printer_id ?? null;
+    await invoke("print_kitchen_ticket", { orderNo: ticket.order_no, dineType: dineLabel, items: printItems, note: null, printerId: stationPrinterId });
+  };
+
+  const handlePrintReceipt = async (order_id: number) => {
+    try {
+      await invoke("print_order_receipt", { orderId: order_id, printerId: null });
+      toast.success("收据已发送打印");
+    } catch (e) { logError("print_order_receipt", e, "打印收据失败", { order_id }); }
   };
 
   const handlePOSAndSubmit = async (cart: POSCartItem[], dineType: string = "dine_in", tableNo: string | null = null) => {
@@ -385,6 +395,11 @@ export function useAppActions({
   const handleCancelOrder = async (orderId: number, is_served: boolean = false) => {
     try { await invoke("cancel_order", { orderId, isServed: is_served }); toast.success("订单已取消"); loadData(); }
     catch (e) { logError("cancel_order", e, "取消订单失败", { orderId, is_served }); }
+  };
+
+  const handleMarkOrderReady = async (orderId: number) => {
+    try { await invoke("mark_order_ready", { orderId }); toast.success("订单已标记出餐"); loadData(); }
+    catch (e) { logError("mark_order_ready", e, "标记出餐失败", { orderId }); }
   };
 
   const handleViewOrder = async (orderId: number) => {
@@ -479,7 +494,8 @@ export function useAppActions({
   };
 
   const handleReceivePurchaseOrder = async (po_id: number) => {
-    try { await invoke("receive_purchase_order", { poId: po_id, operator: null }); toast.success("采购单已入库"); loadData(); }
+    const autoPrint = localStorage.getItem("auto_print_po") === "true";
+    try { await invoke("receive_purchase_order", { poId: po_id, operator: null, autoPrint }); toast.success("采购单已入库"); loadData(); }
     catch (e) { logError("receive_purchase_order", e, "入库失败", { po_id }); }
   };
 
@@ -495,6 +511,10 @@ export function useAppActions({
     try {
       await invoke("update_order_payment", { req: { order_id: id, payment_status, payment_method, amount_paid } });
       toast.success("收款已登记");
+      if (localStorage.getItem("auto_print_receipt") === "true") {
+        try { await invoke("print_order_receipt", { orderId: id, printerId: null }); }
+        catch (pe) { appLogger.logInvokeError("auto_print_receipt", pe, { orderId: id }); }
+      }
       loadData();
     } catch (e) { logError("update_order_payment", e, "收款登记失败", { id }); }
   };
@@ -704,7 +724,7 @@ export function useAppActions({
     // 菜單
     handleCreateMenuCategory, handleUpdateMenuCategory, handleDeleteMenuCategory, handleCreateMenuItem, handleToggleMenuItem, handleBatchToggleMenuItem, handleUpdateMenuItem, handleDeleteMenuItem,
     // 訂單
-    handleCreateOrder, handlePOSOrder, handlePOSAndSubmit, handleSubmitOrder, handleCancelOrder, handleBatchCancelOrder, handleViewOrder, handleLoadMoreOrders,
+    handleCreateOrder, handlePOSOrder, handlePOSAndSubmit, handleSubmitOrder, handleCancelOrder, handleMarkOrderReady, handleBatchCancelOrder, handleViewOrder, handleLoadMoreOrders,
     // 規格
     handleGetSpecs, handleCreateSpec, handleUpdateSpec, handleDeleteSpec,
     // 供應商
@@ -726,7 +746,7 @@ export function useAppActions({
     // 批次
     handleCreateBatch, handleAdjustInventory, handleRecordWastage, handleDeleteBatch,
     // KDS
-    handleLoadKDS, handleFinishTicket, handleReprintTicket,
+    handleLoadKDS, handleFinishTicket, handleReprintTicket, handlePrintReceipt,
     // 訂單修改器
     handleAddModifier, handleDeleteModifier, handleLoadModifiers,
     // 遙測

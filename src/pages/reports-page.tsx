@@ -19,9 +19,9 @@ export function ReportsPage() {
 
   const [startDate, setStartDate] = useState(weekAgo);
   const [endDate, setEndDate] = useState(today);
-  const [salesData, setSalesData] = useState<[string, number, number][]>([]);
+  const [salesData, setSalesData] = useState<[string, number, number, number][]>([]);
   const [categoryData, setCategoryData] = useState<[string, number, number][]>([]);
-  const [profitData, setProfitData] = useState<[string, number, number, number][]>([]);
+  const [profitData, setProfitData] = useState<[string, number, number, number, number, number][]>([]);
   const [topItems, setTopItems] = useState<[string, number, number, number][]>([]);
   const [consumptionData, setConsumptionData] = useState<[string, number, number, number][]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,11 +41,11 @@ export function ReportsPage() {
 
   function exportAllCSV() {
     const ds = `${startDate}_${endDate}`;
-    downloadCSV(`销售报表_${ds}.csv`, ["日期", "销售额", "订单数"], salesData.map(([d, amt, cnt]) => [d, amt.toFixed(2), cnt]));
+    downloadCSV(`销售报表_${ds}.csv`, ["日期", "应收", "实收", "订单数"], salesData.map(([d, amt, cnt, col]) => [d, amt.toFixed(2), col.toFixed(2), cnt]));
     downloadCSV(`分类报表_${ds}.csv`, ["分类", "销售额", "订单数"], categoryData.map(([cat, amt, cnt]) => [cat, amt.toFixed(2), cnt]));
-    downloadCSV(`毛利报表_${ds}.csv`, ["日期", "收入", "成本", "毛利"], profitData.map(([d, rev, cost, profit]) => [d, rev.toFixed(2), cost.toFixed(2), profit.toFixed(2)]));
+    downloadCSV(`毛利报表_${ds}.csv`, ["日期", "收入", "食材成本", "毛利", "支出", "净利"], profitData.map(([d, rev, cost, gp, exp, net]) => [d, rev.toFixed(2), cost.toFixed(2), gp.toFixed(2), exp.toFixed(2), net.toFixed(2)]));
     downloadCSV(`热销商品_${ds}.csv`, ["商品", "销售额", "数量", "均价"], topItems.map(([name, amt, qty, avg]) => [name, amt.toFixed(2), qty, avg.toFixed(2)]));
-    downloadCSV(`原料消耗_${ds}.csv`, ["原料", "消耗量", "成本", "订单数"], consumptionData.map(([name, qty, cost, cnt]) => [name, qty.toFixed(4), cost.toFixed(2), cnt]));
+    downloadCSV(`原料消耗_${ds}.csv`, ["原料", "消耗量", "平均成本", "总成本"], consumptionData.map(([name, qty, avgCost, totalCost]) => [name, qty.toFixed(4), avgCost.toFixed(2), totalCost.toFixed(2)]));
   }
 
   async function loadReports() {
@@ -54,9 +54,9 @@ export function ReportsPage() {
     setError(null);
     try {
       const [sales, categories, profit, top, consumption] = await Promise.all([
-        invoke<[string, number, number][]>("get_sales_report", { startDate, endDate }),
+        invoke<[string, number, number, number][]>("get_sales_report", { startDate, endDate }),
         invoke<[string, number, number][]>("get_sales_by_category", { startDate, endDate }),
-        invoke<[string, number, number, number][]>("get_gross_profit_report", { startDate, endDate }),
+        invoke<[string, number, number, number, number, number][]>("get_gross_profit_report", { startDate, endDate }),
         invoke<[string, number, number, number][]>("get_top_selling_items", { startDate, endDate, limit: 10 }),
         invoke<[string, number, number, number][]>("get_material_consumption_report", { startDate, endDate }),
       ]);
@@ -76,10 +76,14 @@ export function ReportsPage() {
 
   const totalSales = salesData.reduce((sum, [, amt]) => sum + amt, 0);
   const totalOrders = salesData.reduce((sum, [, , cnt]) => sum + cnt, 0);
+  const totalCollected = salesData.reduce((sum, [, , , col]) => sum + col, 0);
   const totalRevenue = profitData.reduce((sum, [, rev]) => sum + rev, 0);
   const totalCost = profitData.reduce((sum, [, , cost]) => sum + cost, 0);
-  const totalProfit = totalRevenue - totalCost;
-  const profitMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : "0.0";
+  const totalGrossProfit = totalRevenue - totalCost;
+  const totalExpenses = profitData.reduce((sum, [, , , , exp]) => sum + exp, 0);
+  const totalNetProfit = totalGrossProfit - totalExpenses;
+  const grossMargin = totalRevenue > 0 ? ((totalGrossProfit / totalRevenue) * 100).toFixed(1) : "0.0";
+  const netMargin = totalRevenue > 0 ? ((totalNetProfit / totalRevenue) * 100).toFixed(1) : "0.0";
 
   return (
     <div className="space-y-6">
@@ -118,10 +122,17 @@ export function ReportsPage() {
       </Card>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-6">
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">总销售额</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">应收</CardTitle></CardHeader>
           <CardContent><div className="text-2xl font-bold">¥{totalSales.toFixed(2)}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">实收</CardTitle></CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-500">¥{totalCollected.toFixed(2)}</div>
+            {totalSales > 0 && totalCollected < totalSales && <div className="text-xs text-amber-500 mt-0.5">未收 ¥{(totalSales - totalCollected).toFixed(2)}</div>}
+          </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">总订单数</CardTitle></CardHeader>
@@ -129,11 +140,15 @@ export function ReportsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">毛利</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold text-emerald-500">¥{totalProfit.toFixed(2)}</div></CardContent>
+          <CardContent><div className={`text-2xl font-bold ${totalGrossProfit >= 0 ? "text-emerald-500" : "text-destructive"}`}>¥{totalGrossProfit.toFixed(2)}</div><div className="text-xs text-muted-foreground mt-0.5">{grossMargin}%</div></CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">毛利率</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{profitMargin}%</div></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">支出</CardTitle></CardHeader>
+          <CardContent><div className="text-2xl font-bold text-amber-500">¥{totalExpenses.toFixed(2)}</div></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">净利</CardTitle></CardHeader>
+          <CardContent><div className={`text-2xl font-bold ${totalNetProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}>¥{totalNetProfit.toFixed(2)}</div><div className="text-xs text-muted-foreground mt-0.5">{netMargin}%</div></CardContent>
         </Card>
       </div>
 
@@ -176,13 +191,14 @@ export function ReportsPage() {
                   </div>
                   <Table>
                     <TableHeader>
-                      <TableRow><TableHead>日期</TableHead><TableHead className="text-right">销售额</TableHead><TableHead className="text-right">订单数</TableHead></TableRow>
+                      <TableRow><TableHead>日期</TableHead><TableHead className="text-right">应收</TableHead><TableHead className="text-right">实收</TableHead><TableHead className="text-right">订单数</TableHead></TableRow>
                     </TableHeader>
                     <TableBody>
-                      {salesData.map(([date, amount, count]) => (
+                      {salesData.map(([date, amount, count, collected]) => (
                         <TableRow key={date}>
                           <TableCell className="font-mono text-xs">{date}</TableCell>
                           <TableCell className="text-right font-medium">¥{amount.toFixed(2)}</TableCell>
+                          <TableCell className={`text-right font-medium ${collected < amount ? "text-amber-500" : "text-emerald-600"}`}>¥{collected.toFixed(2)}</TableCell>
                           <TableCell className="text-right">{count}</TableCell>
                         </TableRow>
                       ))}
@@ -208,32 +224,35 @@ export function ReportsPage() {
                 <>
                   <div className="h-[300px] mb-6">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={profitData.map(([date, revenue, cost, profit]) => ({ date, revenue, cost, profit }))}>
+                      <LineChart data={profitData.map(([date, revenue, cost, grossProfit, expenses, netProfit]) => ({ date, revenue, cost, grossProfit, expenses, netProfit }))}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 12 }} />
                         <YAxis className="text-xs" tick={{ fontSize: 12 }} />
                         <Tooltip formatter={(value: unknown) => [`¥${typeof value === "number" ? value.toFixed(2) : value}`, ""]} />
                         <Legend />
                         <Line type="monotone" dataKey="revenue" stroke="#3B82F6" strokeWidth={2} name="收入" />
-                        <Line type="monotone" dataKey="cost" stroke="#EF4444" strokeWidth={2} name="成本" />
-                        <Line type="monotone" dataKey="profit" stroke="#10B981" strokeWidth={2} name="毛利" />
+                        <Line type="monotone" dataKey="cost" stroke="#EF4444" strokeWidth={2} name="食材成本" />
+                        <Line type="monotone" dataKey="grossProfit" stroke="#10B981" strokeWidth={2} name="毛利" />
+                        <Line type="monotone" dataKey="expenses" stroke="#F59E0B" strokeWidth={2} strokeDasharray="4 2" name="支出" />
+                        <Line type="monotone" dataKey="netProfit" stroke="#8B5CF6" strokeWidth={2} name="净利" />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                   <Table>
                     <TableHeader>
-                      <TableRow><TableHead>日期</TableHead><TableHead className="text-right">收入</TableHead><TableHead className="text-right">成本</TableHead><TableHead className="text-right">毛利</TableHead><TableHead className="text-right">毛利率</TableHead></TableRow>
+                      <TableRow><TableHead>日期</TableHead><TableHead className="text-right">收入</TableHead><TableHead className="text-right">食材成本</TableHead><TableHead className="text-right">毛利</TableHead><TableHead className="text-right">支出</TableHead><TableHead className="text-right">净利</TableHead></TableRow>
                     </TableHeader>
                     <TableBody>
-                      {profitData.map(([date, revenue, cost, profit]) => {
-                        const margin = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : "0.0";
+                      {profitData.map(([date, revenue, cost, grossProfit, expenses, netProfit]) => {
+                        const gm = revenue > 0 ? ((grossProfit / revenue) * 100).toFixed(1) : "0.0";
                         return (
                           <TableRow key={date}>
                             <TableCell className="font-mono text-xs">{date}</TableCell>
                             <TableCell className="text-right">¥{revenue.toFixed(2)}</TableCell>
                             <TableCell className="text-right text-muted-foreground">¥{cost.toFixed(2)}</TableCell>
-                            <TableCell className={`text-right font-medium ${profit >= 0 ? "text-emerald-500" : "text-destructive"}`}>¥{profit.toFixed(2)}</TableCell>
-                            <TableCell className="text-right"><Badge variant={parseFloat(margin) >= 30 ? "default" : parseFloat(margin) >= 15 ? "secondary" : "destructive"}>{margin}%</Badge></TableCell>
+                            <TableCell className={`text-right font-medium ${grossProfit >= 0 ? "text-emerald-500" : "text-destructive"}`}>¥{grossProfit.toFixed(2)} <span className="text-xs opacity-60">({gm}%)</span></TableCell>
+                            <TableCell className="text-right text-amber-500">¥{expenses.toFixed(2)}</TableCell>
+                            <TableCell className={`text-right font-bold ${netProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}>¥{netProfit.toFixed(2)}</TableCell>
                           </TableRow>
                         );
                       })}

@@ -20,8 +20,8 @@ export function useAutoUpdate() {
         const skipped = localStorage.getItem(SKIP_KEY);
         if (skipped === info.new_version) return;
         setUpdateInfo(info);
-      } catch {
-        // Silently ignore — no internet, rate limit, etc.
+      } catch (e) {
+        console.warn("[useAutoUpdate] update check failed:", e);
       }
     }, 3000);
 

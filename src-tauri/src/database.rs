@@ -371,6 +371,7 @@ pub struct KitchenStation {
     pub station_type: String,
     pub is_active: bool,
     pub sort_no: i32,
+    pub printer_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -725,6 +726,45 @@ pub struct StocktakeWithItems {
 
 // ==================== 數據庫 ====================
 
+/// Expands a recipe into a flat material_id → qty map (accumulates into `result`).
+/// Sub-recipes with output_material_id consume that material (pre-made stock).
+/// Sub-recipes without output_material_id are expanded recursively (depth-guarded at 10).
+fn expand_recipe_needs(
+    conn: &Connection,
+    recipe_id: i64,
+    multiplier: f64,
+    depth: u32,
+    result: &mut std::collections::HashMap<i64, f64>,
+) -> Result<()> {
+    if depth > 10 { return Ok(()); }
+    let mut stmt = conn.prepare_cached(
+        "SELECT item_type, ref_id, qty * (1.0 + COALESCE(wastage_rate, 0.0)) \
+         FROM recipe_items WHERE recipe_id = ?1"
+    )?;
+    let items: Vec<(String, i64, f64)> = stmt.query_map(params![recipe_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?.collect::<Result<Vec<_>>>()?;
+    for (item_type, ref_id, qty) in items {
+        match item_type.as_str() {
+            "material" => {
+                *result.entry(ref_id).or_insert(0.0) += qty * multiplier;
+            }
+            "sub_recipe" => {
+                let output_mid: Option<i64> = conn.query_row(
+                    "SELECT output_material_id FROM recipes WHERE id = ?1",
+                    params![ref_id], |row| row.get(0),
+                )?;
+                match output_mid {
+                    Some(mid) => { *result.entry(mid).or_insert(0.0) += qty * multiplier; }
+                    None => { expand_recipe_needs(conn, ref_id, qty * multiplier, depth + 1, result)?; }
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -741,6 +781,7 @@ impl Database {
         };
         db.init_tables()?;
         db.seed_data()?;
+        db.run_data_migrations()?;
         Ok(db)
     }
 
@@ -1565,10 +1606,89 @@ impl Database {
         Ok(())
     }
 
+    /// One-time data patch: backfills cost_delta on historical consume txns written before R2 fix.
+    fn run_data_migrations(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE inventory_txns
+             SET cost_delta = qty_delta * (
+                 SELECT COALESCE(ib.cost_per_unit, 0.0)
+                 FROM inventory_batches ib WHERE ib.id = inventory_txns.lot_id
+             )
+             WHERE txn_type = 'consume' AND cost_delta = 0.0 AND lot_id IS NOT NULL",
+            [],
+        )?;
+        let has_printer_id: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('kitchen_stations') WHERE name='printer_id'")?
+            .exists([])?;
+        if !has_printer_id {
+            conn.execute_batch("ALTER TABLE kitchen_stations ADD COLUMN printer_id INTEGER REFERENCES printers(id)")?;
+        }
+        Ok(())
+    }
+
+    pub fn backup_to(&self, dest_path: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        // VACUUM INTO writes a clean, WAL-checkpointed copy — safe for hot backup
+        let escaped = dest_path.replace('\'', "''");
+        conn.execute_batch(&format!("VACUUM INTO '{}'", escaped))?;
+        Ok(())
+    }
+
     pub fn health_check(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.query_row("SELECT 1", [], |_| Ok(()))?;
         Ok(())
+    }
+
+    /// Returns (recipe_id, item_count) for all recipes that have items.
+    pub fn get_recipe_item_counts(&self) -> Result<Vec<(i64, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT recipe_id, COUNT(*) FROM recipe_items GROUP BY recipe_id")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Returns (recipe_id, total_cost) for all recipes in one backend call.
+    pub fn get_all_recipe_costs(&self) -> Result<Vec<(i64, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        let recipe_ids: Vec<i64> = {
+            let mut stmt = conn.prepare("SELECT id FROM recipes ORDER BY id")?;
+            let rows = stmt.query_map([], |r| r.get(0))?.collect::<Result<Vec<_>>>()?;
+            rows
+        };
+        let mut result = Vec::with_capacity(recipe_ids.len());
+        for recipe_id in recipe_ids {
+            let direct: f64 = conn.query_row(
+                "SELECT COALESCE(SUM(ri.qty * (1.0 + ri.wastage_rate) *
+                     COALESCE((SELECT AVG(ib.cost_per_unit) FROM inventory_batches ib
+                               WHERE ib.material_id = ri.ref_id AND ib.quantity > 0), 0.0)), 0.0)
+                 FROM recipe_items ri WHERE ri.recipe_id = ?1 AND ri.item_type = 'material'",
+                params![recipe_id], |r| r.get(0),
+            ).unwrap_or(0.0);
+            let sub: f64 = {
+                let mut sub_stmt = conn.prepare(
+                    "SELECT ri.qty * (1.0 + ri.wastage_rate), r_sub.output_qty,
+                            COALESCE((SELECT SUM(ri2.qty * (1.0 + ri2.wastage_rate) *
+                                COALESCE((SELECT AVG(ib.cost_per_unit) FROM inventory_batches ib
+                                          WHERE ib.material_id = ri2.ref_id AND ib.quantity > 0), 0.0))
+                                FROM recipe_items ri2 WHERE ri2.recipe_id = r_sub.id AND ri2.item_type = 'material'), 0.0)
+                     FROM recipe_items ri JOIN recipes r_sub ON r_sub.id = ri.ref_id
+                     WHERE ri.recipe_id = ?1 AND ri.item_type = 'sub_recipe'"
+                )?;
+                let mut total = 0.0_f64;
+                for row in sub_stmt.query_map(params![recipe_id], |r| {
+                    Ok((r.get::<_, f64>(0)?, r.get::<_, f64>(1)?, r.get::<_, f64>(2)?))
+                })? {
+                    let (qty_w, output_qty, sub_cost) = row?;
+                    let cpu = if output_qty > 0.0 { sub_cost / output_qty } else { 0.0 };
+                    total += qty_w * cpu;
+                }
+                total
+            };
+            result.push((recipe_id, direct + sub));
+        }
+        Ok(result)
     }
 
     pub fn get_units(&self) -> Result<Vec<Unit>> {
@@ -2623,11 +2743,17 @@ impl Database {
 
     pub fn get_kitchen_stations(&self) -> Result<Vec<KitchenStation>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, code, name, station_type, is_active, sort_no FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_no")?;
+        let mut stmt = conn.prepare("SELECT id, code, name, station_type, is_active, sort_no, printer_id FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_no")?;
         let stations = stmt.query_map([], |row| {
-            Ok(KitchenStation { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, station_type: row.get(3)?, is_active: row.get::<_, i32>(4)? != 0, sort_no: row.get(5)? })
+            Ok(KitchenStation { id: row.get(0)?, code: row.get(1)?, name: row.get(2)?, station_type: row.get(3)?, is_active: row.get::<_, i32>(4)? != 0, sort_no: row.get(5)?, printer_id: row.get(6)? })
         })?.collect::<Result<Vec<_>>>()?;
         Ok(stations)
+    }
+
+    pub fn update_station_printer(&self, station_id: i64, printer_id: Option<i64>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE kitchen_stations SET printer_id = ?1 WHERE id = ?2", params![printer_id, station_id])?;
+        Ok(())
     }
 
     pub fn get_station_tickets(&self, station_id: i64, status: Option<&str>) -> Result<Vec<KitchenTicket>> {
@@ -3020,6 +3146,17 @@ impl Database {
 
     pub fn check_and_create_alerts(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        // Auto-remove low_stock alerts for materials that are now back above min_qty
+        conn.execute(
+            "DELETE FROM notifications WHERE notification_type = 'low_stock' AND is_read = 0
+             AND ref_id NOT IN (
+                 SELECT m.id FROM materials m
+                 LEFT JOIN inventory_batches ib ON ib.material_id = m.id
+                 WHERE m.is_active = 1 AND m.min_qty > 0
+                 GROUP BY m.id HAVING COALESCE(SUM(ib.quantity), 0) < m.min_qty
+             )",
+            [],
+        ).ok();
         let mut stmt = conn.prepare(
             "SELECT m.id, m.name, m.min_qty, COALESCE(SUM(ib.quantity), 0) AS total_qty
              FROM materials m
@@ -3100,20 +3237,20 @@ impl Database {
         let result: Result<Vec<String>> = (|| {
             // Reverse any consume txns already recorded for this order
             let mut stmt = conn.prepare(
-                "SELECT id, lot_id, material_id, qty_delta FROM inventory_txns \
+                "SELECT id, lot_id, material_id, qty_delta, cost_delta FROM inventory_txns \
                  WHERE ref_type = 'order' AND ref_id = ?1 AND txn_type = 'consume'"
             )?;
-            let consumes: Vec<(i64, Option<i64>, i64, f64)> = stmt.query_map(params![order_id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            let consumes: Vec<(i64, Option<i64>, i64, f64, f64)> = stmt.query_map(params![order_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
             })?.collect::<Result<Vec<_>>>()?;
 
             let mut txn_nos = Vec::new();
-            for (_consume_id, lot_id, material_id, qty_delta) in consumes {
+            for (_consume_id, lot_id, material_id, qty_delta, cost_delta) in consumes {
                 let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
                 conn.execute(
                     "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) \
-                     VALUES (?1, 'release', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                    params![txn_no, order_id, lot_id, material_id, -qty_delta],
+                     VALUES (?1, 'release', 'order', ?2, ?3, ?4, ?5, ?6)",
+                    params![txn_no, order_id, lot_id, material_id, -qty_delta, -cost_delta],
                 )?;
                 if let Some(batch_id) = lot_id {
                     conn.execute(
@@ -3146,8 +3283,14 @@ impl Database {
                 conn.query_row("SELECT status FROM orders WHERE id = ?1", params![id], |r| r.get(0))
                     .unwrap_or_default()
             };
-            if status == "cancelled" { continue; } // already cancelled, skip
-            if let Err(e) = self.release_inventory_for_order(id) {
+            if status == "cancelled" { continue; }
+            // 'ready' = inventory already consumed; keep cost deduction, just mark cancelled
+            let result = if status == "ready" {
+                self.cancel_order_confirmed(id).map(|_| ())
+            } else {
+                self.release_inventory_for_order(id).map(|_| ())
+            };
+            if let Err(e) = result {
                 failed.push(format!("訂單 {}: {}", id, e));
             } else {
                 count += 1;
@@ -3222,41 +3365,65 @@ impl Database {
             return Ok(());
         }
 
-        // Compute required qty per material from order items + recipes + wastage
-        let mut mat_stmt = conn.prepare(
-            "SELECT ri.ref_id, SUM(ri.qty * (1.0 + COALESCE(ri.wastage_rate, 0.0)) * oi.qty)
-             FROM order_items oi
+        // Expand each order item's recipe recursively (handles sub-recipes at all depths)
+        let mut oi_stmt = conn.prepare(
+            "SELECT mi.recipe_id, oi.qty FROM order_items oi
              JOIN menu_items mi ON oi.menu_item_id = mi.id
-             JOIN recipe_items ri ON ri.recipe_id = mi.recipe_id AND ri.item_type = 'material'
-             WHERE oi.order_id = ?1
-             GROUP BY ri.ref_id"
+             WHERE oi.order_id = ?1 AND mi.recipe_id IS NOT NULL"
         )?;
-        let needs: Vec<(i64, f64)> = mat_stmt.query_map(params![order_id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
+        let order_items: Vec<(i64, f64)> = oi_stmt.query_map(params![order_id], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
         })?.collect::<Result<Vec<_>>>()?;
+        let mut needs_map: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+        for (recipe_id, oi_qty) in order_items {
+            expand_recipe_needs(conn, recipe_id, oi_qty, 0, &mut needs_map)?;
+        }
+        let needs: Vec<(i64, f64)> = needs_map.into_iter().collect();
+
+        // Pre-check: verify sufficient stock for all materials before writing anything.
+        let mut shortages: Vec<String> = Vec::new();
+        for (material_id, needed) in &needs {
+            if *needed <= 0.0 { continue; }
+            let available: f64 = conn.query_row(
+                "SELECT COALESCE(SUM(quantity),0) FROM inventory_batches WHERE material_id = ?1",
+                params![material_id], |r| r.get(0),
+            ).unwrap_or(0.0);
+            if available < needed - 1e-9 {
+                let mat_name: String = conn.query_row(
+                    "SELECT name FROM materials WHERE id = ?1", params![material_id], |r| r.get(0),
+                ).unwrap_or_else(|_| format!("材料#{}", material_id));
+                shortages.push(format!("{}（需要 {:.2}，库存 {:.2}）", mat_name, needed, available));
+            }
+        }
+        if !shortages.is_empty() {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("库存不足: {}", shortages.join("；"))
+            ));
+        }
 
         for (material_id, mut remaining) in needs {
             if remaining <= 0.0 { continue; }
 
             // FIFO: oldest expiry first; ties broken by batch id
             let mut batch_stmt = conn.prepare(
-                "SELECT id, quantity FROM inventory_batches
+                "SELECT id, quantity, cost_per_unit FROM inventory_batches
                  WHERE material_id = ?1 AND quantity > 0
                  ORDER BY COALESCE(expiry_date, '9999-99-99'), id"
             )?;
-            let batches: Vec<(i64, f64)> = batch_stmt.query_map(params![material_id], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+            let batches: Vec<(i64, f64, f64)> = batch_stmt.query_map(params![material_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })?.collect::<Result<Vec<_>>>()?;
 
-            for (batch_id, available) in batches {
+            for (batch_id, available, cost_per_unit) in batches {
                 if remaining <= 0.0 { break; }
                 let deduct = available.min(remaining);
                 remaining -= deduct;
+                let cost_delta = -(deduct * cost_per_unit);
                 let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
                 conn.execute(
                     "INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta) \
-                     VALUES (?1, 'consume', 'order', ?2, ?3, ?4, ?5, 0.0)",
-                    params![txn_no, order_id, batch_id, material_id, -deduct],
+                     VALUES (?1, 'consume', 'order', ?2, ?3, ?4, ?5, ?6)",
+                    params![txn_no, order_id, batch_id, material_id, -deduct, cost_delta],
                 )?;
                 conn.execute(
                     "UPDATE inventory_batches SET quantity = quantity - ?1 WHERE id = ?2",
@@ -3756,6 +3923,12 @@ impl Database {
 
     pub fn add_purchase_order_item(&self, po_id: i64, material_id: i64, qty: f64, unit_id: Option<i64>, cost_per_unit: f64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let status: String = conn.query_row("SELECT status FROM purchase_orders WHERE id = ?1", params![po_id], |r| r.get(0))?;
+        if status != "draft" {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("只能為草稿狀態的採購單新增明細，當前狀態：{}", status)
+            ));
+        }
         conn.execute("INSERT INTO purchase_order_items (po_id, material_id, qty, unit_id, cost_per_unit) VALUES (?1, ?2, ?3, ?4, ?5)", params![po_id, material_id, qty, unit_id, cost_per_unit])?;
         conn.execute("UPDATE purchase_orders SET total_cost = (SELECT COALESCE(SUM(qty * cost_per_unit), 0) FROM purchase_order_items WHERE po_id = ?1) WHERE id = ?1", params![po_id])?;
         Ok(())
@@ -3880,18 +4053,35 @@ impl Database {
         Ok(ProductionOrderWithItems { order, items })
     }
 
+    pub fn check_production_materials(&self, recipe_id: i64, planned_qty: f64) -> Result<Vec<(String, f64, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut flat: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+        expand_recipe_needs(&conn, recipe_id, planned_qty, 0, &mut flat)?;
+        let mut result = Vec::new();
+        for (material_id, needed) in flat {
+            let mat_name: String = conn.query_row(
+                "SELECT name FROM materials WHERE id = ?1", params![material_id], |r| r.get(0),
+            ).unwrap_or_else(|_| format!("材料#{}", material_id));
+            let available: f64 = conn.query_row(
+                "SELECT COALESCE(SUM(quantity),0) FROM inventory_batches WHERE material_id = ?1",
+                params![material_id], |r| r.get(0),
+            ).unwrap_or(0.0);
+            result.push((mat_name, needed, available));
+        }
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(result)
+    }
+
     pub fn create_production_order(&self, recipe_id: i64, planned_qty: f64, operator: Option<&str>) -> Result<String> {
         let conn = self.conn.lock().unwrap();
         let production_no = format!("PRD{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
         conn.execute("INSERT INTO production_orders (production_no, recipe_id, planned_qty, operator) VALUES (?1, ?2, ?3, ?4)", params![production_no, recipe_id, planned_qty, operator])?;
         let prod_id = conn.last_insert_rowid();
-        let mut recipe_stmt = conn.prepare("SELECT ref_id, qty, wastage_rate FROM recipe_items WHERE recipe_id = ?1 AND item_type = 'material'")?;
-        let recipe_items: Vec<(i64, f64, f64)> = recipe_stmt.query_map(params![recipe_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?.collect::<Result<Vec<_>>>()?;
-        for (material_id, qty, wastage_rate) in recipe_items {
-            let scaled_qty = qty * (1.0 + wastage_rate) * planned_qty;
-            conn.execute("INSERT INTO production_order_items (production_id, material_id, planned_qty) VALUES (?1, ?2, ?3)", params![prod_id, material_id, scaled_qty])?;
+        // Recursively expand recipe (handles direct materials + nested sub-recipes)
+        let mut item_map: std::collections::HashMap<i64, f64> = std::collections::HashMap::new();
+        expand_recipe_needs(&conn, recipe_id, planned_qty, 0, &mut item_map)?;
+        for (material_id, planned) in item_map {
+            conn.execute("INSERT INTO production_order_items (production_id, material_id, planned_qty) VALUES (?1, ?2, ?3)", params![prod_id, material_id, planned])?;
         }
         Ok(production_no)
     }
@@ -3925,6 +4115,29 @@ impl Database {
             Some(mid) => mid,
             None => return Err(rusqlite::Error::InvalidParameterName("配方缺少輸出物料，無法完成生産".to_string())),
         };
+        // Pre-check: verify sufficient stock for all materials before writing.
+        let scale_pre = if planned_qty > 0.0 { actual_qty / planned_qty } else { 1.0 };
+        let mut shortages: Vec<String> = Vec::new();
+        for (material_id, mat_planned_qty) in &items {
+            let needed = mat_planned_qty * scale_pre;
+            if needed <= 0.0 { continue; }
+            let available: f64 = conn.query_row(
+                "SELECT COALESCE(SUM(quantity),0) FROM inventory_batches WHERE material_id = ?1",
+                params![material_id], |r| r.get(0),
+            ).unwrap_or(0.0);
+            if available < needed - 1e-9 {
+                let mat_name: String = conn.query_row(
+                    "SELECT name FROM materials WHERE id = ?1", params![material_id], |r| r.get(0),
+                ).unwrap_or_else(|_| format!("材料#{}", material_id));
+                shortages.push(format!("{}（需要 {:.2}，库存 {:.2}）", mat_name, needed, available));
+            }
+        }
+        if !shortages.is_empty() {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("原料不足: {}", shortages.join("；"))
+            ));
+        }
+
         conn.execute_batch("BEGIN")?;
         let result: Result<()> = (|| {
             conn.execute(
@@ -3988,6 +4201,24 @@ impl Database {
         })();
         match result {
             Ok(_) => { conn.execute_batch("COMMIT")?; Ok(Vec::new()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
+    }
+
+    /// 直接標記訂單出餐（不用 KDS 的場景）：消耗庫存 + 更新狀態為 ready
+    pub fn mark_order_ready(&self, order_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            Self::consume_order_inventory(&conn, order_id)?;
+            conn.execute(
+                "UPDATE orders SET status = 'ready', updated_at = datetime('now') WHERE id = ?1 AND status = 'submitted'",
+                params![order_id],
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
             Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
         }
     }
@@ -4065,6 +4296,13 @@ impl Database {
 
     pub fn update_stocktake_item(&self, item_id: i64, actual_qty: f64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        let status: String = conn.query_row(
+            "SELECT s.status FROM stocktakes s JOIN stocktake_items si ON si.stocktake_id = s.id WHERE si.id = ?1",
+            params![item_id], |r| r.get(0),
+        )?;
+        if status == "completed" {
+            return Err(rusqlite::Error::InvalidParameterName("盤點已完成，不允許修改明細".to_string()));
+        }
         conn.execute("UPDATE stocktake_items SET actual_qty = ?1, diff_qty = ?1 - system_qty, is_counted = 1 WHERE id = ?2", params![actual_qty, item_id])?;
         Ok(())
     }
@@ -4079,10 +4317,21 @@ impl Database {
         let result: Result<()> = (|| {
             for (lot_id, material_id, diff_qty) in &items {
                 let txn_no = format!("TXN{}", chrono::Local::now().format("%Y%m%d%H%M%S%3f"));
+                let cpu: f64 = match lot_id {
+                    Some(lot) => conn.query_row(
+                        "SELECT COALESCE(cost_per_unit, 0.0) FROM inventory_batches WHERE id = ?1",
+                        params![lot], |r| r.get(0),
+                    ).unwrap_or(0.0),
+                    None => conn.query_row(
+                        "SELECT COALESCE(AVG(cost_per_unit), 0.0) FROM inventory_batches WHERE material_id = ?1 AND quantity > 0",
+                        params![material_id], |r| r.get(0),
+                    ).unwrap_or(0.0),
+                };
+                let cost_delta = diff_qty * cpu;
                 if let Some(lot) = lot_id {
                     conn.execute("UPDATE inventory_batches SET quantity = quantity + ?1 WHERE id = ?2", params![diff_qty, lot])?;
                 }
-                conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'stocktake_adjust', 'stocktake', ?2, ?3, ?4, ?5, 0.0, ?6, '盤點調整')", params![txn_no, stocktake_id, lot_id, material_id, diff_qty, operator])?;
+                conn.execute("INSERT INTO inventory_txns (txn_no, txn_type, ref_type, ref_id, lot_id, material_id, qty_delta, cost_delta, operator, note) VALUES (?1, 'stocktake_adjust', 'stocktake', ?2, ?3, ?4, ?5, ?6, ?7, '盤點調整')", params![txn_no, stocktake_id, lot_id, material_id, diff_qty, cost_delta, operator])?;
             }
             conn.execute("UPDATE stocktakes SET status = 'completed', completed_at = datetime('now') WHERE id = ?1", params![stocktake_id])?;
             Ok(())
@@ -4102,11 +4351,23 @@ impl Database {
 
     // ==================== 報表 ====================
 
-    pub fn get_sales_report(&self, start_date: &str, end_date: &str) -> Result<Vec<(String, f64, i64)>> {
+    // Returns (date, billed_amount, order_count, collected_amount)
+    pub fn get_sales_report(&self, start_date: &str, end_date: &str) -> Result<Vec<(String, f64, i64, f64)>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT DATE(o.created_at), SUM(oi.qty * oi.unit_price), COUNT(DISTINCT o.id) FROM orders o JOIN order_items oi ON o.id = oi.order_id WHERE o.status IN ('submitted', 'ready') AND DATE(o.created_at) BETWEEN ?1 AND ?2 GROUP BY DATE(o.created_at) ORDER BY DATE(o.created_at)")?;
+        let mut stmt = conn.prepare(
+            "SELECT DATE(o.created_at),
+                    SUM(oi.qty * oi.unit_price),
+                    COUNT(DISTINCT o.id),
+                    SUM(CASE WHEN COALESCE(o.payment_status,'unpaid') != 'unpaid' THEN COALESCE(o.amount_paid, 0) ELSE 0 END)
+             FROM orders o
+             JOIN order_items oi ON o.id = oi.order_id
+             WHERE o.status IN ('submitted','ready')
+               AND DATE(o.created_at) BETWEEN ?1 AND ?2
+             GROUP BY DATE(o.created_at)
+             ORDER BY DATE(o.created_at)"
+        )?;
         let rows = stmt.query_map(params![start_date, end_date], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })?.collect::<Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -4120,11 +4381,47 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn get_gross_profit_report(&self, start_date: &str, end_date: &str) -> Result<Vec<(String, f64, f64, f64)>> {
+    // Returns (date, revenue, cogs, gross_profit, expenses, net_profit)
+    pub fn get_gross_profit_report(&self, start_date: &str, end_date: &str) -> Result<Vec<(String, f64, f64, f64, f64, f64)>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT DATE(o.created_at), SUM(oi.qty * oi.unit_price), COALESCE(SUM(rc.cost_per_unit * oi.qty), 0), SUM(oi.qty * oi.unit_price) - COALESCE(SUM(rc.cost_per_unit * oi.qty), 0) FROM orders o JOIN order_items oi ON o.id = oi.order_id LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id LEFT JOIN recipes r ON mi.recipe_id = r.id LEFT JOIN recipe_items ri ON r.id = ri.recipe_id AND ri.item_type = 'material' LEFT JOIN materials m ON ri.ref_id = m.id LEFT JOIN (SELECT material_id, AVG(cost_per_unit) as cost_per_unit FROM inventory_batches GROUP BY material_id) rc ON m.id = rc.material_id WHERE o.status IN ('submitted', 'ready') AND DATE(o.created_at) BETWEEN ?1 AND ?2 GROUP BY DATE(o.created_at) ORDER BY DATE(o.created_at)")?;
+        let mut stmt = conn.prepare(
+            "WITH rev AS (
+                SELECT DATE(o.created_at) AS day, SUM(oi.qty * oi.unit_price) AS revenue
+                FROM orders o
+                JOIN order_items oi ON o.id = oi.order_id
+                WHERE o.status IN ('submitted','ready')
+                  AND DATE(o.created_at) BETWEEN ?1 AND ?2
+                GROUP BY day
+            ),
+            cst AS (
+                SELECT DATE(o.created_at) AS day, SUM(ABS(it.cost_delta)) AS cost
+                FROM orders o
+                JOIN inventory_txns it ON it.ref_type = 'order' AND it.ref_id = o.id
+                                      AND it.txn_type = 'consume'
+                WHERE o.status IN ('submitted','ready')
+                  AND DATE(o.created_at) BETWEEN ?1 AND ?2
+                GROUP BY day
+            ),
+            exp AS (
+                SELECT expense_date AS day, SUM(amount) AS expenses
+                FROM expenses
+                WHERE is_active = 1
+                  AND expense_date BETWEEN ?1 AND ?2
+                GROUP BY day
+            )
+            SELECT rev.day,
+                   rev.revenue,
+                   COALESCE(cst.cost, 0),
+                   rev.revenue - COALESCE(cst.cost, 0),
+                   COALESCE(exp.expenses, 0),
+                   rev.revenue - COALESCE(cst.cost, 0) - COALESCE(exp.expenses, 0)
+            FROM rev
+            LEFT JOIN cst ON cst.day = rev.day
+            LEFT JOIN exp ON exp.day = rev.day
+            ORDER BY rev.day"
+        )?;
         let rows = stmt.query_map(params![start_date, end_date], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
         })?.collect::<Result<Vec<_>>>()?;
         Ok(rows)
     }

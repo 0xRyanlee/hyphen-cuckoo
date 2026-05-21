@@ -285,72 +285,42 @@ export function RecipesPage({
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadRecipeItemCounts() {
       try {
-        const pairs = await Promise.all(
-          recipes.map(async (recipe) => {
-            const data = await invoke<RecipeWithItems>("get_recipe_with_items", { recipeId: recipe.id });
-            return [recipe.id, data.items.length] as const;
-          }),
-        );
-        if (!cancelled) {
-          setRecipeItemCounts(Object.fromEntries(pairs));
-        }
+        const pairs = await invoke<[number, number][]>("get_recipe_item_counts");
+        if (!cancelled) setRecipeItemCounts(Object.fromEntries(pairs));
       } catch (e) {
-        if (!cancelled) {
-          console.error("加载配方明细数量失败", e);
-        }
+        if (!cancelled) console.error("加载配方明细数量失败", e);
       }
     }
-
     if (recipes.length > 0) {
       loadRecipeItemCounts();
     } else {
       setRecipeItemCounts({});
     }
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [recipes]);
 
   useEffect(() => {
     let cancelled = false;
-
     async function loadRecipeCostTotals() {
       try {
-        const pairs = await Promise.all(
-          recipes.map(async (recipe) => {
-            const itemCount = recipeItemCounts[recipe.id] ?? 0;
-            if (itemCount === 0) {
-              return [recipe.id, null] as const;
-            }
-            try {
-              const cost = await invoke<RecipeCostResult>("calculate_recipe_cost", { recipeId: recipe.id });
-              return [recipe.id, cost.total_cost] as const;
-            } catch {
-              return [recipe.id, null] as const;
-            }
-          }),
-        );
+        const pairs = await invoke<[number, number][]>("get_all_recipe_costs");
         if (!cancelled) {
-          setRecipeCostTotals(Object.fromEntries(pairs));
+          const costs: Record<number, number | null> = {};
+          for (const [id, cost] of pairs) {
+            costs[id] = (recipeItemCounts[id] ?? 0) > 0 ? cost : null;
+          }
+          setRecipeCostTotals(costs);
         }
       } catch (e) {
-        if (!cancelled) {
-          console.error("加载配方成本摘要失败", e);
-        }
+        if (!cancelled) console.error("加载配方成本摘要失败", e);
       }
     }
-
     if (recipes.length > 0 && Object.keys(recipeItemCounts).length > 0) {
       loadRecipeCostTotals();
     }
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [recipes, recipeItemCounts]);
 
   async function toggleExpand(refId: number) {

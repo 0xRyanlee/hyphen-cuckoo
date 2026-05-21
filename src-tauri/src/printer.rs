@@ -358,10 +358,14 @@ impl TsplBuilder {
         }
     }
 
+    fn tspl_escape(content: &str) -> String {
+        content.replace('"', "\\\"").replace(['\r', '\n'], "")
+    }
+
     pub fn text(&mut self, x: i32, y: i32, font: &str, size: (i32, i32), content: &str) -> &mut Self {
         self.commands.push(format!(
             "TEXT {}, {}, \"{}\", 0, {}, {}, \"{}\"",
-            x, y, font, size.0, size.1, content
+            x, y, font, size.0, size.1, Self::tspl_escape(content)
         ));
         self
     }
@@ -370,7 +374,7 @@ impl TsplBuilder {
     pub fn text_with_rotation(&mut self, x: i32, y: i32, font: &str, size: (i32, i32), rotation: i32, content: &str) -> &mut Self {
         self.commands.push(format!(
             "TEXT {}, {}, \"{}\", {}, {}, {}, \"{}\"",
-            x, y, font, rotation, size.0, size.1, content
+            x, y, font, rotation, size.0, size.1, Self::tspl_escape(content)
         ));
         self
     }
@@ -378,7 +382,7 @@ impl TsplBuilder {
     pub fn barcode(&mut self, x: i32, y: i32, code_type: &str, height: i32, content: &str) -> &mut Self {
         self.commands.push(format!(
             "BARCODE {}, {}, \"{}\", {}, 1, 0, 2, 2, \"{}\"",
-            x, y, code_type, height, content
+            x, y, code_type, height, Self::tspl_escape(content)
         ));
         self
     }
@@ -387,7 +391,7 @@ impl TsplBuilder {
     pub fn qr_code(&mut self, x: i32, y: i32, level: &str, cell_size: i32, content: &str) -> &mut Self {
         self.commands.push(format!(
             "QRCODE {}, {}, {}, {}, 0, \"{}\"",
-            x, y, level, cell_size, content
+            x, y, level, cell_size, Self::tspl_escape(content)
         ));
         self
     }
@@ -434,6 +438,7 @@ pub fn lan_print_escpos(ip: &str, port: i32, builder: EscPosBuilder) -> Result<(
     lan_print(ip, port, &data)
 }
 
+#[allow(dead_code)]
 pub fn lan_print_tspl(ip: &str, port: i32, builder: &TsplBuilder) -> Result<(), String> {
     let data = builder.build().into_bytes();
     lan_print(ip, port, &data)
@@ -554,6 +559,81 @@ pub fn build_kitchen_ticket_text(
     s.push_str("--------------------------------\n");
     if let Some(n) = note {
         s.push_str(&format!("訂單備註: {}\n", n));
+    }
+    s
+}
+
+/// items: (name, qty, unit_price)
+pub fn build_receipt_content(
+    order_no: &str,
+    dine_type: &str,
+    table_no: Option<&str>,
+    items: &[(String, f64, f64)],
+    total: f64,
+    payment_method: Option<&str>,
+    amount_paid: f64,
+) -> EscPosBuilder {
+    let mut builder = EscPosBuilder::new();
+    builder.align_center().bold_on().double_height()
+        .text_ln("Cuckoo 收據")
+        .normal_size().bold_off().align_left()
+        .separator(32);
+    builder.text_ln(&format!("單號: {}", order_no));
+    builder.text_ln(&format!("類型: {}", dine_type));
+    if let Some(t) = table_no {
+        builder.text_ln(&format!("桌號: {}", t));
+    }
+    builder.text_ln(&format!("時間: {}", chrono::Local::now().format("%Y-%m-%d %H:%M")));
+    builder.separator(32);
+    for (name, qty, unit_price) in items {
+        let line_total = qty * unit_price;
+        builder.text_ln(&format!("{} x{} = ${:.2}", name, *qty as i32, line_total));
+    }
+    builder.separator(32);
+    builder.bold_on().text_ln(&format!("合計: ${:.2}", total)).bold_off();
+    if let Some(m) = payment_method {
+        builder.text_ln(&format!("付款: {}", m));
+        builder.text_ln(&format!("實收: ${:.2}", amount_paid));
+        let change = amount_paid - total;
+        if change > 0.001 {
+            builder.text_ln(&format!("找零: ${:.2}", change));
+        }
+    }
+    builder.feed_lines(3).cut_paper();
+    builder
+}
+
+pub fn build_receipt_text(
+    order_no: &str,
+    dine_type: &str,
+    table_no: Option<&str>,
+    items: &[(String, f64, f64)],
+    total: f64,
+    payment_method: Option<&str>,
+    amount_paid: f64,
+) -> String {
+    let mut s = String::new();
+    s.push_str("=== Cuckoo 收據 ===\n");
+    s.push_str(&format!("單號: {}\n", order_no));
+    s.push_str(&format!("類型: {}\n", dine_type));
+    if let Some(t) = table_no {
+        s.push_str(&format!("桌號: {}\n", t));
+    }
+    s.push_str(&format!("時間: {}\n", chrono::Local::now().format("%Y-%m-%d %H:%M")));
+    s.push_str("--------------------------------\n");
+    for (name, qty, unit_price) in items {
+        let line_total = qty * unit_price;
+        s.push_str(&format!("{} x{} = ${:.2}\n", name, *qty as i32, line_total));
+    }
+    s.push_str("--------------------------------\n");
+    s.push_str(&format!("合計: ${:.2}\n", total));
+    if let Some(m) = payment_method {
+        s.push_str(&format!("付款: {}\n", m));
+        s.push_str(&format!("實收: ${:.2}\n", amount_paid));
+        let change = amount_paid - total;
+        if change > 0.001 {
+            s.push_str(&format!("找零: ${:.2}\n", change));
+        }
     }
     s
 }

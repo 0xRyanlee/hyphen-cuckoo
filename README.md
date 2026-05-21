@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/版本-v1.2.4-blue?style=for-the-badge)](https://github.com/0xRyanlee/Cuckoo/releases)
+[![Version](https://img.shields.io/badge/版本-v1.4.1-blue?style=for-the-badge)](https://github.com/0xRyanlee/Cuckoo/releases)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-2021-CE422B?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -175,22 +175,71 @@ npm run test:coverage # 覆盖率报告
 
 ---
 
+## 产品分析 — KANO 模型（2026-05-21）
+
+以 KANO 模型对当前功能进行分层，指导优先级决策：
+
+### Must-be 基本需求（缺失即流失）
+
+| 功能 | 状态 |
+|------|------|
+| POS 收款、订单流转、菜单管理 | ✅ 完整 |
+| 基础库存追踪与采购 | ✅ 完整 |
+| 错误提示覆盖率 | ✅ 已系统性修复 |
+| **本地数据自动备份** | ✅ v1.4 已实现（设置页可配置）|
+| **订单作废与退款流程** | ⚠️ 已可取消，部分退款待完善 |
+
+### One-dimensional 期望需求（越好越满意）
+
+报表维度、订单历史筛选、打印稳定性、库存成本精度——当前均已实现，
+持续改善可线性提升用户留存。
+
+### Attractive 魅力需求（超预期差异化）
+
+| 功能 | 状态 |
+|------|------|
+| KDS 厨房显示 + 工作站打印机路由 | ✅ 已实现 |
+| FIFO/FEFO 批次自动扣减 | ✅ 已实现 |
+| 多层配方展开（半成品嵌套） | ✅ 已修复 |
+| 收款后自动打印收据 | ✅ v1.4 新增 |
+| 入库自动打印批次标签 | ✅ v1.4 新增 |
+| 顾客积分 / 集点 | 路线图中 |
+| 食材到期前桌面通知 | 路线图中 |
+
+### 判断结论
+
+Cuckoo 的 Attractive 层（KDS、FIFO、多层配方）已达中端 ERP 水准，
+Must-be 层在 v1.4 完成备份与错误修复后基本达标。
+下一重心：将 One-dimensional 项（订单筛选、报表增强）推到更高完成度，
+以及引入第一个真正的 Attractive 新功能（积分集点）。
+
+---
+
 ## 开发路线图
 
-### v1.3.0 — 安全加固与体验打磨（当前目标）
+### v1.4.x — 打印完善 & 数据安全（当前）
 
 | 方向 | 关键任务 |
 |------|----------|
-| 安全 | 配方删除依赖检查、遥测 URL 白名单、打印模板 XSS 防护 |
-| 配方 | 半成品专用创建路径、成本来源可视化、循环依赖检测 |
-| 体验 | 统一删除策略、批量编辑、跨页业务接力完善 |
+| 打印 | 收据打印、入库标签开关、工作站绑定打印机 |
+| 数据安全 | 本地自动备份 SQLite（启动时 + 手动触发）|
+| 错误提示 | 打印页静默失败修复、收款自动打印 |
+
+### v1.5.0 — 体验打磨（近期目标）
+
+| 方向 | 关键任务 |
+|------|----------|
+| 订单 | 订单历史日期 + 状态筛选、部分退款流程 |
+| 库存 | 食材到期日三天前桌面通知 |
+| 报表 | 按星期 / 时段分析、员工维度 |
+| POS | 常用品项快捷区、扫码下单支持 |
 
 ### v2.0.0 — 功能扩展（季度规划）
 
 | 方向 | 关键任务 |
 |------|----------|
-| 权限 | 角色系统（老板/收银/厨师/仓库）|
-| 数据 | 自动备份 SQLite + 手动导出/导入 |
+| 会员 | 顾客积分 / 集点卡（烘焙店高频需求）|
+| 权限 | 角色系统（老板 / 收银 / 厨师 / 仓库）|
 | 协同 | 局域网多设备同步 |
 
 ### v3.0.0 — 云端与生态（远期）
@@ -198,7 +247,6 @@ npm run test:coverage # 覆盖率报告
 | 方向 | 关键任务 |
 |------|----------|
 | 云端 | 微信小程序接入、多店铺管理 |
-| 会员 | 会员体系、优惠券系统 |
 | 分析 | AI 辅助经营分析 |
 
 > 完整路线图见 [ROADMAP.md](ROADMAP.md)

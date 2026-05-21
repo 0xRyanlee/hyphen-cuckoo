@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2, Scan, TestTube2, History, Printer, Wand2, Cloud, Wifi,
          CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight, Zap } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { toast } from "sonner";
 
 interface PrinterConfig {
   id: number;
@@ -600,6 +601,15 @@ export function PrintSettingsPage() {
   const [scanSubnet, setScanSubnet] = useState("192.168.1");
   const [error, setError] = useState<string | null>(null);
   const [autoPrint, setAutoPrint] = useState(() => localStorage.getItem("auto_print_kitchen") === "true");
+  const [autoPrintPO, setAutoPrintPO] = useState(() => localStorage.getItem("auto_print_po") === "true");
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(() => localStorage.getItem("auto_print_receipt") === "true");
+  const [stations, setStations] = useState<{ id: number; name: string; printer_id: number | null }[]>([]);
+
+  useEffect(() => {
+    invoke<{ id: number; name: string; printer_id: number | null }[]>("get_kitchen_stations")
+      .then(setStations)
+      .catch(() => {});
+  }, []);
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -628,14 +638,14 @@ export function PrintSettingsPage() {
     try {
       const data = await invoke<PrinterConfig[]>("get_printers");
       setPrinters(data);
-    } catch (e) { console.error(e); }
+    } catch (e) { toast.error("加载打印机列表失败", { description: String(e) }); }
   }
 
   async function loadPrintTasks() {
     try {
       const data = await invoke<PrintTask[]>("get_print_tasks", { limit: 20 });
       setPrintTasks(data);
-    } catch (e) { console.error(e); }
+    } catch (e) { toast.error("加载打印任务失败", { description: String(e) }); }
   }
 
   useEffect(() => { loadPrinters(); loadPrintTasks(); }, []);
@@ -782,6 +792,92 @@ export function PrintSettingsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* PO receive auto-print setting */}
+      <Card>
+        <CardContent className="flex items-center justify-between pt-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10">
+              <Printer className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <p className="font-semibold">入库自动打印批次标签</p>
+              <p className="text-sm text-muted-foreground">采购单入库后自动为每个批次打印标签，方便盘点和追溯</p>
+            </div>
+          </div>
+          <Checkbox
+            checked={autoPrintPO}
+            onCheckedChange={(v) => {
+              const next = !!v;
+              setAutoPrintPO(next);
+              localStorage.setItem("auto_print_po", next ? "true" : "false");
+            }}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Receipt auto-print setting */}
+      <Card>
+        <CardContent className="flex items-center justify-between pt-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10">
+              <Zap className="h-5 w-5 text-green-500" />
+            </div>
+            <div>
+              <p className="font-semibold">收款后自动打印收据</p>
+              <p className="text-sm text-muted-foreground">登记收款后立即将收据发送到默认打印机</p>
+            </div>
+          </div>
+          <Checkbox
+            checked={autoPrintReceipt}
+            onCheckedChange={(v) => {
+              const next = !!v;
+              setAutoPrintReceipt(next);
+              localStorage.setItem("auto_print_receipt", next ? "true" : "false");
+            }}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Station printer assignment */}
+      {stations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Printer className="h-4 w-4" />
+              廚房工作站打印機
+            </CardTitle>
+            <CardDescription>為每個工作站指定專屬打印機，未指定時使用默認打印機</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {stations.map((station) => (
+              <div key={station.id} className="flex items-center justify-between">
+                <span className="text-sm font-medium">{station.name}</span>
+                <Select
+                  value={station.printer_id != null ? String(station.printer_id) : "default"}
+                  onValueChange={async (val) => {
+                    const newId = val === "default" ? null : Number(val);
+                    try {
+                      await invoke("update_station_printer", { stationId: station.id, printerId: newId });
+                      setStations((prev) => prev.map((s) => s.id === station.id ? { ...s, printer_id: newId } : s));
+                    } catch (e) { toast.error("更新失败", { description: String(e) }); }
+                  }}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">使用默認打印機</SelectItem>
+                    {printers.filter((p) => p.is_active).map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick setup wizard card */}
       <Card className="border-primary/30 bg-primary/5">

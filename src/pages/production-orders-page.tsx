@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,15 @@ export function ProductionOrdersPage({
   const [newRecipeId, setNewRecipeId] = useState("");
   const [newPlannedQty, setNewPlannedQty] = useState("1");
   const [newOperator, setNewOperator] = useState("");
+  const [materialCheck, setMaterialCheck] = useState<[string, number, number][] | null>(null);
+
+  useEffect(() => {
+    if (!newRecipeId) { setMaterialCheck(null); return; }
+    const qty = parseFloat(newPlannedQty) || 1;
+    invoke<[string, number, number][]>("check_production_materials", { recipeId: parseInt(newRecipeId), plannedQty: qty })
+      .then(setMaterialCheck)
+      .catch(() => setMaterialCheck(null));
+  }, [newRecipeId, newPlannedQty]);
 
   const [completeId, setCompleteId] = useState<number | null>(null);
   const [completeActualQty, setCompleteActualQty] = useState("1");
@@ -162,6 +172,23 @@ export function ProductionOrdersPage({
                 <Label>操作人（可选）</Label>
                 <Input value={newOperator} onChange={(e) => setNewOperator(e.target.value)} placeholder="操作人姓名" />
               </div>
+              {materialCheck && materialCheck.length > 0 && (
+                <div className="rounded-md border p-3 space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">备料检查</p>
+                  {materialCheck.map(([name, needed, available]) => {
+                    const ok = available >= needed - 1e-9;
+                    return (
+                      <div key={name} className={`flex justify-between text-xs rounded px-2 py-1 ${ok ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
+                        <span>{name}</span>
+                        <span>{ok ? "✓" : "✗"} 需 {needed.toFixed(2)} / 有 {available.toFixed(2)}</span>
+                      </div>
+                    );
+                  })}
+                  {materialCheck.some(([, needed, available]) => available < needed - 1e-9) && (
+                    <p className="text-xs text-destructive pt-1">部分原料不足，完成生产时将报错</p>
+                  )}
+                </div>
+              )}
               <Button className="w-full" onClick={() => {
                 if (newRecipeId) {
                   onCreateOrder({

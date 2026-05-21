@@ -53,6 +53,7 @@ export function useAppData() {
   const [selectedStocktake, setSelectedStocktake] = useState<StocktakeWithItems | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -66,6 +67,7 @@ export function useAppData() {
       return;
     }
     try { await invoke("check_and_create_alerts"); } catch { /* ignore */ }
+    try { const count = await invoke<number>("get_unread_notification_count"); setUnreadNotificationCount(count); } catch { /* ignore */ }
     // Fetch all data in parallel — each independently so one failure doesn't block others
     const [
       unitsR, catsR, tagsR, matsR, recsR, recTypesR,
@@ -159,6 +161,7 @@ export function useAppData() {
     selectedStocktake, setSelectedStocktake,
     expenses, setExpenses,
     supplierProducts, setSupplierProducts,
+    unreadNotificationCount, setUnreadNotificationCount,
     loadData,
   };
 }

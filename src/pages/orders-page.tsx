@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard } from "lucide-react";
+import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
@@ -72,6 +72,7 @@ interface OrdersPageProps {
   onAddModifier: (data: { order_item_id: number; modifier_type: string; material_id: number | null; qty: number; price_delta: number }) => void;
   onDeleteModifier: (modifier_id: number) => void;
   onLoadModifiers: (order_item_id: number) => Promise<OrderItemModifier[]>;
+  onMarkReady: (id: number) => void;
   onUpdatePayment: (id: number, payment_status: string, payment_method: string | null, amount_paid: number) => void;
   onLoadMore: () => void;
   hasMore: boolean;
@@ -92,6 +93,7 @@ export function OrdersPage({
   onAddModifier,
   onDeleteModifier,
   onLoadModifiers,
+  onMarkReady,
   onUpdatePayment,
   onLoadMore,
   hasMore,
@@ -277,6 +279,11 @@ export function OrdersPage({
                               <Send className="h-4 w-4" />
                             </Button>
                           )}
+                          {order.status === "submitted" && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" title="標記出餐" onClick={() => onMarkReady(order.id)}>
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                          )}
                           {(order.status === "submitted" || order.status === "ready") && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => { setPaymentTargetOrder(order); setPaymentStatus(order.payment_status === "paid" ? "paid" : "paid"); setPaymentMethod(order.payment_method || "cash"); setPaymentAmountPaid(order.amount_total.toFixed(2)); setPaymentDialogOpen(true); }}>
                               <CreditCard className="h-4 w-4" />
@@ -423,6 +430,11 @@ export function OrdersPage({
             <p className="text-sm text-muted-foreground">
               确定要取消订单「{cancelTargetOrder?.order_no}」吗？
             </p>
+            {cancelTargetOrder && cancelTargetOrder.payment_status !== 'unpaid' && (
+              <div className={`rounded-md p-3 text-sm ${cancelTargetOrder.payment_status === 'paid' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
+                ⚠ 此订单{cancelTargetOrder.payment_status === 'paid' ? '已收款' : '已部分收款'} ¥{cancelTargetOrder.amount_paid.toFixed(2)}，取消后请手动处理退款。
+              </div>
+            )}
             <div className="space-y-2">
               <Label>取消时是否扣除食材成本？</Label>
               <div className="flex gap-2">

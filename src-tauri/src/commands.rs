@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{State, Manager};
 use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, Coupon, RecipeComponentType, OrderComponentType};
 use crate::printer::{self, EscPosBuilder, LanPrinter, scan_lan_printers as LAN_SCAN};
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,40 @@ fn db_err(e: rusqlite::Error) -> String {
     if s.contains("FOREIGN KEY constraint failed") { return "关联数据不存在或已被删除".to_string(); }
     if s.contains("NOT NULL constraint failed") { return "必填字段不能为空".to_string(); }
     s
+}
+
+/// Payload prepared before spawning the background print thread.
+enum PrintPayload {
+    Feie { user: String, ukey: String, sn: String, content: String },
+    Lan  { ip: String, port: i32, data: Vec<u8> },
+}
+
+/// Dispatches a print job in a background thread; emits `print-result` on completion.
+/// The DB task record must already exist with status "pending".
+fn dispatch_print(app: tauri::AppHandle, task_id: i64, payload: PrintPayload) {
+    use tauri::Emitter;
+    std::thread::spawn(move || {
+        let outcome = match payload {
+            PrintPayload::Feie { ref user, ref ukey, ref sn, ref content } => {
+                printer::feie_print(user, ukey, sn, content).map(|_| ())
+            }
+            PrintPayload::Lan { ref ip, port, ref data } => {
+                printer::lan_print(ip, port, data).map(|_| ())
+            }
+        };
+        let db = &app.state::<AppState>().db;
+        match outcome {
+            Ok(_) => {
+                let _ = db.update_print_task_status(task_id, "printed", None);
+                let _ = app.emit("print-result", serde_json::json!({ "taskId": task_id, "success": true }));
+            }
+            Err(e) => {
+                let friendly = print_err(e.clone());
+                let _ = db.update_print_task_status(task_id, "failed", Some(&e));
+                let _ = app.emit("print-result", serde_json::json!({ "taskId": task_id, "success": false, "error": friendly }));
+            }
+        }
+    });
 }
 
 fn print_err(raw: String) -> String {
@@ -493,6 +527,16 @@ pub fn calculate_recipe_cost(state: State<AppState>, recipe_id: i64) -> Result<R
 }
 
 #[tauri::command]
+pub fn get_recipe_item_counts(state: State<AppState>) -> Result<Vec<(i64, i64)>, String> {
+    state.db.get_recipe_item_counts().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_all_recipe_costs(state: State<AppState>) -> Result<Vec<(i64, f64)>, String> {
+    state.db.get_all_recipe_costs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_recipe_usage_count(state: State<AppState>, recipe_id: i64) -> Result<i64, String> {
     let count = state.db.get_recipe_usage_count(recipe_id).map_err(|e| e.to_string())?;
     Ok(count)
@@ -624,6 +668,11 @@ pub fn cancel_order(state: State<AppState>, order_id: i64, is_served: bool) -> R
     }
 }
 
+#[tauri::command]
+pub fn mark_order_ready(state: State<AppState>, order_id: i64) -> Result<(), String> {
+    state.db.mark_order_ready(order_id).map_err(|e| e.to_string())
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct UpdateOrderPaymentRequest {
     pub order_id: i64,
@@ -663,6 +712,11 @@ pub fn batch_cancel_orders(state: State<AppState>, ids: Vec<i64>) -> Result<usiz
 #[tauri::command]
 pub fn get_kitchen_stations(state: State<AppState>) -> Result<Vec<KitchenStation>, String> {
     state.db.get_kitchen_stations().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_station_printer(state: State<AppState>, station_id: i64, printer_id: Option<i64>) -> Result<(), String> {
+    state.db.update_station_printer(station_id, printer_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1002,6 +1056,22 @@ pub fn health_check(state: State<AppState>) -> String {
     }
 }
 
+#[tauri::command]
+pub fn backup_database(state: State<AppState>, dest_dir: Option<String>) -> Result<String, String> {
+    let backup_dir = match dest_dir {
+        Some(d) => std::path::PathBuf::from(d),
+        None => dirs::document_dir()
+            .unwrap_or_else(|| dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from(".")))
+            .join("Cuckoo 备份"),
+    };
+    std::fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let dest = backup_dir.join(format!("cuckoo_{}.db", ts));
+    state.db.backup_to(dest.to_str().ok_or("路径含非法字符")?)
+        .map_err(|e| format!("备份失败: {}", e))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 // ==================== 打印機 API ====================
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1111,7 +1181,7 @@ pub fn test_lan_printer(_state: State<AppState>, ip: String, port: Option<i32>) 
 }
 
 #[tauri::command]
-pub fn send_print_task(state: State<AppState>, req: SendPrintTaskRequest) -> Result<i64, String> {
+pub fn send_print_task(state: State<AppState>, app: tauri::AppHandle, req: SendPrintTaskRequest) -> Result<i64, String> {
     let printer = state.db.get_printers().map_err(|e| e.to_string())?
         .into_iter()
         .find(|p| p.id == req.printer_id)
@@ -1126,37 +1196,27 @@ pub fn send_print_task(state: State<AppState>, req: SendPrintTaskRequest) -> Res
         Some(&printer.name),
     ).map_err(|e| e.to_string())?;
 
-    let result = match printer.connection_type.as_str() {
-        "feie" => {
-            let user = printer.feie_user.as_deref().ok_or("飛鵝用戶未配置")?;
-            let ukey = printer.feie_ukey.as_deref().ok_or("飛鵝 UKEY 未配置")?;
-            let sn = printer.feie_sn.as_deref().ok_or("飛鵝 SN 未配置")?;
-            printer::feie_print(user, ukey, sn, &req.content)
-        }
-        "lan" => {
-            let ip = printer.lan_ip.as_deref().ok_or("局域網 IP 未配置")?;
-            let port = printer.lan_port;
-            let data = req.content.as_bytes();
-            printer::lan_print(ip, port, data)
-                .map(|_| "ok".to_string())
-        }
-        _ => Err(format!("不支持的連接類型: {}", printer.connection_type)),
+    let payload = match printer.connection_type.as_str() {
+        "feie" => PrintPayload::Feie {
+            user: printer.feie_user.ok_or("飛鵝用戶未配置")?,
+            ukey: printer.feie_ukey.ok_or("飛鵝 UKEY 未配置")?,
+            sn:   printer.feie_sn.ok_or("飛鵝 SN 未配置")?,
+            content: req.content,
+        },
+        "lan" => PrintPayload::Lan {
+            ip:   printer.lan_ip.ok_or("局域網 IP 未配置")?,
+            port: printer.lan_port,
+            data: req.content.into_bytes(),
+        },
+        other => return Err(format!("不支持的連接類型: {}", other)),
     };
 
-    match result {
-        Ok(_) => {
-            state.db.update_print_task_status(task_id, "printed", None).map_err(|e| e.to_string())?;
-            Ok(task_id)
-        }
-        Err(e) => {
-            state.db.update_print_task_status(task_id, "failed", Some(&e)).map_err(|e| e.to_string())?;
-            Err(print_err(e))
-        }
-    }
+    dispatch_print(app, task_id, payload);
+    Ok(task_id)
 }
 
 #[tauri::command]
-pub fn print_kitchen_ticket(state: State<AppState>, order_no: String, dine_type: String, items: Vec<(String, f64, Option<String>)>, note: Option<String>, printer_id: Option<i64>) -> Result<i64, String> {
+pub fn print_kitchen_ticket(state: State<AppState>, app: tauri::AppHandle, order_no: String, dine_type: String, items: Vec<(String, f64, Option<String>)>, note: Option<String>, printer_id: Option<i64>) -> Result<i64, String> {
     let printer = match printer_id {
         Some(id) => state.db.get_printers().map_err(|e| e.to_string())?
             .into_iter()
@@ -1176,37 +1236,76 @@ pub fn print_kitchen_ticket(state: State<AppState>, order_no: String, dine_type:
         Some(&printer.name),
     ).map_err(|e| e.to_string())?;
 
-    let result = match printer.connection_type.as_str() {
-        "feie" => {
-            let user = printer.feie_user.as_deref().ok_or("飛鵝用戶未配置")?;
-            let ukey = printer.feie_ukey.as_deref().ok_or("飛鵝 UKEY 未配置")?;
-            let sn = printer.feie_sn.as_deref().ok_or("飛鵝 SN 未配置")?;
-            printer::feie_print(user, ukey, sn, &text_content)
-        }
-        "lan" => {
-            let ip = printer.lan_ip.as_deref().ok_or("局域網 IP 未配置")?;
-            let port = printer.lan_port;
-            let content_bytes = printer::build_kitchen_ticket_content(&order_no, &dine_type, &items, note.as_deref()).build();
-            printer::lan_print(ip, port, &content_bytes)
-                .map(|_| "ok".to_string())
-        }
-        _ => Err(format!("不支持的連接類型: {}", printer.connection_type)),
+    let payload = match printer.connection_type.as_str() {
+        "feie" => PrintPayload::Feie {
+            user: printer.feie_user.ok_or("飛鵝用戶未配置")?,
+            ukey: printer.feie_ukey.ok_or("飛鵝 UKEY 未配置")?,
+            sn:   printer.feie_sn.ok_or("飛鵝 SN 未配置")?,
+            content: text_content,
+        },
+        "lan" => PrintPayload::Lan {
+            ip:   printer.lan_ip.ok_or("局域網 IP 未配置")?,
+            port: printer.lan_port,
+            data: printer::build_kitchen_ticket_content(&order_no, &dine_type, &items, note.as_deref()).build(),
+        },
+        other => return Err(format!("不支持的連接類型: {}", other)),
     };
 
-    match result {
-        Ok(_) => {
-            state.db.update_print_task_status(task_id, "printed", None).map_err(|e| e.to_string())?;
-            Ok(task_id)
-        }
-        Err(e) => {
-            state.db.update_print_task_status(task_id, "failed", Some(&e)).map_err(|e| e.to_string())?;
-            Err(print_err(e))
-        }
-    }
+    dispatch_print(app, task_id, payload);
+    Ok(task_id)
 }
 
 #[tauri::command]
-pub fn print_batch_label(state: State<AppState>, lot_no: String, material_name: String, quantity: f64, unit: String, expiry_date: Option<String>, supplier_name: Option<String>, printer_id: Option<i64>) -> Result<i64, String> {
+pub fn print_order_receipt(state: State<AppState>, app: tauri::AppHandle, order_id: i64, printer_id: Option<i64>) -> Result<i64, String> {
+    let (order, order_items) = state.db.get_order_with_items(order_id).map_err(|e| e.to_string())?;
+    let menu_items = state.db.get_menu_items(None).map_err(|e| e.to_string())?;
+    let item_map: std::collections::HashMap<i64, String> = menu_items.into_iter().map(|m| (m.id, m.name)).collect();
+    let items: Vec<(String, f64, f64)> = order_items.iter().map(|oi| {
+        let name = item_map.get(&oi.menu_item_id).cloned().unwrap_or_else(|| format!("商品#{}", oi.menu_item_id));
+        (name, oi.qty, oi.unit_price)
+    }).collect();
+
+    let printer = match printer_id {
+        Some(id) => state.db.get_printers().map_err(|e| e.to_string())?
+            .into_iter().find(|p| p.id == id)
+            .ok_or(format!("打印機 #{} 不存在", id))?,
+        None => state.db.get_default_printer().map_err(|e| e.to_string())?
+            .ok_or("未配置默認打印機")?,
+    };
+
+    let pay_method = order.payment_method.as_deref();
+    let text_content = printer::build_receipt_text(
+        &order.order_no, &order.dine_type, order.table_no.as_deref(),
+        &items, order.amount_total, pay_method, order.amount_paid,
+    );
+    let task_id = state.db.create_print_task(
+        "receipt", Some("order"), Some(order_id), &text_content, Some(printer.id), Some(&printer.name),
+    ).map_err(|e| e.to_string())?;
+
+    let payload = match printer.connection_type.as_str() {
+        "feie" => PrintPayload::Feie {
+            user: printer.feie_user.ok_or("飛鵝用戶未配置")?,
+            ukey: printer.feie_ukey.ok_or("飛鵝 UKEY 未配置")?,
+            sn:   printer.feie_sn.ok_or("飛鵝 SN 未配置")?,
+            content: text_content,
+        },
+        "lan" => PrintPayload::Lan {
+            ip:   printer.lan_ip.ok_or("局域網 IP 未配置")?,
+            port: printer.lan_port,
+            data: printer::build_receipt_content(
+                &order.order_no, &order.dine_type, order.table_no.as_deref(),
+                &items, order.amount_total, pay_method, order.amount_paid,
+            ).build(),
+        },
+        other => return Err(format!("不支持的連接類型: {}", other)),
+    };
+
+    dispatch_print(app, task_id, payload);
+    Ok(task_id)
+}
+
+#[tauri::command]
+pub fn print_batch_label(state: State<AppState>, app: tauri::AppHandle, lot_no: String, material_name: String, quantity: f64, unit: String, expiry_date: Option<String>, supplier_name: Option<String>, printer_id: Option<i64>) -> Result<i64, String> {
     let printer = match printer_id {
         Some(id) => state.db.get_printers().map_err(|e| e.to_string())?
             .into_iter()
@@ -1217,50 +1316,37 @@ pub fn print_batch_label(state: State<AppState>, lot_no: String, material_name: 
     };
 
     let builder = printer::build_batch_label_content(
-        &lot_no,
-        &material_name,
-        quantity,
-        &unit,
-        expiry_date.as_deref(),
-        supplier_name.as_deref(),
+        &lot_no, &material_name, quantity, &unit,
+        expiry_date.as_deref(), supplier_name.as_deref(),
     );
-    let content = builder.build();
 
+    let tspl_text = builder.build();
     let task_id = state.db.create_print_task(
         "batch_label",
         Some("batch"),
         None,
-        &content,
+        &tspl_text,
         Some(printer.id),
         Some(&printer.name),
     ).map_err(|e| e.to_string())?;
 
-    let result = match printer.connection_type.as_str() {
-        "feie" => {
-            let user = printer.feie_user.as_deref().ok_or("飛鵝用戶未配置")?;
-            let ukey = printer.feie_ukey.as_deref().ok_or("飛鵝 UKEY 未配置")?;
-            let sn = printer.feie_sn.as_deref().ok_or("飛鵝 SN 未配置")?;
-            printer::feie_print(user, ukey, sn, &content)
-        }
-        "lan" => {
-            let ip = printer.lan_ip.as_deref().ok_or("局域網 IP 未配置")?;
-            let port = printer.lan_port;
-            printer::lan_print_tspl(ip, port, &builder)
-                .map(|_| "ok".to_string())
-        }
-        _ => Err(format!("不支持的連接類型: {}", printer.connection_type)),
+    let payload = match printer.connection_type.as_str() {
+        "feie" => PrintPayload::Feie {
+            user: printer.feie_user.ok_or("飛鵝用戶未配置")?,
+            ukey: printer.feie_ukey.ok_or("飛鵝 UKEY 未配置")?,
+            sn:   printer.feie_sn.ok_or("飛鵝 SN 未配置")?,
+            content: tspl_text,
+        },
+        "lan" => PrintPayload::Lan {
+            ip:   printer.lan_ip.ok_or("局域網 IP 未配置")?,
+            port: printer.lan_port,
+            data: builder.build().into_bytes(),
+        },
+        other => return Err(format!("不支持的連接類型: {}", other)),
     };
 
-    match result {
-        Ok(_) => {
-            state.db.update_print_task_status(task_id, "printed", None).map_err(|e| e.to_string())?;
-            Ok(task_id)
-        }
-        Err(e) => {
-            state.db.update_print_task_status(task_id, "failed", Some(&e)).map_err(|e| e.to_string())?;
-            Err(print_err(e))
-        }
-    }
+    dispatch_print(app, task_id, payload);
+    Ok(task_id)
 }
 
 #[tauri::command]
@@ -1310,13 +1396,14 @@ pub fn delete_purchase_order(state: State<AppState>, po_id: i64) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn receive_purchase_order(state: State<AppState>, po_id: i64, operator: Option<String>, auto_print: Option<bool>) -> Result<Vec<i64>, String> {
+pub fn receive_purchase_order(state: State<AppState>, app: tauri::AppHandle, po_id: i64, operator: Option<String>, auto_print: Option<bool>) -> Result<Vec<i64>, String> {
     let batches = state.db.receive_purchase_order(po_id, operator.as_deref()).map_err(|e| e.to_string())?;
     if auto_print.unwrap_or(false) {
         let mut print_ids = Vec::new();
         for (_batch_id, lot_no, material_name, unit, qty, supplier_name) in batches {
             let print_id = print_batch_label(
                 state.clone(),
+                app.clone(),
                 lot_no,
                 material_name,
                 qty,
@@ -1363,6 +1450,11 @@ pub fn complete_production_order(state: State<AppState>, production_id: i64, act
 #[tauri::command]
 pub fn delete_production_order(state: State<AppState>, production_id: i64) -> Result<(), String> {
     state.db.delete_production_order(production_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn check_production_materials(state: State<AppState>, recipe_id: i64, planned_qty: f64) -> Result<Vec<(String, f64, f64)>, String> {
+    state.db.check_production_materials(recipe_id, planned_qty).map_err(|e| e.to_string())
 }
 
 // ==================== 盤點命令 ====================
@@ -1426,7 +1518,7 @@ pub fn delete_order_item_modifier(state: State<AppState>, modifier_id: i64) -> R
 // ==================== 報表命令 ====================
 
 #[tauri::command]
-pub fn get_sales_report(state: State<AppState>, start_date: String, end_date: String) -> Result<Vec<(String, f64, i64)>, String> {
+pub fn get_sales_report(state: State<AppState>, start_date: String, end_date: String) -> Result<Vec<(String, f64, i64, f64)>, String> {
     state.db.get_sales_report(&start_date, &end_date).map_err(|e| e.to_string())
 }
 
@@ -1436,7 +1528,7 @@ pub fn get_sales_by_category(state: State<AppState>, start_date: String, end_dat
 }
 
 #[tauri::command]
-pub fn get_gross_profit_report(state: State<AppState>, start_date: String, end_date: String) -> Result<Vec<(String, f64, f64, f64)>, String> {
+pub fn get_gross_profit_report(state: State<AppState>, start_date: String, end_date: String) -> Result<Vec<(String, f64, f64, f64, f64, f64)>, String> {
     state.db.get_gross_profit_report(&start_date, &end_date).map_err(|e| e.to_string())
 }
 
@@ -1450,15 +1542,19 @@ pub fn get_material_consumption_report(state: State<AppState>, start_date: Strin
     state.db.get_material_consumption_report(&start_date, &end_date).map_err(|e| e.to_string())
 }
 
+fn csv_quote(s: &str) -> String {
+    format!("\"{}\"", s.replace('"', "\"\""))
+}
+
 #[allow(dead_code)]
 #[tauri::command]
 pub fn export_report_csv(state: State<AppState>, report_type: String, start_date: String, end_date: String) -> Result<String, String> {
     let csv = match report_type.as_str() {
         "sales" => {
             let data = state.db.get_sales_report(&start_date, &end_date).map_err(|e| e.to_string())?;
-            let mut lines = vec!["日期,销售额,订单数".to_string()];
-            for (date, sales, count) in data {
-                lines.push(format!("{},{:.2},{}", date, sales, count));
+            let mut lines = vec!["日期,销售额,订单数,实收".to_string()];
+            for (date, sales, count, collected) in data {
+                lines.push(format!("{},{:.2},{},{:.2}", csv_quote(&date), sales, count, collected));
             }
             lines.join("\n")
         }
@@ -1466,7 +1562,7 @@ pub fn export_report_csv(state: State<AppState>, report_type: String, start_date
             let data = state.db.get_sales_by_category(&start_date, &end_date).map_err(|e| e.to_string())?;
             let mut lines = vec!["分类,销售额,订单数".to_string()];
             for (cat, sales, count) in data {
-                lines.push(format!("{},{:.2},{}", cat, sales, count));
+                lines.push(format!("{},{:.2},{}", csv_quote(&cat), sales, count));
             }
             lines.join("\n")
         }
@@ -1474,7 +1570,7 @@ pub fn export_report_csv(state: State<AppState>, report_type: String, start_date
             let data = state.db.get_top_selling_items(&start_date, &end_date, 50).map_err(|e| e.to_string())?;
             let mut lines = vec!["菜品,销量,订单数,销售额".to_string()];
             for (name, qty, count, sales) in data {
-                lines.push(format!("{},{:.2},{},{:.2}", name, qty, count, sales));
+                lines.push(format!("{},{:.2},{},{:.2}", csv_quote(&name), qty, count, sales));
             }
             lines.join("\n")
         }
@@ -1482,7 +1578,7 @@ pub fn export_report_csv(state: State<AppState>, report_type: String, start_date
             let data = state.db.get_material_consumption_report(&start_date, &end_date).map_err(|e| e.to_string())?;
             let mut lines = vec!["原料,消耗数量,平均成本,总成本".to_string()];
             for (name, qty, avg_cost, total) in data {
-                lines.push(format!("{},{:.2},{:.2},{:.2}", name, qty, avg_cost, total));
+                lines.push(format!("{},{:.2},{:.2},{:.2}", csv_quote(&name), qty, avg_cost, total));
             }
             lines.join("\n")
         }
@@ -1793,6 +1889,9 @@ pub async fn check_for_update(app: tauri::AppHandle) -> Result<Option<crate::upd
 
 #[tauri::command]
 pub fn download_and_open_update(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    if !url.starts_with("https://github.com/0xRyanlee/Cuckoo/releases/") {
+        return Err("更新下载地址无效".to_string());
+    }
     std::thread::spawn(move || {
         crate::updater_check::download_and_open(&url, app);
     });

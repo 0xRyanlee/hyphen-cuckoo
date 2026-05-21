@@ -8,7 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash2,
-         ArrowUpCircle, Sparkles, Bug as BugIcon, Zap } from "lucide-react";
+         ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { appLogger, type LogEntry, type ErrorCategory } from "@/lib/logger";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -347,6 +347,11 @@ export function SettingsPage({ connected }: SettingsPageProps) {
   const [autoUpdate, setAutoUpdate] = useState(
     localStorage.getItem(AUTO_UPDATE_KEY) !== "false"
   );
+  const [autoBackup, setAutoBackup] = useState(
+    localStorage.getItem("cuckoo_auto_backup") === "true"
+  );
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [backupLoading, setBackupLoading] = useState(false);
 
   useEffect(() => {
     invoke<string>("health_check")
@@ -445,6 +450,64 @@ export function SettingsPage({ connected }: SettingsPageProps) {
               checked={autoUpdate}
               onCheckedChange={handleAutoUpdateToggle}
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Backup */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <HardDrive className="h-4 w-4" />
+            数据备份
+          </CardTitle>
+          <CardDescription>备份文件保存至 Documents/Cuckoo 备份/</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="auto-backup-switch" className="flex flex-col gap-0.5 cursor-pointer">
+              <span className="text-sm font-medium">启动时自动备份</span>
+              <span className="text-xs text-muted-foreground">每次打开应用时自动创建一份带时间戳的备份</span>
+            </Label>
+            <Switch
+              id="auto-backup-switch"
+              checked={autoBackup}
+              onCheckedChange={(val) => {
+                setAutoBackup(val);
+                localStorage.setItem("cuckoo_auto_backup", val ? "true" : "false");
+              }}
+            />
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">立即备份</p>
+              {backupStatus && (
+                <p className="text-xs text-muted-foreground mt-0.5 max-w-xs truncate">{backupStatus}</p>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={backupLoading}
+              onClick={async () => {
+                setBackupLoading(true);
+                setBackupStatus(null);
+                try {
+                  const path = await invoke<string>("backup_database", { destDir: null });
+                  setBackupStatus(`已备份到: ${path}`);
+                  toast.success("备份成功");
+                } catch (e) {
+                  setBackupStatus(String(e));
+                  toast.error("备份失败", { description: String(e) });
+                } finally {
+                  setBackupLoading(false);
+                }
+              }}
+            >
+              {backupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
+              <span className="ml-2">立即备份</span>
+            </Button>
           </div>
         </CardContent>
       </Card>

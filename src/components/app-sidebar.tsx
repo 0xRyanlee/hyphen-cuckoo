@@ -69,9 +69,10 @@ interface AppSidebarProps {
   onTabChange: (tab: string) => void;
   connected: boolean;
   errorCount?: number;
+  notificationCount?: number;
 }
 
-export function AppSidebar({ activeTab, onTabChange, errorCount = 0 }: AppSidebarProps) {
+export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificationCount = 0 }: AppSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
@@ -103,6 +104,7 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0 }: AppSideba
               <SidebarMenu>
                 {group.items.map((item) => {
                   const showErrorBadge = item.id === "settings" && errorCount > 0;
+                  const showNotificationBadge = item.id === "dashboard" && notificationCount > 0;
                   return (
                     <SidebarMenuItem key={item.id}>
                       <SidebarMenuButton
@@ -115,6 +117,11 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0 }: AppSideba
                         {showErrorBadge && (
                           <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
                             {errorCount > 99 ? "99+" : errorCount}
+                          </span>
+                        )}
+                        {showNotificationBadge && (
+                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
+                            {notificationCount > 99 ? "99+" : notificationCount}
                           </span>
                         )}
                       </SidebarMenuButton>

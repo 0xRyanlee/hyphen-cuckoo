@@ -35,6 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { OrderWithItems, OrderItemModifier } from "./types";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { UpdateBanner } from "@/components/UpdateBanner";
+import { listen } from "@tauri-apps/api/event";
 
 // ==================== App ====================
 
@@ -53,6 +54,17 @@ function App() {
     const handler = () => setUnseenErrorCount((n) => n + 1);
     window.addEventListener("cuckoo:logged", handler);
     return () => window.removeEventListener("cuckoo:logged", handler);
+  }, []);
+
+  // Show toast on background print failure
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ taskId: number; success: boolean; error?: string }>("print-result", (e) => {
+      if (!e.payload.success) {
+        toast.error(`打印失败: ${e.payload.error ?? "未知错误"}`);
+      }
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
   }, []);
 
   // Clear badge when user opens settings
@@ -85,6 +97,7 @@ function App() {
     stocktakes, selectedStocktake, setSelectedStocktake,
     expenses, setExpenses,
     supplierProducts, setSupplierProducts,
+    unreadNotificationCount,
     loadData,
   } = useAppData();
 
@@ -98,6 +111,7 @@ function App() {
     units,
     inventoryBatches,
     menuItems,
+    stations,
     setOrders,
     setOrdersHasMore,
     setSelectedRecipe,
@@ -111,7 +125,12 @@ function App() {
     setSupplierProducts,
   });
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    if (localStorage.getItem("cuckoo_auto_backup") === "true") {
+      invoke("backup_database", { destDir: null }).catch(() => {});
+    }
+  }, []);
 
   const {
     handleCreateMaterial,
@@ -148,6 +167,7 @@ function App() {
     handlePOSAndSubmit,
     handleSubmitOrder,
     handleCancelOrder,
+    handleMarkOrderReady,
     handleBatchCancelOrder,
     handleViewOrder,
     handleLoadMoreOrders,
@@ -280,7 +300,7 @@ function App() {
     <TooltipProvider>
       <SidebarProvider>
         <div className="flex h-screen w-full bg-background">
-          <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} />
+          <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} notificationCount={unreadNotificationCount} />
           <SidebarInset className="flex flex-col">
             <AppHeader searchQuery={searchQuery} onSearchChange={setSearchQuery} onRefresh={loadData} refreshing={loading} />
             <main className="flex-1 overflow-auto p-6">
@@ -292,7 +312,7 @@ function App() {
                 <Route path="/menu" element={<MenuPage menuCategories={menuCategories} menuItems={menuItems} recipes={recipes} onCreateMenuCategory={handleCreateMenuCategory} onCreateMenuItem={handleCreateMenuItemFull} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onToggleAvailability={handleToggleMenuItem} onBatchToggleAvailability={handleBatchToggleMenuItem} onUpdateMenuItem={handleUpdateMenuItem} onDeleteMenuItem={handleDeleteMenuItem} onUpdateMenuCategory={handleUpdateMenuCategory} onDeleteMenuCategory={handleDeleteMenuCategory} onGetSpecs={handleGetSpecs} onCreateSpec={handleCreateSpec} onUpdateSpec={handleUpdateSpec} onDeleteSpec={handleDeleteSpec} searchQuery={searchQuery} />} />
                 <Route path="/pos" element={<POSPage menuCategories={menuCategories} menuItems={menuItems} onCreateOrder={handlePOSOrder} onCreateAndSubmit={handlePOSAndSubmit} onGetSpecs={handleGetSpecs} searchQuery={searchQuery} loading={loading} />} />
                 <Route path="/suppliers" element={<SuppliersPage suppliers={suppliers} supplierProducts={supplierProducts} onCreateSupplier={handleCreateSupplier} onUpdateSupplier={handleUpdateSupplier} onDeleteSupplier={handleDeleteSupplier} onCreateSupplierProduct={handleCreateSupplierProduct} onUpdateSupplierProduct={handleUpdateSupplierProduct} onDeleteSupplierProduct={handleDeleteSupplierProduct} searchQuery={searchQuery} />} />
-                <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} />} />
+                <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onMarkReady={handleMarkOrderReady} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} />} />
                 <Route path="/kds" element={<KDSPage allTickets={kdsTickets} stations={stations} menuItemNames={Object.fromEntries(menuItems.map((m) => [m.id, m.name]))} onStartTicket={async (id) => { try { await invoke("start_ticket", { ticketId: id, operator: null }); toast.success("工单已开始"); loadData(); } catch (e) { toast.error("开始工单失败", { description: String(e) }); } }} onFinishTicket={async (id) => { const ticket = kdsTickets.find((t) => t.id === id); if (ticket) { await handleFinishTicket(ticket); } else { await invoke("finish_ticket", { ticketId: id, operator: null }); toast.success("工单已完成"); loadData(); } }} onReprintTicket={handleReprintTicket} onRefresh={handleLoadKDS} />} />
                 <Route path="/attributes" element={<AttributesPage attributeTemplates={attributeTemplates} onRefresh={loadData} />} />
                 <Route path="/settings" element={<SettingsPage connected={connected} />} />

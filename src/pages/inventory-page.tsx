@@ -387,8 +387,11 @@ function handleAdjust() {
                   </TableHeader>
                   <TableBody>
                     {filteredBatches.map((batch) => {
-                      const isExpired = batch.expiry_date && new Date(batch.expiry_date) < new Date();
-                      const isExpiringSoon = batch.expiry_date && !isExpired && new Date(batch.expiry_date) < new Date(Date.now() + 7 * 86400000);
+                      const now = new Date(); now.setHours(0,0,0,0);
+                      const expiryDate = batch.expiry_date ? new Date(batch.expiry_date) : null;
+                      const isExpired = expiryDate && expiryDate < now;
+                      const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - now.getTime()) / 86400000) : null;
+                      const isExpiringSoon = !isExpired && daysLeft !== null && daysLeft <= 7;
                       return (
                       <TableRow key={batch.id} className={isExpired ? "bg-destructive/5" : isExpiringSoon ? "bg-amber-500/5" : ""}>
                         <TableCell>
@@ -399,7 +402,12 @@ function handleAdjust() {
                         <TableCell>
                           {batch.expiry_date ? (
                             <span className={`text-xs font-mono ${isExpired ? "text-destructive font-medium" : isExpiringSoon ? "text-amber-500 font-medium" : "text-muted-foreground"}`}>
-                              {batch.expiry_date}{isExpired ? " ⚠️" : isExpiringSoon ? " ⏰" : ""}
+                              {batch.expiry_date}
+                              {isExpired ? (
+                                <span className="ml-1 text-destructive font-medium">已過期</span>
+                              ) : isExpiringSoon ? (
+                                <span className="ml-1 text-amber-500 font-medium">{daysLeft}天後到期</span>
+                              ) : null}
                             </span>
                           ) : <span className="text-xs text-muted-foreground">—</span>}
                         </TableCell>

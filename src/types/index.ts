@@ -141,6 +141,7 @@ export interface KitchenStation {
   code: string;
   name: string;
   station_type: string;
+  printer_id: number | null;
 }
 export interface TicketWithItems {
   id: number;
