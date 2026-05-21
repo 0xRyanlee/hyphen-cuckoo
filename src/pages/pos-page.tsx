@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
-import { Plus, Minus, ShoppingCart, Send, X, MessageSquare, Tag, FileText } from "lucide-react";
+import { Plus, Minus, ShoppingCart, Send, X, MessageSquare, Tag, FileText, Star } from "lucide-react";
 
 function formatPrice(price: number): string {
   return price.toLocaleString("zh-CN", { style: "currency", currency: "CNY" });
@@ -33,6 +33,7 @@ interface MenuItem {
   name: string;
   sales_price: number;
   is_available: boolean;
+  is_favorite: boolean;
   recipe_id: number | null;
   category_id: number | null;
   created_at: string;
@@ -145,7 +146,9 @@ export function POSPage({
     localStorage.removeItem("cuckoo_cart");
   };
 
+  const favoriteItems = menuItems.filter((item) => item.is_favorite);
   const filteredItems = menuItems.filter((item) => {
+    if (selectedCategory === -1) return item.is_favorite && (!searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesCategory = !selectedCategory || item.category_id === selectedCategory;
     const matchesSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
@@ -265,6 +268,16 @@ export function POSPage({
               >
                 全部
               </Button>
+              {favoriteItems.length > 0 && (
+                <Button
+                  variant={selectedCategory === -1 ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setSelectedCategory(-1)}
+                >
+                  <Star className="h-3 w-3" />常用
+                </Button>
+              )}
               {menuCategories.map((cat) => (
                 <Button
                   key={cat.id}

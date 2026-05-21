@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/版本-v1.4.1-blue?style=for-the-badge)](https://github.com/0xRyanlee/Cuckoo/releases)
+[![Version](https://img.shields.io/badge/版本-v1.5.0-blue?style=for-the-badge)](https://github.com/0xRyanlee/Cuckoo/releases)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-2021-CE422B?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -217,7 +217,7 @@ Must-be 层在 v1.4 完成备份与错误修复后基本达标。
 
 ## 开发路线图
 
-### v1.4.x — 打印完善 & 数据安全（当前）
+### v1.4.x — 打印完善 & 数据安全 ✅
 
 | 方向 | 关键任务 |
 |------|----------|
@@ -225,14 +225,25 @@ Must-be 层在 v1.4 完成备份与错误修复后基本达标。
 | 数据安全 | 本地自动备份 SQLite（启动时 + 手动触发）|
 | 错误提示 | 打印页静默失败修复、收款自动打印 |
 
-### v1.5.0 — 体验打磨（近期目标）
+### v1.5.0 — 体验打磨 ✅（已完成）
+
+| 方向 | 完成状态 |
+|------|----------|
+| 订单日期 + 状态筛选 | ✅ |
+| 食材到期三天前通知 | ✅ |
+| 取消原因记录 | ✅ |
+| 退款金额登记 UI | ✅ |
+| 已付款订单打印收据 | ✅ |
+| 时段 / 星期销售报表 | ✅ |
+| POS 常用品项快捷区 | 🔨 进行中 |
+
+### v1.6.0 — 营销与体验（当前目标）
 
 | 方向 | 关键任务 |
 |------|----------|
-| 订单 | 订单历史日期 + 状态筛选、部分退款流程 |
-| 库存 | 食材到期日三天前桌面通知 |
-| 报表 | 按星期 / 时段分析、员工维度 |
-| POS | 常用品项快捷区、扫码下单支持 |
+| 顾客 | 积分 / 集点系统（POS 绑单自动累点、兑换折抵）|
+| 仪表板 | 本周 vs 上周对比、今日热销 Top 5、预警快览 |
+| 订单 | 单品退单（逐品退款 + 库存还原）|
 
 ### v2.0.0 — 功能扩展（季度规划）
 

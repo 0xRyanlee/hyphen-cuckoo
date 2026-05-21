@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Package, ChefHat, ShoppingCart, Layers, TrendingUp, AlertTriangle, BarChart3, Calendar } from "lucide-react";
+import { Package, ChefHat, ShoppingCart, TrendingUp, AlertTriangle, BarChart3, Calendar, Trophy, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, PieChart, Pie, Cell } from "recharts";
 
@@ -41,6 +42,7 @@ export function DashboardPage({
 loading = false,
 }: DashboardProps) {
   const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "all">("today");
+  const [todayTopItems, setTodayTopItems] = useState<[string, number, number, number][]>([]);
   const LOW_STOCK_THRESHOLD = 10;
   const lowStockItems = inventorySummary.filter((s) => s.available_qty < LOW_STOCK_THRESHOLD);
 
@@ -48,7 +50,14 @@ loading = false,
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
   const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split("T")[0];
+  const lastWeekStart = new Date(now.getTime() - 14 * 86400000).toISOString().split("T")[0];
   const monthAgo = new Date(now.getTime() - 30 * 86400000).toISOString().split("T")[0];
+
+  useEffect(() => {
+    invoke<[string, number, number, number][]>("get_top_selling_items", { startDate: todayStr, endDate: todayStr, limit: 5 })
+      .then((items) => setTodayTopItems(items))
+      .catch(() => {});
+  }, [todayStr]);
 
   const filteredOrders = orders.filter((o) => {
     if (timeRange === "all") return true;
@@ -59,9 +68,23 @@ loading = false,
     return true;
   });
 
-  const totalInventory = inventorySummary.reduce((sum, s) => sum + s.available_qty, 0);
-  const totalOrderValue = filteredOrders.reduce((sum, o) => sum + o.amount_total, 0);
-  const avgOrderValue = filteredOrders.length > 0 ? totalOrderValue / filteredOrders.length : 0;
+  const activeOrders = filteredOrders.filter((o) => o.status !== "cancelled");
+  const totalOrderValue = activeOrders.reduce((sum, o) => sum + o.amount_total, 0);
+  const avgOrderValue = activeOrders.length > 0 ? totalOrderValue / activeOrders.length : 0;
+  const pendingCount = orders.filter((o) => o.status === "submitted").length;
+
+  // 本週 vs 上週 收入對比
+  const thisWeekRevenue = orders.filter((o) => {
+    const d = (o.created_at || "").split("T")[0].split(" ")[0];
+    return d >= weekAgo && o.status !== "cancelled";
+  }).reduce((sum, o) => sum + o.amount_total, 0);
+  const lastWeekRevenue = orders.filter((o) => {
+    const d = (o.created_at || "").split("T")[0].split(" ")[0];
+    return d >= lastWeekStart && d < weekAgo && o.status !== "cancelled";
+  }).reduce((sum, o) => sum + o.amount_total, 0);
+  const weekChangePercent = lastWeekRevenue > 0
+    ? ((thisWeekRevenue - lastWeekRevenue) / lastWeekRevenue * 100)
+    : null;
 
   const chartData = inventorySummary.slice(0, 8).map((s) => ({
     name: s.material_name.length > 6 ? s.material_name.slice(0, 6) + "..." : s.material_name,
@@ -105,10 +128,50 @@ loading = false,
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+        <Card className="col-span-2 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">本期销售额</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-8 w-24 mb-1" /> : <div className="text-2xl font-bold text-emerald-600">¥{totalOrderValue.toFixed(2)}</div>}
+            <p className="text-xs text-muted-foreground">
+              均值 ¥{loading ? "-" : avgOrderValue.toFixed(2)} · {activeOrders.length} 笔
+              {timeRange === "week" && weekChangePercent !== null && (
+                <span className={`ml-2 font-medium ${weekChangePercent >= 0 ? "text-emerald-500" : "text-destructive"}`}>
+                  {weekChangePercent >= 0 ? "▲" : "▼"}{Math.abs(weekChangePercent).toFixed(1)}% vs 上周
+                </span>
+              )}
+            </p>
+          </CardContent>
+        </Card>
+
         <Card className="transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">原材料总数</CardTitle>
+            <CardTitle className="text-sm font-medium">待出餐</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-8 w-16 mb-1" /> : <div className={`text-2xl font-bold ${pendingCount > 0 ? "text-amber-500" : ""}`}>{pendingCount}</div>}
+            <p className="text-xs text-muted-foreground">已提交待完成</p>
+          </CardContent>
+        </Card>
+
+        <Card className="transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">库存预警</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            {loading ? <Skeleton className="h-8 w-16 mb-1" /> : <div className={`text-2xl font-bold ${lowStockItems.length > 0 ? "text-destructive" : ""}`}>{lowStockItems.length}</div>}
+            <p className="text-xs text-muted-foreground">低于 {LOW_STOCK_THRESHOLD} 的材料</p>
+          </CardContent>
+        </Card>
+
+        <Card className="transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">原材料</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -119,34 +182,12 @@ loading = false,
 
         <Card className="transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">配方数量</CardTitle>
+            <CardTitle className="text-sm font-medium">配方</CardTitle>
             <ChefHat className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-8 w-16 mb-1" /> : <div className="text-2xl font-bold">{recipesCount}</div>}
-            <p className="text-xs text-muted-foreground">活跃配方</p>
-          </CardContent>
-        </Card>
-
-        <Card className="transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">订单总数</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-8 w-16 mb-1" /> : <div className="text-2xl font-bold">{filteredOrders.length}</div>}
-            <p className="text-xs text-muted-foreground">累计订单 · 均值 ¥{loading ? "0.00" : avgOrderValue.toFixed(2)}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">库存总量</CardTitle>
-            <Layers className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-8 w-16 mb-1" /> : <div className="text-2xl font-bold">{totalInventory.toFixed(1)}</div>}
-            <p className="text-xs text-muted-foreground">{loading ? "-" : batchesCount} 个活跃批次</p>
+            <p className="text-xs text-muted-foreground">{batchesCount} 批次在库</p>
           </CardContent>
         </Card>
       </div>
@@ -347,6 +388,28 @@ loading = false,
           </CardContent>
         </Card>
       </div>
+
+      {todayTopItems.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Trophy className="h-4 w-4 text-amber-400" />今日热销 Top {todayTopItems.length}</CardTitle>
+            <CardDescription>今日销售数量排行</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-5 gap-3">
+              {todayTopItems.map(([name, , qty], idx) => (
+                <div key={name} className="flex flex-col items-center gap-1 rounded-lg border p-3 text-center">
+                  <span className={`text-lg font-bold ${idx === 0 ? "text-amber-400" : idx === 1 ? "text-slate-400" : idx === 2 ? "text-orange-400" : "text-muted-foreground"}`}>
+                    #{idx + 1}
+                  </span>
+                  <span className="text-xs font-medium line-clamp-2">{name}</span>
+                  <span className="text-sm text-muted-foreground">{qty} 份</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -283,6 +283,7 @@ pub struct MenuItem {
     pub sales_price: f64,
     pub cost: Option<f64>,
     pub is_available: bool,
+    pub is_favorite: bool,
     pub created_at: String,
 }
 
@@ -1636,6 +1637,12 @@ impl Database {
         if !has_refund_amount {
             conn.execute_batch("ALTER TABLE orders ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0")?;
         }
+        let has_is_favorite: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('menu_items') WHERE name='is_favorite'")?
+            .exists([])?;
+        if !has_is_favorite {
+            conn.execute_batch("ALTER TABLE menu_items ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")?;
+        }
         Ok(())
     }
 
@@ -2685,18 +2692,18 @@ impl Database {
     pub fn get_menu_items(&self, category_id: Option<i64>) -> Result<Vec<MenuItem>> {
         let conn = self.conn.lock().unwrap();
         let query = if let Some(_cat_id) = category_id {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, created_at FROM menu_items WHERE category_id = ?1 ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, created_at FROM menu_items WHERE category_id = ?1 ORDER BY name"
         } else {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, created_at FROM menu_items ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, created_at FROM menu_items ORDER BY name"
         };
         let mut stmt = conn.prepare(query)?;
         let items = if let Some(cat_id) = category_id {
             stmt.query_map(params![cat_id], |row| {
-                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, created_at: row.get(8)? })
+                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, is_favorite: row.get::<_, i32>(8)? != 0, created_at: row.get(9)? })
             })?.collect::<Result<Vec<_>>>()?
         } else {
             stmt.query_map([], |row| {
-                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, created_at: row.get(8)? })
+                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, is_favorite: row.get::<_, i32>(8)? != 0, created_at: row.get(9)? })
             })?.collect::<Result<Vec<_>>>()?
         };
         Ok(items)
@@ -2748,18 +2755,18 @@ impl Database {
     pub fn get_menu_items_for_pos(&self, category_id: Option<i64>) -> Result<Vec<MenuItem>> {
         let conn = self.conn.lock().unwrap();
         let query = if let Some(_cat_id) = category_id {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, created_at FROM menu_items WHERE is_available = 1 AND category_id = ?1 ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, created_at FROM menu_items WHERE is_available = 1 AND category_id = ?1 ORDER BY name"
         } else {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, created_at FROM menu_items WHERE is_available = 1 ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, created_at FROM menu_items WHERE is_available = 1 ORDER BY name"
         };
         let mut stmt = conn.prepare(query)?;
         let items = if let Some(cat_id) = category_id {
             stmt.query_map(params![cat_id], |row| {
-                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, created_at: row.get(8)? })
+                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, is_favorite: row.get::<_, i32>(8)? != 0, created_at: row.get(9)? })
             })?.collect::<Result<Vec<_>>>()?
         } else {
             stmt.query_map([], |row| {
-                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, created_at: row.get(8)? })
+                Ok(MenuItem { id: row.get(0)?, name: row.get(1)?, code: row.get(2)?, category_id: row.get(3)?, recipe_id: row.get(4)?, sales_price: row.get(5)?, cost: row.get(6)?, is_available: row.get::<_, i32>(7)? != 0, is_favorite: row.get::<_, i32>(8)? != 0, created_at: row.get(9)? })
             })?.collect::<Result<Vec<_>>>()?
         };
         Ok(items)
@@ -3040,6 +3047,18 @@ impl Database {
         Ok(is_available)
     }
 
+    pub fn toggle_menu_item_favorite(&self, id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let current: i32 = conn.query_row(
+            "SELECT is_favorite FROM menu_items WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        let new_val = if current == 0 { 1 } else { 0 };
+        conn.execute("UPDATE menu_items SET is_favorite = ?1 WHERE id = ?2", params![new_val, id])?;
+        Ok(new_val != 0)
+    }
+
     pub fn batch_toggle_menu_item_availability(&self, ids: &[i64], is_available: bool) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         let mut count = 0;
@@ -3172,7 +3191,7 @@ impl Database {
     pub fn get_station_menu_items(&self, station_id: i64) -> Result<Vec<MenuItem>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT m.id, m.name, m.code, m.category_id, m.recipe_id, m.sales_price, m.cost, m.is_available, m.created_at 
+            "SELECT m.id, m.name, m.code, m.category_id, m.recipe_id, m.sales_price, m.cost, m.is_available, m.is_favorite, m.created_at
              FROM menu_items m
              JOIN station_menu_items smi ON m.id = smi.menu_item_id
              WHERE smi.station_id = ?1 AND m.is_available = 1"
@@ -3187,7 +3206,8 @@ impl Database {
                 sales_price: row.get(5)?,
                 cost: row.get(6)?,
                 is_available: row.get::<_, i32>(7)? != 0,
-                created_at: row.get(8)?,
+                is_favorite: row.get::<_, i32>(8)? != 0,
+                created_at: row.get(9)?,
             })
         })?.collect::<Result<Vec<_>>>()?;
         Ok(items)

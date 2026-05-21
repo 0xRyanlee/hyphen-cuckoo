@@ -79,6 +79,7 @@ export interface MenuItem {
   name: string;
   sales_price: number;
   is_available: boolean;
+  is_favorite: boolean;
   recipe_id: number | null;
   category_id: number | null;
   created_at: string;

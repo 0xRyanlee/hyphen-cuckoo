@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Plus, FileText, ToggleRight, ToggleLeft, Link, Pencil, Trash2, Edit2, Tag, Save, X, EyeOff, Eye } from "lucide-react";
+import { Plus, FileText, ToggleRight, ToggleLeft, Link, Pencil, Trash2, Edit2, Tag, Save, X, EyeOff, Eye, Star } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -16,7 +16,7 @@ import { parseSafeFloat } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 
 interface MenuCategory { id: number; name: string; }
-interface MenuItem { id: number; name: string; sales_price: number; is_available: boolean; recipe_id: number | null; category_id: number | null; }
+interface MenuItem { id: number; name: string; sales_price: number; is_available: boolean; is_favorite: boolean; recipe_id: number | null; category_id: number | null; }
 interface Recipe { id: number; name: string; code: string; }
 interface MenuItemSpec { id: number; menu_item_id: number; spec_code: string; spec_name: string; price_delta: number; qty_multiplier: number; }
 
@@ -27,6 +27,7 @@ interface MenuPageProps {
   onCreatePendingRecipeForMenu: (menuItemId: number, menuItemName: string) => Promise<number | null>;
   onToggleAvailability: (id: number, is_available: boolean) => void;
   onBatchToggleAvailability?: (ids: number[], is_available: boolean) => void;
+  onToggleFavorite?: (id: number) => void;
   onUpdateMenuItem: (id: number, data: { name?: string; category_id?: number | null; recipe_id?: number | null; sales_price?: number }) => void;
   onDeleteMenuItem: (id: number) => void;
   onUpdateMenuCategory: (id: number, name: string) => void;
@@ -41,7 +42,7 @@ interface MenuPageProps {
 export function MenuPage({
   menuCategories, menuItems, recipes,
   onCreateMenuCategory, onCreateMenuItem, onCreatePendingRecipeForMenu, onToggleAvailability,
-  onBatchToggleAvailability,
+  onBatchToggleAvailability, onToggleFavorite,
   onUpdateMenuItem, onDeleteMenuItem, onUpdateMenuCategory, onDeleteMenuCategory,
   onGetSpecs, onCreateSpec, onUpdateSpec, onDeleteSpec,
   searchQuery,
@@ -251,6 +252,11 @@ export function MenuPage({
                           <Button variant="outline" size="sm" onClick={() => handleCompleteRecipe(item)}>
                             {item.recipe_id ? "查看配方" : "补配方"}
                           </Button>
+                          {onToggleFavorite && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" title={item.is_favorite ? "移出常用" : "加入常用"} onClick={() => onToggleFavorite(item.id)}>
+                              <Star className={`h-4 w-4 ${item.is_favorite ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggleAvailability(item.id, !item.is_available)}>{item.is_available ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}</Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openSpecDialog(item)}><Tag className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditItem(item)}><Pencil className="h-4 w-4" /></Button>

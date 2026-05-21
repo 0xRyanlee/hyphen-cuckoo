@@ -955,6 +955,11 @@ pub fn batch_toggle_menu_item_availability(state: State<AppState>, ids: Vec<i64>
 }
 
 #[tauri::command]
+pub fn toggle_menu_item_favorite(state: State<AppState>, id: i64) -> Result<bool, String> {
+    state.db.toggle_menu_item_favorite(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn delete_menu_item(state: State<AppState>, id: i64) -> Result<(), String> {
     state.db.delete_menu_item(id).map_err(|e| e.to_string())
 }

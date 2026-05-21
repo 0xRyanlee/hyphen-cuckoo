@@ -187,6 +187,7 @@ pub fn run() {
             commands::update_menu_item,
             commands::toggle_menu_item_availability,
             commands::batch_toggle_menu_item_availability,
+            commands::toggle_menu_item_favorite,
             commands::delete_menu_item,
             commands::update_menu_category,
             commands::delete_menu_category,

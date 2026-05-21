@@ -290,6 +290,11 @@ export function useAppActions({
     catch (e) { logError("batch_toggle_menu_item_availability", e, "批量切换失败", { count: ids.length }); }
   };
 
+  const handleToggleFavorite = async (id: number) => {
+    try { const now = await invoke<boolean>("toggle_menu_item_favorite", { id }); toast.success(now ? "已加入常用" : "已移出常用"); loadData(); }
+    catch (e) { logError("toggle_menu_item_favorite", e, "切换常用失败", { id }); }
+  };
+
   const handleUpdateMenuItem = async (id: number, data: { name?: string; category_id?: number | null; recipe_id?: number | null; sales_price?: number }) => {
     try { await invoke("update_menu_item", { id, name: data.name || null, categoryId: data.category_id, recipeId: data.recipe_id, salesPrice: data.sales_price }); toast.success("菜品已更新"); loadData(); }
     catch (e) { logError("update_menu_item", e, "更新菜品失败", { id }); }
@@ -725,7 +730,7 @@ export function useAppActions({
     // 配方
     handleCreateRecipe, handleViewRecipe, handleDeleteRecipe, handleUpdateRecipe, handleCreateRecipeType, handleUpdateRecipeType, handleDeleteRecipeType, handleSeedSampleRecipes, handleCreatePendingRecipeForMenu, handleBindMenuItemToRecipe, handleAddRecipeItem, handleDeleteRecipeItem, handleUpdateRecipeItem, handleRecalculateCost,
     // 菜單
-    handleCreateMenuCategory, handleUpdateMenuCategory, handleDeleteMenuCategory, handleCreateMenuItem, handleToggleMenuItem, handleBatchToggleMenuItem, handleUpdateMenuItem, handleDeleteMenuItem,
+    handleCreateMenuCategory, handleUpdateMenuCategory, handleDeleteMenuCategory, handleCreateMenuItem, handleToggleMenuItem, handleBatchToggleMenuItem, handleToggleFavorite, handleUpdateMenuItem, handleDeleteMenuItem,
     // 訂單
     handleCreateOrder, handlePOSOrder, handlePOSAndSubmit, handleSubmitOrder, handleCancelOrder, handleMarkOrderReady, handleBatchCancelOrder, handleViewOrder, handleLoadMoreOrders,
     // 規格
