@@ -130,6 +130,7 @@ function App() {
     if (localStorage.getItem("cuckoo_auto_backup") === "true") {
       invoke("backup_database", { destDir: null }).catch(() => {});
     }
+    invoke("check_expiry_alerts").catch(() => {});
   }, []);
 
   const {

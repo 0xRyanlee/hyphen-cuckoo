@@ -658,14 +658,17 @@ pub fn submit_order(state: State<AppState>, order_id: i64) -> Result<Vec<String>
 }
 
 #[tauri::command]
-pub fn cancel_order(state: State<AppState>, order_id: i64, is_served: bool) -> Result<Vec<String>, String> {
+pub fn cancel_order(state: State<AppState>, order_id: i64, is_served: bool, reason: Option<String>) -> Result<Vec<String>, String> {
     if is_served {
-        // Food was made; keep inventory consumed, just mark cancelled
-        state.db.cancel_order_confirmed(order_id).map_err(|e| e.to_string())
+        state.db.cancel_order_confirmed(order_id, reason.as_deref()).map_err(|e| e.to_string())
     } else {
-        // Not yet served; restore inventory
-        state.db.release_inventory_for_order(order_id).map_err(|e| e.to_string())
+        state.db.release_inventory_for_order(order_id, reason.as_deref()).map_err(|e| e.to_string())
     }
+}
+
+#[tauri::command]
+pub fn check_expiry_alerts(state: State<AppState>) -> Result<i64, String> {
+    state.db.check_and_create_expiry_alerts().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

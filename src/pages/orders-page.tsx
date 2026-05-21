@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle, CalendarDays } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
@@ -65,7 +66,7 @@ interface OrdersPageProps {
   materials: Material[];
   onCreateOrder: () => void;
   onSubmitOrder: (id: number) => void;
-  onCancelOrder: (id: number, is_served: boolean) => void;
+  onCancelOrder: (id: number, is_served: boolean, reason: string) => void;
   onBatchCancelOrder: (ids: number[]) => void;
   onViewOrder: (id: number) => void;
   onViewOrderWithModifiers: (id: number) => Promise<{ orderData: OrderWithItems; modifiers: Record<number, OrderItemModifier[]> }>;
@@ -110,6 +111,9 @@ export function OrdersPage({
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelTargetOrder, setCancelTargetOrder] = useState<Order | null>(null);
   const [cancelIsServed, setCancelIsServed] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [batchCancelDialogOpen, setBatchCancelDialogOpen] = useState(false);
   const [orderCost, setOrderCost] = useState<number | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -157,7 +161,10 @@ export function OrdersPage({
       order.dine_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       order.status.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const orderDate = order.created_at.slice(0, 10);
+    const matchesFrom = !dateFrom || orderDate >= dateFrom;
+    const matchesTo = !dateTo || orderDate <= dateTo;
+    return matchesSearch && matchesStatus && matchesFrom && matchesTo;
   });
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -215,8 +222,8 @@ export function OrdersPage({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-2 mb-4">
-              <div className="relative flex-1 max-w-xs">
+            <div className="flex flex-wrap gap-2 mb-4">
+              <div className="relative flex-1 min-w-40 max-w-xs">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="搜索订单号、类型..."
@@ -237,6 +244,17 @@ export function OrdersPage({
                     <SelectItem value="cancelled">已取消</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center gap-1">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <Input type="date" className="w-36" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                <span className="text-muted-foreground text-xs">至</span>
+                <Input type="date" className="w-36" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                {(dateFrom || dateTo) && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setDateFrom(""); setDateTo(""); }}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
               </div>
             </div>
             {orders.length === 0 ? (
@@ -455,12 +473,22 @@ export function OrdersPage({
                 <p className="text-xs text-amber-500">已出餐订单将扣除已用食材成本</p>
               )}
             </div>
+            <div className="space-y-1">
+              <Label>取消原因（选填）</Label>
+              <Textarea
+                placeholder="如：顾客要求、备餐失误..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={2}
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => { setCancelDialogOpen(false); setCancelReason(""); }}>返回</Button>
             <Button variant="destructive" onClick={() => {
-              if (cancelTargetOrder) onCancelOrder(cancelTargetOrder.id, cancelIsServed);
+              if (cancelTargetOrder) onCancelOrder(cancelTargetOrder.id, cancelIsServed, cancelReason);
               setCancelDialogOpen(false);
+              setCancelReason("");
             }}>确认取消</Button>
           </DialogFooter>
         </DialogContent>

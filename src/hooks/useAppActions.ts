@@ -392,9 +392,12 @@ export function useAppActions({
     catch (e) { logError("submit_order", e, "提交订单失败", { orderId }); }
   };
 
-  const handleCancelOrder = async (orderId: number, is_served: boolean = false) => {
-    try { await invoke("cancel_order", { orderId, isServed: is_served }); toast.success("订单已取消"); loadData(); }
-    catch (e) { logError("cancel_order", e, "取消订单失败", { orderId, is_served }); }
+  const handleCancelOrder = async (orderId: number, is_served: boolean = false, reason: string = "") => {
+    try {
+      await invoke("cancel_order", { orderId, isServed: is_served, reason: reason || null });
+      toast.success("订单已取消");
+      loadData();
+    } catch (e) { logError("cancel_order", e, "取消订单失败", { orderId, is_served }); }
   };
 
   const handleMarkOrderReady = async (orderId: number) => {

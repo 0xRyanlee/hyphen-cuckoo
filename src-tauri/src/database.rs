@@ -1624,7 +1624,50 @@ impl Database {
         if !has_printer_id {
             conn.execute_batch("ALTER TABLE kitchen_stations ADD COLUMN printer_id INTEGER REFERENCES printers(id)")?;
         }
+        let has_cancel_reason: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='cancel_reason'")?
+            .exists([])?;
+        if !has_cancel_reason {
+            conn.execute_batch("ALTER TABLE orders ADD COLUMN cancel_reason TEXT")?;
+        }
         Ok(())
+    }
+
+    pub fn check_and_create_expiry_alerts(&self) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT ib.id, m.name, ib.lot_no, ib.expiry_date, ib.quantity
+             FROM inventory_batches ib
+             JOIN materials m ON m.id = ib.material_id
+             WHERE ib.expiry_date IS NOT NULL
+               AND date(ib.expiry_date) <= date('now', '+3 days')
+               AND ib.quantity > 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM notifications
+                   WHERE ref_type = 'batch' AND ref_id = ib.id
+                   AND date(created_at) = date('now')
+               )"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, f64>(4)?))
+        })?.collect::<Result<Vec<_>>>()?;
+        let count = rows.len() as i64;
+        let today = chrono::Local::now().date_naive();
+        for (id, name, lot_no, expiry_date, qty) in rows {
+            let exp = chrono::NaiveDate::parse_from_str(&expiry_date, "%Y-%m-%d").ok();
+            let days_left = exp.map(|d| (d - today).num_days()).unwrap_or(0);
+            let (severity, title) = if days_left <= 0 {
+                ("error", format!("【已过期】{}", name))
+            } else {
+                ("warning", format!("【即将过期 {}天】{}", days_left, name))
+            };
+            let message = format!("批次 {} 剩余 {:.1}，到期日 {}", lot_no, qty, expiry_date);
+            conn.execute(
+                "INSERT INTO notifications (notification_type, title, message, severity, ref_type, ref_id) VALUES ('expiry_alert', ?1, ?2, ?3, 'batch', ?4)",
+                params![title, message, severity, id],
+            )?;
+        }
+        Ok(count)
     }
 
     pub fn backup_to(&self, dest_path: &str) -> Result<()> {
@@ -3231,7 +3274,7 @@ impl Database {
     }
 
     /// 回補庫存：訂單取消時回補已實扣庫存
-    pub fn release_inventory_for_order(&self, order_id: i64) -> Result<Vec<String>> {
+    pub fn release_inventory_for_order(&self, order_id: i64, reason: Option<&str>) -> Result<Vec<String>> {
         let conn = self.conn.lock().unwrap();
         conn.execute_batch("BEGIN")?;
         let result: Result<Vec<String>> = (|| {
@@ -3262,8 +3305,8 @@ impl Database {
             }
 
             conn.execute(
-                "UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?1",
-                params![order_id],
+                "UPDATE orders SET status = 'cancelled', cancel_reason = ?1, updated_at = datetime('now') WHERE id = ?2",
+                params![reason, order_id],
             )?;
             Ok(txn_nos)
         })();
@@ -3286,9 +3329,9 @@ impl Database {
             if status == "cancelled" { continue; }
             // 'ready' = inventory already consumed; keep cost deduction, just mark cancelled
             let result = if status == "ready" {
-                self.cancel_order_confirmed(id).map(|_| ())
+                self.cancel_order_confirmed(id, None).map(|_| ())
             } else {
-                self.release_inventory_for_order(id).map(|_| ())
+                self.release_inventory_for_order(id, None).map(|_| ())
             };
             if let Err(e) = result {
                 failed.push(format!("訂單 {}: {}", id, e));
@@ -4191,12 +4234,12 @@ impl Database {
     }
 
     /// 取消已出餐訂單：保留庫存消耗（食材已用），僅更新訂單狀態
-    pub fn cancel_order_confirmed(&self, order_id: i64) -> Result<Vec<String>> {
+    pub fn cancel_order_confirmed(&self, order_id: i64, reason: Option<&str>) -> Result<Vec<String>> {
         let conn = self.conn.lock().unwrap();
         conn.execute_batch("BEGIN")?;
         let result: Result<()> = (|| {
             Self::consume_order_inventory(&conn, order_id)?;
-            conn.execute("UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?1", params![order_id])?;
+            conn.execute("UPDATE orders SET status = 'cancelled', cancel_reason = ?1, updated_at = datetime('now') WHERE id = ?2", params![reason, order_id])?;
             Ok(())
         })();
         match result {
@@ -5871,7 +5914,7 @@ mod tests {
         let order_after = orders_after.iter().find(|o| o.id == order.id).unwrap();
         assert_eq!(order_after.status, "submitted");
 
-        let cancel_result = db.release_inventory_for_order(order.id);
+        let cancel_result = db.release_inventory_for_order(order.id, None);
         assert!(cancel_result.is_ok());
 
         let orders_final = db.get_orders(1000, 0).unwrap();

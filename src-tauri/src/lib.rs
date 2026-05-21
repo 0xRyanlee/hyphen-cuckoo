@@ -75,6 +75,7 @@ pub fn run() {
             // 健康檢查
             commands::health_check,
             commands::backup_database,
+            commands::check_expiry_alerts,
             commands::report_telemetry,
             // 單位
             commands::get_units,
