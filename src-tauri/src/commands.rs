@@ -690,6 +690,21 @@ pub fn update_order_payment(state: State<AppState>, req: UpdateOrderPaymentReque
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub fn record_order_refund(state: State<AppState>, order_id: i64, refund_amount: f64) -> Result<(), String> {
+    state.db.record_order_refund(order_id, refund_amount).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_sales_by_hour(state: State<AppState>, start_date: String, end_date: String) -> Result<Vec<(i32, i64, f64)>, String> {
+    state.db.get_sales_by_hour(&start_date, &end_date).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_sales_by_weekday(state: State<AppState>, start_date: String, end_date: String) -> Result<Vec<(i32, i64, f64)>, String> {
+    state.db.get_sales_by_weekday(&start_date, &end_date).map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ReceivePOItemRequest {
     pub item_id: i64,

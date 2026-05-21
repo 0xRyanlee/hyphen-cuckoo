@@ -1630,6 +1630,12 @@ impl Database {
         if !has_cancel_reason {
             conn.execute_batch("ALTER TABLE orders ADD COLUMN cancel_reason TEXT")?;
         }
+        let has_refund_amount: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='refund_amount'")?
+            .exists([])?;
+        if !has_refund_amount {
+            conn.execute_batch("ALTER TABLE orders ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0")?;
+        }
         Ok(())
     }
 
@@ -4273,6 +4279,48 @@ impl Database {
             params![payment_status, payment_method, amount_paid, order_id],
         )?;
         Ok(())
+    }
+
+    pub fn record_order_refund(&self, order_id: i64, refund_amount: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE orders SET refund_amount = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![refund_amount, order_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_sales_by_hour(&self, start_date: &str, end_date: &str) -> Result<Vec<(i32, i64, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT CAST(strftime('%H', created_at, 'localtime') AS INTEGER) AS hr,
+                    COUNT(*) AS cnt, COALESCE(SUM(amount_total), 0)
+             FROM orders
+             WHERE status != 'cancelled'
+               AND date(created_at, 'localtime') BETWEEN ?1 AND ?2
+             GROUP BY hr ORDER BY hr"
+        )?;
+        let rows = stmt.query_map(params![start_date, end_date], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?, row.get::<_, f64>(2)?))
+        })?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_sales_by_weekday(&self, start_date: &str, end_date: &str) -> Result<Vec<(i32, i64, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        // SQLite strftime('%w') returns 0=Sun..6=Sat
+        let mut stmt = conn.prepare(
+            "SELECT CAST(strftime('%w', created_at, 'localtime') AS INTEGER) AS wd,
+                    COUNT(*) AS cnt, COALESCE(SUM(amount_total), 0)
+             FROM orders
+             WHERE status != 'cancelled'
+               AND date(created_at, 'localtime') BETWEEN ?1 AND ?2
+             GROUP BY wd ORDER BY wd"
+        )?;
+        let rows = stmt.query_map(params![start_date, end_date], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?, row.get::<_, f64>(2)?))
+        })?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
     pub fn delete_production_order(&self, production_id: i64) -> Result<()> {

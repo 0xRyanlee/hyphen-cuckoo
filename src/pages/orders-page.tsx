@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle, CalendarDays } from "lucide-react";
+import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle, CalendarDays, Printer } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
@@ -75,6 +75,7 @@ interface OrdersPageProps {
   onLoadModifiers: (order_item_id: number) => Promise<OrderItemModifier[]>;
   onMarkReady: (id: number) => void;
   onUpdatePayment: (id: number, payment_status: string, payment_method: string | null, amount_paid: number) => void;
+  onPrintReceipt?: (id: number) => void;
   onLoadMore: () => void;
   hasMore: boolean;
   searchQuery?: string;
@@ -96,6 +97,7 @@ export function OrdersPage({
   onLoadModifiers,
   onMarkReady,
   onUpdatePayment,
+  onPrintReceipt,
   onLoadMore,
   hasMore,
 }: OrdersPageProps) {
@@ -112,6 +114,7 @@ export function OrdersPage({
   const [cancelTargetOrder, setCancelTargetOrder] = useState<Order | null>(null);
   const [cancelIsServed, setCancelIsServed] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [batchCancelDialogOpen, setBatchCancelDialogOpen] = useState(false);
@@ -123,6 +126,14 @@ export function OrdersPage({
   const [paymentAmountPaid, setPaymentAmountPaid] = useState("");
 
   const [itemModifiers, setItemModifiers] = useState<Record<number, OrderItemModifier[]>>({});
+
+  useEffect(() => {
+    if (cancelTargetOrder && cancelTargetOrder.payment_status !== "unpaid") {
+      setRefundAmount(cancelTargetOrder.amount_paid.toFixed(2));
+    } else {
+      setRefundAmount("");
+    }
+  }, [cancelTargetOrder?.id]);
 
   useEffect(() => {
     if (!selectedOrder) { setOrderCost(null); return; }
@@ -307,6 +318,11 @@ export function OrdersPage({
                               <CreditCard className="h-4 w-4" />
                             </Button>
                           )}
+                          {order.payment_status === "paid" && onPrintReceipt && (
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" title="打印收据" onClick={() => onPrintReceipt(order.id)}>
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                          )}
                           {order.status !== "cancelled" && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setCancelTargetOrder(order); setCancelIsServed(order.status === "ready"); setCancelDialogOpen(true); }}>
                               <X className="h-4 w-4" />
@@ -449,9 +465,22 @@ export function OrdersPage({
               确定要取消订单「{cancelTargetOrder?.order_no}」吗？
             </p>
             {cancelTargetOrder && cancelTargetOrder.payment_status !== 'unpaid' && (
-              <div className={`rounded-md p-3 text-sm ${cancelTargetOrder.payment_status === 'paid' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
-                ⚠ 此订单{cancelTargetOrder.payment_status === 'paid' ? '已收款' : '已部分收款'} ¥{cancelTargetOrder.amount_paid.toFixed(2)}，取消后请手动处理退款。
-              </div>
+              <>
+                <div className={`rounded-md p-3 text-sm ${cancelTargetOrder.payment_status === 'paid' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
+                  ⚠ 此订单{cancelTargetOrder.payment_status === 'paid' ? '已收款' : '已部分收款'} ¥{cancelTargetOrder.amount_paid.toFixed(2)}，取消后请手动处理退款。
+                </div>
+                <div className="space-y-1">
+                  <Label>退款金额</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                    placeholder="输入实际退款金额"
+                  />
+                </div>
+              </>
             )}
             <div className="space-y-2">
               <Label>取消时是否扣除食材成本？</Label>
@@ -484,11 +513,18 @@ export function OrdersPage({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setCancelDialogOpen(false); setCancelReason(""); }}>返回</Button>
-            <Button variant="destructive" onClick={() => {
-              if (cancelTargetOrder) onCancelOrder(cancelTargetOrder.id, cancelIsServed, cancelReason);
+            <Button variant="outline" onClick={() => { setCancelDialogOpen(false); setCancelReason(""); setRefundAmount(""); }}>返回</Button>
+            <Button variant="destructive" onClick={async () => {
+              if (cancelTargetOrder) {
+                onCancelOrder(cancelTargetOrder.id, cancelIsServed, cancelReason);
+                const amt = parseFloat(refundAmount);
+                if (!isNaN(amt) && amt > 0 && cancelTargetOrder.payment_status !== "unpaid") {
+                  try { await invoke("record_order_refund", { orderId: cancelTargetOrder.id, refundAmount: amt }); } catch {}
+                }
+              }
               setCancelDialogOpen(false);
               setCancelReason("");
+              setRefundAmount("");
             }}>确认取消</Button>
           </DialogFooter>
         </DialogContent>

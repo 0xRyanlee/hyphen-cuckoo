@@ -141,6 +141,9 @@ pub fn run() {
             commands::cancel_order,
             commands::mark_order_ready,
             commands::update_order_payment,
+            commands::record_order_refund,
+            commands::get_sales_by_hour,
+            commands::get_sales_by_weekday,
             commands::batch_cancel_orders,
             // KDS
             commands::get_kitchen_stations,

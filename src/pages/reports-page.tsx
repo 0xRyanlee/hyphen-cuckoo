@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart3, TrendingUp, Trophy, PieChart as PieChartIcon, Package, Download } from "lucide-react";
+import { BarChart3, TrendingUp, Trophy, PieChart as PieChartIcon, Package, Download, Clock } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from "recharts";
 
@@ -24,6 +24,8 @@ export function ReportsPage() {
   const [profitData, setProfitData] = useState<[string, number, number, number, number, number][]>([]);
   const [topItems, setTopItems] = useState<[string, number, number, number][]>([]);
   const [consumptionData, setConsumptionData] = useState<[string, number, number, number][]>([]);
+  const [hourData, setHourData] = useState<[number, number, number][]>([]);
+  const [weekdayData, setWeekdayData] = useState<[number, number, number][]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,18 +55,22 @@ export function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [sales, categories, profit, top, consumption] = await Promise.all([
+      const [sales, categories, profit, top, consumption, hours, weekdays] = await Promise.all([
         invoke<[string, number, number, number][]>("get_sales_report", { startDate, endDate }),
         invoke<[string, number, number][]>("get_sales_by_category", { startDate, endDate }),
         invoke<[string, number, number, number, number, number][]>("get_gross_profit_report", { startDate, endDate }),
         invoke<[string, number, number, number][]>("get_top_selling_items", { startDate, endDate, limit: 10 }),
         invoke<[string, number, number, number][]>("get_material_consumption_report", { startDate, endDate }),
+        invoke<[number, number, number][]>("get_sales_by_hour", { startDate, endDate }),
+        invoke<[number, number, number][]>("get_sales_by_weekday", { startDate, endDate }),
       ]);
       setSalesData(sales);
       setCategoryData(categories);
       setProfitData(profit);
       setTopItems(top);
       setConsumptionData(consumption);
+      setHourData(hours);
+      setWeekdayData(weekdays);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -160,6 +166,7 @@ export function ReportsPage() {
           <TabsTrigger value="top" className="gap-1.5"><Trophy className="h-4 w-4" />热销排行</TabsTrigger>
           <TabsTrigger value="category" className="gap-1.5"><PieChartIcon className="h-4 w-4" />分类销售</TabsTrigger>
           <TabsTrigger value="consumption" className="gap-1.5"><Package className="h-4 w-4" />原料消耗</TabsTrigger>
+          <TabsTrigger value="time" className="gap-1.5"><Clock className="h-4 w-4" />时段分析</TabsTrigger>
         </TabsList>
 
         {/* Sales Report */}
@@ -401,6 +408,64 @@ export function ReportsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+        {/* Time Analysis */}
+        <TabsContent value="time" className="mt-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>时段销售分布</CardTitle>
+                <CardDescription>按小时统计销售额（0–23时）</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {hourData.length === 0 ? (
+                  <EmptyState icon={Clock} title="暂无数据" description="选择日期范围查询时段数据" />
+                ) : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={(() => {
+                        const map = Object.fromEntries(hourData.map(([h, , amt]) => [h, amt]));
+                        return Array.from({ length: 24 }, (_, h) => ({ hour: `${h}时`, amount: map[h] ?? 0 }));
+                      })()}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="hour" className="text-xs" tick={{ fontSize: 11 }} interval={1} />
+                        <YAxis className="text-xs" tick={{ fontSize: 12 }} />
+                        <Tooltip formatter={(value: unknown) => [`¥${typeof value === "number" ? value.toFixed(2) : value}`, "销售额"]} />
+                        <Bar dataKey="amount" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>星期销售分布</CardTitle>
+                <CardDescription>按星期统计销售额</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {weekdayData.length === 0 ? (
+                  <EmptyState icon={Clock} title="暂无数据" description="选择日期范围查询星期数据" />
+                ) : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={(() => {
+                        const labels = ["日", "一", "二", "三", "四", "五", "六"];
+                        const map = Object.fromEntries(weekdayData.map(([d, , amt]) => [d, amt]));
+                        return labels.map((label, i) => ({ day: `周${label}`, amount: map[i] ?? 0 }));
+                      })()}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="day" className="text-xs" tick={{ fontSize: 12 }} />
+                        <YAxis className="text-xs" tick={{ fontSize: 12 }} />
+                        <Tooltip formatter={(value: unknown) => [`¥${typeof value === "number" ? value.toFixed(2) : value}`, "销售额"]} />
+                        <Bar dataKey="amount" fill="#10B981" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
