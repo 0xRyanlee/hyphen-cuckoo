@@ -1,6 +1,6 @@
 [package]
 name = "cuckoo"
-version = "2.0.0"
+version = "2.0.1"
 description = "配方驅動餐飲作業系統"
 authors = ["Cuckoo Team"]
 edition = "2021"
