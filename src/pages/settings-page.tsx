@@ -11,7 +11,7 @@ import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash
          ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2, ShieldCheck, Eye, EyeOff,
          Radio, ServerCrash, Link2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePin, setRolePin } from "@/lib/roles";
+import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePinStatuses, saveRolePin } from "@/lib/roles";
 import { toast } from "sonner";
 import { appLogger, type LogEntry, type ErrorCategory } from "@/lib/logger";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -346,11 +346,16 @@ function ErrorLogPanel() {
 
 const SYNC_CLIENT_URL_KEY = "cuckoo_sync_client_url";
 const SYNC_CLIENT_ACTIVE_KEY = "cuckoo_sync_client_active";
+const SYNC_SHARED_SECRET_KEY = "cuckoo_sync_shared_secret";
+const SYNC_PROTOCOL_VERSION = "2";
 
 function LanSyncCard() {
   const [serverRunning, setServerRunning] = useState(false);
   const [serverPort, setServerPort] = useState("7070");
   const [serverUrl, setServerUrl] = useState("");
+  const [sharedSecret, setSharedSecret] = useState(
+    () => localStorage.getItem(SYNC_SHARED_SECRET_KEY) || ""
+  );
 
   const [clientUrl, setClientUrl] = useState(
     () => localStorage.getItem(SYNC_CLIENT_URL_KEY) || ""
@@ -380,7 +385,13 @@ function LanSyncCard() {
         toast.error("端口号必须在 1024–65535 之间");
         return;
       }
-      const url = await invoke<string>("start_sync_server", { port });
+      const secret = sharedSecret.trim();
+      if (!secret) {
+        toast.error("请先设置同步密钥");
+        return;
+      }
+      localStorage.setItem(SYNC_SHARED_SECRET_KEY, secret);
+      const url = await invoke<string>("start_sync_server", { port, sharedSecret: secret });
       setServerUrl(url);
       setServerRunning(true);
       toast.success(`服务已启动：${url}`);
@@ -402,9 +413,15 @@ function LanSyncCard() {
 
   const handleTestClient = async () => {
     if (!clientUrl.trim()) { toast.error("请输入服务端地址"); return; }
+    if (!sharedSecret.trim()) { toast.error("请输入同步密钥"); return; }
     try {
       const url = clientUrl.trim().replace(/\/$/, "");
-      await invoke("fetch_sync_orders", { serverUrl: url, sinceEpochS: Math.floor(Date.now() / 1000) - 10 });
+      await invoke("fetch_sync_orders", {
+        serverUrl: url,
+        sinceEpochS: Math.floor(Date.now() / 1000) - 10,
+        sharedSecret: sharedSecret.trim(),
+        clientVersion: SYNC_PROTOCOL_VERSION,
+      });
       setClientStatus("ok");
       toast.success("连接成功");
     } catch (e) {
@@ -417,7 +434,16 @@ function LanSyncCard() {
     setClientActive(active);
     localStorage.setItem(SYNC_CLIENT_ACTIVE_KEY, active ? "true" : "false");
     localStorage.setItem(SYNC_CLIENT_URL_KEY, clientUrl.trim());
+    localStorage.setItem(SYNC_SHARED_SECRET_KEY, sharedSecret.trim());
     window.dispatchEvent(new CustomEvent("cuckoo:sync-settings-changed"));
+  };
+
+  const handleGenerateSecret = () => {
+    const next = crypto.randomUUID().replace(/-/g, "");
+    setSharedSecret(next);
+    localStorage.setItem(SYNC_SHARED_SECRET_KEY, next);
+    window.dispatchEvent(new CustomEvent("cuckoo:sync-settings-changed"));
+    toast.success("已生成新的同步密钥");
   };
 
   return (
@@ -430,6 +456,27 @@ function LanSyncCard() {
         <CardDescription>同一局域网内的多台设备可实时共享订单数据</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="space-y-3">
+          <p className="text-sm font-medium flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            同步密钥
+          </p>
+          <div className="flex gap-2 items-center">
+            <Input
+              value={sharedSecret}
+              onChange={e => { setSharedSecret(e.target.value); setClientStatus("idle"); }}
+              placeholder="主从设备需使用同一共享密钥"
+              className="font-mono text-xs"
+            />
+            <Button size="sm" variant="outline" onClick={handleGenerateSecret}>生成</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            主机和从机必须使用同一密钥；同步协议版本固定为 v{SYNC_PROTOCOL_VERSION}。
+          </p>
+        </div>
+
+        <Separator />
+
         {/* Server mode */}
         <div className="space-y-3">
           <p className="text-sm font-medium flex items-center gap-1.5">
@@ -521,7 +568,22 @@ function RolePinCard() {
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [showPin, setShowPin] = useState(false);
-  const [_, forceUpdate] = useState(0);
+  const [pinStatuses, setPinStatuses] = useState<Record<Role, boolean>>({
+    owner: false,
+    cashier: false,
+    chef: false,
+    warehouse: false,
+  });
+
+  const refreshPinStatuses = useCallback(() => {
+    getRolePinStatuses().then(setPinStatuses).catch((e) => {
+      toast.error("加载角色 PIN 状态失败", { description: String(e) });
+    });
+  }, []);
+
+  useEffect(() => {
+    refreshPinStatuses();
+  }, [refreshPinStatuses]);
 
   const startEdit = (role: Role) => {
     setEditingRole(role);
@@ -530,7 +592,7 @@ function RolePinCard() {
     setShowPin(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editingRole) return;
     if (newPin && newPin !== confirmPin) {
       toast.error("两次输入的 PIN 不一致");
@@ -540,10 +602,14 @@ function RolePinCard() {
       toast.error("PIN 至少 4 位");
       return;
     }
-    setRolePin(editingRole, newPin || null);
-    toast.success(newPin ? `${ROLE_LABELS[editingRole]} PIN 已设置` : `${ROLE_LABELS[editingRole]} PIN 已清除`);
-    setEditingRole(null);
-    forceUpdate(n => n + 1);
+    try {
+      await saveRolePin(editingRole, newPin || null);
+      toast.success(newPin ? `${ROLE_LABELS[editingRole]} PIN 已设置` : `${ROLE_LABELS[editingRole]} PIN 已清除`);
+      setEditingRole(null);
+      refreshPinStatuses();
+    } catch (e) {
+      toast.error("保存角色 PIN 失败", { description: String(e) });
+    }
   };
 
   return (
@@ -557,7 +623,7 @@ function RolePinCard() {
       </CardHeader>
       <CardContent className="space-y-3">
         {ROLES.map((role) => {
-          const hasPin = !!getRolePin(role);
+          const hasPin = pinStatuses[role];
           const isEditing = editingRole === role;
           return (
             <div key={role} className="rounded-lg border p-3 space-y-3">
@@ -574,10 +640,14 @@ function RolePinCard() {
                     {isEditing ? "取消" : hasPin ? "修改" : "设置"}
                   </Button>
                   {hasPin && !isEditing && (
-                    <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => {
-                      setRolePin(role, null);
-                      toast.success(`${ROLE_LABELS[role]} PIN 已清除`);
-                      forceUpdate(n => n + 1);
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={async () => {
+                      try {
+                        await saveRolePin(role, null);
+                        toast.success(`${ROLE_LABELS[role]} PIN 已清除`);
+                        refreshPinStatuses();
+                      } catch (e) {
+                        toast.error("清除角色 PIN 失败", { description: String(e) });
+                      }
                     }}>清除</Button>
                   )}
                 </div>

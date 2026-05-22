@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle, CalendarDays, Printer } from "lucide-react";
+import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle, CalendarDays, Printer, Download } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
@@ -104,6 +104,18 @@ export function OrdersPage({
   onLoadMore,
   hasMore,
 }: OrdersPageProps) {
+  function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+    const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [headers.map(escape), ...rows.map((r) => r.map(escape))].map((r) => r.join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [modifierDialogOpen, setModifierDialogOpen] = useState(false);
@@ -203,6 +215,26 @@ export function OrdersPage({
     }
   };
 
+  const exportOrdersCSV = () => {
+    const ds = `${dateFrom || "all"}_${dateTo || "all"}`;
+    downloadCSV(
+      `订单列表_${ds}.csv`,
+      ["订单号", "类型", "桌号", "状态", "应收", "收款状态", "收款方式", "实收", "创建时间", "更新时间"],
+      filteredOrders.map((order) => [
+        order.order_no,
+        order.dine_type,
+        order.table_no || "",
+        order.status,
+        order.amount_total.toFixed(2),
+        order.payment_status,
+        order.payment_method || "",
+        order.amount_paid.toFixed(2),
+        order.created_at,
+        order.updated_at,
+      ]),
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -227,12 +259,18 @@ export function OrdersPage({
                 </CardTitle>
                 <CardDescription>共 {filteredOrders.length} 个订单{filteredOrders.length !== orders.length ? `（筛选自 ${orders.length} 个）` : ""}</CardDescription>
               </div>
-              {selectedOrders.length > 0 && (
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={exportOrdersCSV} disabled={filteredOrders.length === 0}>
+                  <Download className="mr-1 h-4 w-4" />
+                  导出 CSV
+                </Button>
+                {selectedOrders.length > 0 && (
+                  <>
                   <span className="text-sm text-muted-foreground self-center">已选 {selectedOrders.length} 单</span>
                   <Button size="sm" variant="outline" onClick={handleBatchCancel}>批量取消</Button>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>

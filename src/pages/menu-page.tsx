@@ -27,6 +27,7 @@ interface MenuPageProps {
   onCreatePendingRecipeForMenu: (menuItemId: number, menuItemName: string) => Promise<number | null>;
   onToggleAvailability: (id: number, is_available: boolean) => void;
   onBatchToggleAvailability?: (ids: number[], is_available: boolean) => void;
+  onBatchUpdatePrices?: (ids: number[], mode: "set" | "delta" | "percent", value: number) => void;
   onToggleFavorite?: (id: number) => void;
   onUpdateMenuItem: (id: number, data: { name?: string; category_id?: number | null; recipe_id?: number | null; sales_price?: number }) => void;
   onDeleteMenuItem: (id: number) => void;
@@ -42,7 +43,7 @@ interface MenuPageProps {
 export function MenuPage({
   menuCategories, menuItems, recipes,
   onCreateMenuCategory, onCreateMenuItem, onCreatePendingRecipeForMenu, onToggleAvailability,
-  onBatchToggleAvailability, onToggleFavorite,
+  onBatchToggleAvailability, onBatchUpdatePrices, onToggleFavorite,
   onUpdateMenuItem, onDeleteMenuItem, onUpdateMenuCategory, onDeleteMenuCategory,
   onGetSpecs, onCreateSpec, onUpdateSpec, onDeleteSpec,
   searchQuery,
@@ -62,6 +63,9 @@ export function MenuPage({
   const [newMenuItemRecipe, setNewMenuItemRecipe] = useState("");
   const [priceError, setPriceError] = useState("");
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [batchPriceOpen, setBatchPriceOpen] = useState(false);
+  const [batchPriceMode, setBatchPriceMode] = useState<"set" | "delta" | "percent">("percent");
+  const [batchPriceValue, setBatchPriceValue] = useState("");
 
   const toggleSelect = (id: number) => {
     setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -84,6 +88,23 @@ export function MenuPage({
       onBatchToggleAvailability(selectedItems, false);
       setSelectedItems([]);
     }
+  };
+  const handleBatchPriceUpdate = () => {
+    if (!onBatchUpdatePrices || selectedItems.length === 0) return;
+    const value = parseSafeFloat(batchPriceValue);
+    if (value === null) {
+      toast.error("请输入有效的调价值");
+      return;
+    }
+    if (batchPriceMode === "set" && value < 0) {
+      toast.error("设定价格不能小于 0");
+      return;
+    }
+    onBatchUpdatePrices(selectedItems, batchPriceMode, value);
+    setBatchPriceOpen(false);
+    setBatchPriceValue("");
+    setBatchPriceMode("percent");
+    setSelectedItems([]);
   };
 
   const handleCreateMenuItem = () => {
@@ -224,6 +245,7 @@ export function MenuPage({
                   <span className="text-sm text-muted-foreground self-center">已选 {selectedItems.length} 项</span>
                   <Button size="sm" variant="outline" onClick={handleBatchEnable}><ToggleRight className="h-4 w-4 mr-1" />批量上架</Button>
                   <Button size="sm" variant="outline" onClick={handleBatchDisable}><ToggleLeft className="h-4 w-4 mr-1" />批量下架</Button>
+                  {onBatchUpdatePrices && <Button size="sm" variant="outline" onClick={() => setBatchPriceOpen(true)}><Edit2 className="h-4 w-4 mr-1" />批量调价</Button>}
                 </>)}
               </div>
             </div>
@@ -394,6 +416,39 @@ export function MenuPage({
             </div>
           </div>
           <DialogFooter><Button onClick={() => setSpecDialogOpen(false)}>关闭</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={batchPriceOpen} onOpenChange={setBatchPriceOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>批量调价</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>调价模式</Label>
+              <Select value={batchPriceMode} onValueChange={(value: "set" | "delta" | "percent") => setBatchPriceMode(value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percent">按百分比调整</SelectItem>
+                  <SelectItem value="delta">按固定金额加减</SelectItem>
+                  <SelectItem value="set">直接设定售价</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{batchPriceMode === "percent" ? "百分比（如 10 / -5）" : batchPriceMode === "delta" ? "金额（如 2 / -1.5）" : "目标售价"}</Label>
+              <Input
+                type="number"
+                value={batchPriceValue}
+                onChange={(e) => setBatchPriceValue(e.target.value)}
+                placeholder={batchPriceMode === "percent" ? "10" : batchPriceMode === "delta" ? "2.00" : "25.00"}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">将对已选中的 {selectedItems.length} 个菜品统一应用此价格规则。</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchPriceOpen(false)}>取消</Button>
+            <Button onClick={handleBatchPriceUpdate}>应用</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

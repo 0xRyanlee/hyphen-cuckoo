@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,10 @@ import {
   ROLE_LABELS,
   ROLE_DESCRIPTIONS,
   ROLE_COLORS,
-  getRolePin,
+  getRolePinStatuses,
+  switchRole,
 } from "@/lib/roles";
+import { toast } from "sonner";
 
 const ROLES: Role[] = ["owner", "cashier", "chef", "warehouse"];
 
@@ -25,33 +27,48 @@ export function RoleSwitchDialog({ open, currentRole, onSwitch, onClose }: RoleS
   const [pendingRole, setPendingRole] = useState<Role | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const [pinStatuses, setPinStatuses] = useState<Record<Role, boolean>>({
+    owner: false,
+    cashier: false,
+    chef: false,
+    warehouse: false,
+  });
 
-  const handleRoleClick = (role: Role) => {
+  useEffect(() => {
+    if (!open) return;
+    getRolePinStatuses().then(setPinStatuses).catch(() => {});
+  }, [open]);
+
+  const handleRoleClick = async (role: Role) => {
     if (role === currentRole) { onClose(); return; }
-    const stored = getRolePin(role);
-    if (!stored) {
-      onSwitch(role);
-      onClose();
-    } else {
+    if (pinStatuses[role]) {
       setPendingRole(role);
       setPin("");
       setError("");
+      return;
+    }
+    try {
+      const nextRole = await switchRole(role, null);
+      onSwitch(nextRole);
+      onClose();
+    } catch (e) {
+      toast.error("切换角色失败", { description: String(e) });
     }
   };
 
-  const handleConfirmPin = () => {
+  const handleConfirmPin = async () => {
     if (!pendingRole) return;
-    const stored = getRolePin(pendingRole);
-    if (stored && stored !== pin) {
-      setError("PIN 错误，请重试");
+    try {
+      const nextRole = await switchRole(pendingRole, pin);
+      onSwitch(nextRole);
+      setPendingRole(null);
       setPin("");
-      return;
+      setError("");
+      onClose();
+    } catch (e) {
+      setError(String(e));
+      setPin("");
     }
-    onSwitch(pendingRole);
-    setPendingRole(null);
-    setPin("");
-    setError("");
-    onClose();
   };
 
   const handleClose = () => {
@@ -105,7 +122,7 @@ export function RoleSwitchDialog({ open, currentRole, onSwitch, onClose }: RoleS
           <div className="grid grid-cols-2 gap-3 py-2">
             {ROLES.map((role) => {
               const isActive = role === currentRole;
-              const hasPin = !!getRolePin(role);
+              const hasPin = pinStatuses[role];
               return (
                 <button
                   key={role}

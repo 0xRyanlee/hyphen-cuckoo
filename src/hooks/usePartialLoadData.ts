@@ -7,6 +7,7 @@ import type {
   Supplier, MaterialState, PurchaseOrder, PurchaseOrderWithItems,
   ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems
 } from "../types";
+import type { Expense, SupplierProduct, Customer } from "../types";
 
 interface AppState {
   loading: boolean;
@@ -38,6 +39,9 @@ interface AppState {
   selectedProductionOrder: ProductionOrderWithItems | null;
   stocktakes: Stocktake[];
   selectedStocktake: StocktakeWithItems | null;
+  expenses: Expense[];
+  supplierProducts: SupplierProduct[];
+  customers: Customer[];
 }
 
 interface AppSetters {
@@ -68,6 +72,9 @@ interface AppSetters {
   setSelectedProductionOrder: (v: ProductionOrderWithItems | null) => void;
   setStocktakes: (v: Stocktake[]) => void;
   setSelectedStocktake: (v: StocktakeWithItems | null) => void;
+  setExpenses: (v: Expense[]) => void;
+  setSupplierProducts: (v: SupplierProduct[]) => void;
+  setCustomers: (v: Customer[]) => void;
   setLoading: (v: boolean) => void;
   setConnected: (v: boolean) => void;
 }
@@ -166,6 +173,22 @@ export function usePartialLoadData(state: AppState, setters: AppSetters) {
     s.setSuppliers(await invoke<Supplier[]>("get_suppliers"));
   }, [s]);
 
+  const loadMaterialStates = useCallback(async () => {
+    s.setMaterialStates(await invoke<MaterialState[]>("get_all_material_states"));
+  }, [s]);
+
+  const loadExpenses = useCallback(async () => {
+    s.setExpenses(await invoke<Expense[]>("get_expenses", { expenseType: null, startDate: null, endDate: null }));
+  }, [s]);
+
+  const loadSupplierProducts = useCallback(async () => {
+    s.setSupplierProducts(await invoke<SupplierProduct[]>("get_supplier_products", { channel: null }));
+  }, [s]);
+
+  const loadCustomers = useCallback(async () => {
+    s.setCustomers(await invoke<Customer[]>("get_customers", { search: null }));
+  }, [s]);
+
   return {
     loadAll,
     loadMaterials,
@@ -178,5 +201,9 @@ export function usePartialLoadData(state: AppState, setters: AppSetters) {
     loadProductionOrders,
     loadStocktakes,
     loadSuppliers,
+    loadMaterialStates,
+    loadExpenses,
+    loadSupplierProducts,
+    loadCustomers,
   };
 }

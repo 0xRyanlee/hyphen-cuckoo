@@ -30,6 +30,14 @@ fn get_log_dir() -> PathBuf {
     data_dir
 }
 
+fn get_role_auth_path() -> PathBuf {
+    let data_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Cuckoo");
+    fs::create_dir_all(&data_dir).expect("Failed to create auth directory");
+    data_dir.join("role-auth.json")
+}
+
 fn setup_panic_hook() {
     let log_dir = get_log_dir();
     let start_time = std::time::Instant::now();
@@ -57,12 +65,15 @@ pub fn run() {
     setup_panic_hook();
     
     let db_path = get_db_path();
+    let role_auth_path = get_role_auth_path();
     eprintln!("[Cuckoo] Database path: {:?}", db_path);
     
     let db = match Database::new(db_path.to_str().unwrap()) {
         Ok(db) => { eprintln!("[Cuckoo] Database created successfully"); db }
         Err(e) => { eprintln!("[Cuckoo] Database error: {}", e); panic!("Failed to create database: {}", e) }
     };
+    
+    let role_auth = commands::load_role_auth_store(&role_auth_path);
     
     eprintln!("[Cuckoo] Building Tauri app...");
     
@@ -75,6 +86,8 @@ pub fn run() {
         db,
         db_path,
         sync_server: std::sync::Mutex::new(None),
+        role_auth: std::sync::Mutex::new(role_auth),
+        role_auth_path,
     })
         .invoke_handler(tauri::generate_handler![
             // 健康檢查
@@ -82,6 +95,11 @@ pub fn run() {
             commands::backup_database,
             commands::check_expiry_alerts,
             commands::report_telemetry,
+            // 角色權限
+            commands::get_current_role,
+            commands::get_role_pin_statuses,
+            commands::set_role_pin,
+            commands::switch_role,
             // 單位
             commands::get_units,
             // 材料分類
@@ -193,6 +211,7 @@ pub fn run() {
             commands::update_menu_item,
             commands::toggle_menu_item_availability,
             commands::batch_toggle_menu_item_availability,
+            commands::batch_update_menu_item_prices,
             commands::toggle_menu_item_favorite,
             commands::delete_menu_item,
             commands::update_menu_category,
@@ -297,6 +316,8 @@ pub fn run() {
             commands::get_sync_server_status,
             commands::get_local_ips,
             commands::fetch_sync_orders,
+            commands::fetch_sync_tickets,
+            commands::mutate_sync_ticket,
             // 打印調試
             commands::debug_print_kitchen_ticket,
             commands::debug_print_batch_label,

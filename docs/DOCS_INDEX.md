@@ -1,7 +1,7 @@
 # Cuckoo 文档索引 (Documentation Index)
 
-> **更新日期**: 2026-05-05  
-> **当前版本**: v1.2.4
+> **更新日期**: 2026-05-22  
+> **当前版本**: v2.0.0
 
 ---
 
@@ -27,6 +27,7 @@ Cuckoo/
 │   ├── 🔍 审计报告
 │   │   ├── comprehensive-audit-report-v1.2.2.md   # 综合审计 v1.2.2
 │   │   ├── info-flow-audit-2026-04-30.md          # 信息流安全审计
+│   │   ├── multidimensional-audit-2026-05-22.md   # 多维度业务/安全/市场/技术债审计
 │   │   ├── recipe-management-audit-2026-05-05.md  # 配方管理审计
 │   │   ├── recipe-multi-role-roadmap-2026-05-05.md # 配方多角色路线图
 │   │   ├── implementation-audit-report-v1.2.2.md  # 实现审计
@@ -78,6 +79,7 @@ Cuckoo/
 
 | 需求 | 文档 |
 |------|------|
+| 多维度现状审计 | [multidimensional-audit-2026-05-22.md](multidimensional-audit-2026-05-22.md) |
 | 最新综合审计 | [comprehensive-audit-report-v1.2.2.md](comprehensive-audit-report-v1.2.2.md) |
 | 数据流审计 | [info-flow-audit-2026-04-30.md](info-flow-audit-2026-04-30.md) |
 | 配方专项审计 | [recipe-management-audit-2026-05-05.md](recipe-management-audit-2026-05-05.md) |
@@ -89,6 +91,7 @@ Cuckoo/
 
 | 日期 | 操作 |
 |------|------|
+| 2026-05-22 | 新增多维度审计文档，补充商业/安全/市场/技术债视角 |
 | 2026-05-05 | 文档大重建：重写 README、ROADMAP、DOCS_INDEX，新增用户指南 |
 | 2026-05-05 | 新增配方管理专项审计文档 |
 | 2026-04-30 | 新增信息流安全审计 |

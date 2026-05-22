@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Save, Receipt } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, Receipt, TrendingUp, CalendarRange, Download } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 import type { Expense } from "@/types";
 
 const EXPENSE_TYPES = [
@@ -54,6 +55,18 @@ export function ExpensesPage({
   onUpdateExpense,
   onDeleteExpense,
 }: ExpensesPageProps) {
+  function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+    const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [headers.map(escape), ...rows.map((r) => r.map(escape))].map((r) => r.join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [newType, setNewType] = useState("water");
   const [newAmount, setNewAmount] = useState("");
@@ -74,6 +87,70 @@ export function ExpensesPage({
   });
 
   const totalAmount = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const monthlyTotals = new Map<string, number>();
+  const monthlyTypeTotals = new Map<string, Map<string, number>>();
+  for (const expense of filteredExpenses) {
+    const month = expense.expense_date.slice(0, 7);
+    monthlyTotals.set(month, (monthlyTotals.get(month) || 0) + expense.amount);
+
+    const typeBuckets = monthlyTypeTotals.get(month) || new Map<string, number>();
+    typeBuckets.set(expense.expense_type, (typeBuckets.get(expense.expense_type) || 0) + expense.amount);
+    monthlyTypeTotals.set(month, typeBuckets);
+  }
+
+  const monthlyTrendData = Array.from(monthlyTotals.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([month, amount]) => {
+      const typeBuckets = monthlyTypeTotals.get(month) || new Map<string, number>();
+      let topType = "未分类";
+      let topTypeAmount = 0;
+
+      for (const [expenseType, total] of typeBuckets.entries()) {
+        if (total > topTypeAmount) {
+          topType = expenseType;
+          topTypeAmount = total;
+        }
+      }
+
+      return {
+        month,
+        amount,
+        topType: getTypeLabel(topType),
+        topTypeAmount,
+      };
+    });
+
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const previousMonthDate = new Date();
+  previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
+  const previousMonth = previousMonthDate.toISOString().slice(0, 7);
+  const currentMonthAmount = filteredExpenses
+    .filter((e) => e.expense_date.startsWith(currentMonth))
+    .reduce((sum, e) => sum + e.amount, 0);
+  const previousMonthAmount = filteredExpenses
+    .filter((e) => e.expense_date.startsWith(previousMonth))
+    .reduce((sum, e) => sum + e.amount, 0);
+  const averageAmount = filteredExpenses.length > 0 ? totalAmount / filteredExpenses.length : 0;
+  const monthDelta = currentMonthAmount - previousMonthAmount;
+  const monthDeltaLabel = previousMonthAmount > 0
+    ? `${((monthDelta / previousMonthAmount) * 100).toFixed(1)}%`
+    : currentMonthAmount > 0
+      ? "新增支出"
+      : "0.0%";
+
+  const exportExpensesCSV = () => {
+    downloadCSV(
+      `支出记录_${typeFilter}.csv`,
+      ["日期", "类型", "金额", "备注"],
+      filteredExpenses.map((expense) => [
+        expense.expense_date,
+        getTypeLabel(expense.expense_type),
+        expense.amount.toFixed(2),
+        expense.note || "",
+      ]),
+    );
+  };
 
   function openEdit(e: Expense) {
     setEditExpense(e);
@@ -117,6 +194,9 @@ export function ExpensesPage({
           <h2 className="text-2xl font-semibold tracking-tight">日常支出</h2>
           <p className="text-sm text-muted-foreground">管理日常运营费用</p>
         </div>
+        <Button variant="outline" onClick={exportExpensesCSV} disabled={filteredExpenses.length === 0}>
+          <Download className="mr-2 h-4 w-4" />导出 CSV
+        </Button>
       </div>
 
       <div className="flex gap-4 flex-wrap items-center">
@@ -136,6 +216,94 @@ export function ExpensesPage({
           <span className="text-lg font-bold text-destructive">¥{totalAmount.toFixed(2)}</span>
         </div>
       </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">本月支出</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-destructive">¥{currentMonthAmount.toFixed(2)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              相比上月 {monthDelta >= 0 ? "增加" : "减少"} ¥{Math.abs(monthDelta).toFixed(2)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">环比变化</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${monthDelta > 0 ? "text-amber-600" : monthDelta < 0 ? "text-emerald-600" : "text-foreground"}`}>
+              {monthDelta >= 0 ? "+" : ""}{monthDeltaLabel}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">基于当前筛选条件对比上月</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">平均单笔支出</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">¥{averageAmount.toFixed(2)}</div>
+            <p className="mt-1 text-xs text-muted-foreground">{filteredExpenses.length} 笔记录</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            月度支出趋势
+          </CardTitle>
+          <CardDescription>最近 6 个月支出走势与主要费用类型</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {monthlyTrendData.length === 0 ? (
+            <EmptyState icon={CalendarRange} title="暂无趋势数据" description="新增支出后，这里会显示月度走势" />
+          ) : (
+            <div className="space-y-4">
+              <div className="h-[260px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis dataKey="month" className="text-xs" tick={{ fontSize: 12 }} />
+                    <YAxis className="text-xs" tick={{ fontSize: 12 }} />
+                    <Tooltip
+                      formatter={(value, name, entry) => {
+                        const numericValue = typeof value === "number"
+                          ? value
+                          : typeof value === "string"
+                            ? Number(value)
+                            : 0;
+                        if (name === "amount") {
+                          return [`¥${numericValue.toFixed(2)}`, "支出"];
+                        }
+                        const payload = entry?.payload as { topType?: string; topTypeAmount?: number } | undefined;
+                        return [payload?.topTypeAmount ? `¥${payload.topTypeAmount.toFixed(2)}` : "¥0.00", payload?.topType || "主要类型"];
+                      }}
+                      labelFormatter={(label) => `${label}`}
+                    />
+                    <Bar dataKey="amount" fill="#EF4444" radius={[6, 6, 0, 0]} name="amount" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                {monthlyTrendData.slice().reverse().map((item) => (
+                  <div key={item.month} className="rounded-lg border bg-muted/30 px-4 py-3">
+                    <div className="text-sm font-medium">{item.month}</div>
+                    <div className="mt-1 text-xl font-semibold text-destructive">¥{item.amount.toFixed(2)}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      主要类型: {item.topType} ¥{item.topTypeAmount.toFixed(2)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-4">
         <Card>

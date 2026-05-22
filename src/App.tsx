@@ -33,14 +33,19 @@ import { toast } from "sonner";
 import { useAppData } from "@/hooks/useAppData";
 import { useAppActions } from "@/hooks/useAppActions";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { OrderWithItems, OrderItemModifier } from "./types";
+import type { OrderWithItems, OrderItemModifier, TicketWithItems } from "./types";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { listen } from "@tauri-apps/api/event";
 import { RoleSwitchDialog } from "@/components/role-switch-dialog";
-import { type Role, checkAccess } from "@/lib/roles";
+import { type Role, checkAccess, getCurrentRole } from "@/lib/roles";
 
 // ==================== App ====================
+
+const SYNC_CLIENT_URL_KEY = "cuckoo_sync_client_url";
+const SYNC_CLIENT_ACTIVE_KEY = "cuckoo_sync_client_active";
+const SYNC_SHARED_SECRET_KEY = "cuckoo_sync_shared_secret";
+const SYNC_PROTOCOL_VERSION = "2";
 
 function App() {
   const navigate = useNavigate();
@@ -54,14 +59,21 @@ function App() {
 
   // LAN client sync state — reads from localStorage, updated via custom event
   const [syncClientUrl, setSyncClientUrl] = useState(
-    () => localStorage.getItem("cuckoo_sync_client_url") || ""
+    () => localStorage.getItem(SYNC_CLIENT_URL_KEY) || ""
   );
   const [syncActive, setSyncActive] = useState(
-    () => localStorage.getItem("cuckoo_sync_client_active") === "true"
+    () => localStorage.getItem(SYNC_CLIENT_ACTIVE_KEY) === "true"
+  );
+  const [syncSharedSecret, setSyncSharedSecret] = useState(
+    () => localStorage.getItem(SYNC_SHARED_SECRET_KEY) || ""
   );
   const [lastSyncEpochS, setLastSyncEpochS] = useState(0);
   const [unseenErrorCount, setUnseenErrorCount] = useState(0);
   const { updateInfo, dismiss: dismissUpdate, skip: skipUpdate } = useAutoUpdate();
+
+  useEffect(() => {
+    getCurrentRole().then(setCurrentRole).catch(() => {});
+  }, []);
 
   // Increment badge whenever the logger writes a new entry
   useEffect(() => {
@@ -114,10 +126,37 @@ function App() {
     customers,
     unreadNotificationCount,
     loadData,
+    loadMaterials,
+    loadRecipes,
+    loadMenu,
+    loadOrders,
+    loadKDS,
+    loadInventory,
+    loadPurchaseOrders,
+    loadProductionOrders,
+    loadStocktakes,
+    loadSuppliers,
+    loadMaterialStates,
+    loadExpenses,
+    loadSupplierProducts,
+    loadCustomers,
   } = useAppData();
 
   const actions = useAppActions({
-    loadData,
+    loadMaterials,
+    loadRecipes,
+    loadMenu,
+    loadOrders,
+    loadKDS,
+    loadInventory,
+    loadPurchaseOrders,
+    loadProductionOrders,
+    loadStocktakes,
+    loadSuppliers,
+    loadMaterialStates,
+    loadExpenses,
+    loadSupplierProducts,
+    loadCustomers,
     categories,
     menuCategories,
     orders,
@@ -176,6 +215,7 @@ function App() {
     handleDeleteMenuCategory,
     handleToggleMenuItem,
     handleBatchToggleMenuItem,
+    handleBatchUpdateMenuItemPrices,
     handleToggleFavorite,
     handleUpdateMenuItem,
     handleDeleteMenuItem,
@@ -245,32 +285,51 @@ function App() {
   // Re-read sync settings when the settings page updates them
   useEffect(() => {
     const handler = () => {
-      setSyncClientUrl(localStorage.getItem("cuckoo_sync_client_url") || "");
-      setSyncActive(localStorage.getItem("cuckoo_sync_client_active") === "true");
+      setSyncClientUrl(localStorage.getItem(SYNC_CLIENT_URL_KEY) || "");
+      setSyncActive(localStorage.getItem(SYNC_CLIENT_ACTIVE_KEY) === "true");
+      setSyncSharedSecret(localStorage.getItem(SYNC_SHARED_SECRET_KEY) || "");
     };
     window.addEventListener("cuckoo:sync-settings-changed", handler);
     return () => window.removeEventListener("cuckoo:sync-settings-changed", handler);
   }, []);
 
+  const refreshSyncSnapshot = async () => {
+    if (!syncActive || !syncClientUrl || !syncSharedSecret) return;
+
+    const [remoteOrders, remoteTickets] = await Promise.all([
+      invoke<Record<string, unknown>[]>("fetch_sync_orders", {
+        serverUrl: syncClientUrl,
+        sinceEpochS: lastSyncEpochS,
+        sharedSecret: syncSharedSecret,
+        clientVersion: SYNC_PROTOCOL_VERSION,
+      }),
+      invoke<TicketWithItems[]>("fetch_sync_tickets", {
+        serverUrl: syncClientUrl,
+        sharedSecret: syncSharedSecret,
+        clientVersion: SYNC_PROTOCOL_VERSION,
+      }),
+    ]);
+
+    setOrders(prev => {
+      const map = new Map(prev.map(o => [o.id, o]));
+      remoteOrders.forEach(r => { if (r.id) map.set(r.id as number, r as any); });
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    });
+    setKdsTickets(remoteTickets);
+    setLastSyncEpochS(Math.floor(Date.now() / 1000));
+  };
+
   // LAN client polling: merge server orders into local state every 4s
   useEffect(() => {
-    if (!syncActive || !syncClientUrl) return;
+    if (!syncActive || !syncClientUrl || !syncSharedSecret) return;
     let active = true;
     const poll = async () => {
       try {
-        const raw = await invoke<Record<string, unknown>[]>("fetch_sync_orders", {
-          serverUrl: syncClientUrl,
-          sinceEpochS: lastSyncEpochS,
-        });
-        if (active && raw.length > 0) {
-          setOrders(prev => {
-            const map = new Map(prev.map(o => [o.id, o]));
-            raw.forEach(r => { if (r.id) map.set(r.id as number, r as any); });
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            );
-          });
-          setLastSyncEpochS(Math.floor(Date.now() / 1000));
+        await refreshSyncSnapshot();
+        if (!active) {
+          return;
         }
       } catch { /* sync errors are silent */ }
     };
@@ -278,7 +337,66 @@ function App() {
     const id = setInterval(poll, 4000);
     return () => { active = false; clearInterval(id); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncActive, syncClientUrl]);
+  }, [syncActive, syncClientUrl, syncSharedSecret]);
+
+  const handleStartTicketWithSync = async (ticketId: number) => {
+    try {
+      if (syncActive && syncClientUrl && syncSharedSecret) {
+        await invoke("mutate_sync_ticket", {
+          serverUrl: syncClientUrl,
+          ticketId,
+          action: "start",
+          sharedSecret: syncSharedSecret,
+          clientVersion: SYNC_PROTOCOL_VERSION,
+        });
+        await refreshSyncSnapshot();
+      } else {
+        await invoke("start_ticket", { ticketId, operator: null });
+        await loadData();
+      }
+      toast.success("工单已开始");
+    } catch (e) {
+      toast.error("开始工单失败", { description: String(e) });
+    }
+  };
+
+  const handleFinishTicketWithSync = async (ticketId: number) => {
+    try {
+      if (syncActive && syncClientUrl && syncSharedSecret) {
+        await invoke("mutate_sync_ticket", {
+          serverUrl: syncClientUrl,
+          ticketId,
+          action: "finish",
+          sharedSecret: syncSharedSecret,
+          clientVersion: SYNC_PROTOCOL_VERSION,
+        });
+        await refreshSyncSnapshot();
+      } else {
+        const ticket = kdsTickets.find((t) => t.id === ticketId);
+        if (ticket) {
+          await handleFinishTicket(ticket);
+        } else {
+          await invoke("finish_ticket", { ticketId, operator: null });
+          await loadData();
+        }
+      }
+      toast.success("工单已完成");
+    } catch (e) {
+      toast.error("完成工单失败", { description: String(e) });
+    }
+  };
+
+  const handleRefreshKds = async () => {
+    if (syncActive && syncClientUrl && syncSharedSecret) {
+      try {
+        await refreshSyncSnapshot();
+      } catch (e) {
+        toast.error("刷新KDS失败", { description: String(e) });
+      }
+      return;
+    }
+    await handleLoadKDS();
+  };
 
   // Keep a ref to orders so the telemetry effect can read the latest value
   // without re-running every time orders change.
@@ -380,11 +498,11 @@ function App() {
                 <Route path="/materials" element={<MaterialsPage materials={materials} recipes={recipes} categories={categories} tags={tags} units={units} onCreateMaterial={handleCreateMaterial} onUpdateMaterial={handleUpdateMaterial} onDeleteMaterial={handleDeleteMaterial} onRemoveMaterialTag={handleRemoveMaterialTag} onCreateCategory={handleCreateCategory} onDeleteCategory={handleDeleteCategory} onCreateTag={handleCreateTag} onDeleteTag={handleDeleteTag} searchQuery={searchQuery} />} />
                 <Route path="/recipes" element={<RecipesPage recipes={recipes} recipeTypes={recipeTypes} selectedRecipe={selectedRecipe} recipeCost={recipeCost} materials={materials} menuItems={menuItems} units={units} onCreateRecipe={handleCreateRecipe} onViewRecipe={handleViewRecipe} onDeleteRecipe={handleDeleteRecipe} onUpdateRecipe={handleUpdateRecipe} onCreateRecipeType={handleCreateRecipeType} onUpdateRecipeType={handleUpdateRecipeType} onDeleteRecipeType={handleDeleteRecipeType} onSeedSampleRecipes={handleSeedSampleRecipes} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onBindMenuItemToRecipe={handleBindMenuItemToRecipe} onAddRecipeItem={handleAddRecipeItem} onDeleteRecipeItem={handleDeleteRecipeItem} onUpdateRecipeItem={handleUpdateRecipeItem} onRecalculateCost={handleRecalculateCost} searchQuery={searchQuery} />} />
                 <Route path="/inventory" element={<InventoryPage inventorySummary={inventorySummary} inventoryBatches={inventoryBatches} inventoryTxns={inventoryTxns} materials={materials} recipes={recipes} suppliers={suppliers} onCreateBatch={handleCreateBatch} onAdjustInventory={handleAdjustInventory} onRecordWastage={handleRecordWastage} onDeleteBatch={handleDeleteBatch} onUpdateMaterial={handleUpdateMaterial} searchQuery={searchQuery} />} />
-                <Route path="/menu" element={<MenuPage menuCategories={menuCategories} menuItems={menuItems} recipes={recipes} onCreateMenuCategory={handleCreateMenuCategory} onCreateMenuItem={handleCreateMenuItemFull} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onToggleAvailability={handleToggleMenuItem} onBatchToggleAvailability={handleBatchToggleMenuItem} onToggleFavorite={handleToggleFavorite} onUpdateMenuItem={handleUpdateMenuItem} onDeleteMenuItem={handleDeleteMenuItem} onUpdateMenuCategory={handleUpdateMenuCategory} onDeleteMenuCategory={handleDeleteMenuCategory} onGetSpecs={handleGetSpecs} onCreateSpec={handleCreateSpec} onUpdateSpec={handleUpdateSpec} onDeleteSpec={handleDeleteSpec} searchQuery={searchQuery} />} />
+                <Route path="/menu" element={<MenuPage menuCategories={menuCategories} menuItems={menuItems} recipes={recipes} onCreateMenuCategory={handleCreateMenuCategory} onCreateMenuItem={handleCreateMenuItemFull} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onToggleAvailability={handleToggleMenuItem} onBatchToggleAvailability={handleBatchToggleMenuItem} onBatchUpdatePrices={handleBatchUpdateMenuItemPrices} onToggleFavorite={handleToggleFavorite} onUpdateMenuItem={handleUpdateMenuItem} onDeleteMenuItem={handleDeleteMenuItem} onUpdateMenuCategory={handleUpdateMenuCategory} onDeleteMenuCategory={handleDeleteMenuCategory} onGetSpecs={handleGetSpecs} onCreateSpec={handleCreateSpec} onUpdateSpec={handleUpdateSpec} onDeleteSpec={handleDeleteSpec} searchQuery={searchQuery} />} />
                 <Route path="/pos" element={<POSPage menuCategories={menuCategories} menuItems={menuItems} onCreateOrder={handlePOSOrder} onCreateAndSubmit={handlePOSAndSubmit} onGetSpecs={handleGetSpecs} searchQuery={searchQuery} loading={loading} />} />
                 <Route path="/suppliers" element={<SuppliersPage suppliers={suppliers} supplierProducts={supplierProducts} onCreateSupplier={handleCreateSupplier} onUpdateSupplier={handleUpdateSupplier} onDeleteSupplier={handleDeleteSupplier} onCreateSupplierProduct={handleCreateSupplierProduct} onUpdateSupplierProduct={handleUpdateSupplierProduct} onDeleteSupplierProduct={handleDeleteSupplierProduct} searchQuery={searchQuery} />} />
                 <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onMarkReady={handleMarkOrderReady} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onPrintReceipt={handlePrintReceipt} onRefundOrderItem={handleRefundOrderItem} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} />} />
-                <Route path="/kds" element={<KDSPage allTickets={kdsTickets} stations={stations} menuItemNames={Object.fromEntries(menuItems.map((m) => [m.id, m.name]))} onStartTicket={async (id) => { try { await invoke("start_ticket", { ticketId: id, operator: null }); toast.success("工单已开始"); loadData(); } catch (e) { toast.error("开始工单失败", { description: String(e) }); } }} onFinishTicket={async (id) => { const ticket = kdsTickets.find((t) => t.id === id); if (ticket) { await handleFinishTicket(ticket); } else { await invoke("finish_ticket", { ticketId: id, operator: null }); toast.success("工单已完成"); loadData(); } }} onReprintTicket={handleReprintTicket} onRefresh={handleLoadKDS} />} />
+                <Route path="/kds" element={<KDSPage allTickets={kdsTickets} stations={stations} menuItemNames={Object.fromEntries(menuItems.map((m) => [m.id, m.name]))} onStartTicket={handleStartTicketWithSync} onFinishTicket={handleFinishTicketWithSync} onReprintTicket={handleReprintTicket} onRefresh={handleRefreshKds} />} />
                 <Route path="/attributes" element={<AttributesPage attributeTemplates={attributeTemplates} onRefresh={loadData} />} />
                 <Route path="/settings" element={<SettingsPage connected={connected} />} />
                 <Route path="/material-states" element={<MaterialStatesPage materialStates={materialStates} materials={materials} units={units} onCreateState={handleCreateMaterialState} onUpdateState={handleUpdateMaterialState} onDeleteState={handleDeleteMaterialState} searchQuery={searchQuery} />} />

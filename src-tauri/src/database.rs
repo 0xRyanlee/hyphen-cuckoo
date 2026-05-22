@@ -2598,7 +2598,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         // Menu items that link to this recipe
         let mut stmt = conn.prepare(
-            "SELECT mi.id, mi.name FROM menu_items mi WHERE mi.recipe_id = ?1 AND mi.is_active = 1"
+            "SELECT mi.id, mi.name FROM menu_items mi WHERE mi.recipe_id = ?1"
         )?;
         let menu_items: Vec<(i64, String)> = stmt.query_map(params![recipe_id], |row| {
             Ok((row.get(0)?, row.get(1)?))
@@ -3094,6 +3094,41 @@ impl Database {
                 count += 1;
             }
         }
+        Ok(count)
+    }
+
+    pub fn batch_update_menu_item_prices(&self, ids: &[i64], mode: &str, value: f64) -> Result<usize> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let mut count = 0;
+
+        for id in ids {
+            let current_price: f64 = tx.query_row(
+                "SELECT sales_price FROM menu_items WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )?;
+
+            let next_price = match mode {
+                "set" => value,
+                "delta" => current_price + value,
+                "percent" => current_price * (1.0 + value / 100.0),
+                _ => return Err(rusqlite::Error::InvalidParameterName("invalid batch price mode".to_string())),
+            };
+
+            let rounded_price = (next_price * 100.0).round() / 100.0;
+            if rounded_price < 0.0 {
+                return Err(rusqlite::Error::InvalidParameterName("negative menu price".to_string()));
+            }
+
+            tx.execute(
+                "UPDATE menu_items SET sales_price = ?1 WHERE id = ?2",
+                params![rounded_price, id],
+            )?;
+            count += 1;
+        }
+
+        tx.commit()?;
         Ok(count)
     }
 
@@ -5480,6 +5515,27 @@ mod tests {
     }
 
     #[test]
+    fn test_batch_update_menu_item_prices() {
+        let (db, _dir) = test_db();
+        seed_minimal(&db);
+
+        let categories = db.get_menu_categories().unwrap();
+        let category_id = categories.first().map(|category| category.id);
+
+        let item_a_id = db.create_menu_item("批量調價 A", category_id, None, 50.0).unwrap();
+        let item_b_id = db.create_menu_item("批量調價 B", category_id, None, 80.0).unwrap();
+
+        let updated = db.batch_update_menu_item_prices(&[item_a_id, item_b_id], "percent", 10.0).unwrap();
+        assert_eq!(updated, 2);
+
+        let items = db.get_menu_items(None).unwrap();
+        let item_a = items.iter().find(|item| item.id == item_a_id).unwrap();
+        let item_b = items.iter().find(|item| item.id == item_b_id).unwrap();
+        assert_eq!(item_a.sales_price, 55.0);
+        assert_eq!(item_b.sales_price, 88.0);
+    }
+
+    #[test]
     fn test_esc_pos_builder() {
         use crate::printer::EscPosBuilder;
         let mut builder = EscPosBuilder::new();
@@ -5888,7 +5944,7 @@ mod tests {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let report = db.get_sales_report(&today, &today).unwrap();
         assert!(!report.is_empty());
-        let (_date, total, count) = &report[0];
+        let (_date, total, count, _collected) = &report[0];
         assert_eq!(*count, 1);
         assert!(*total >= 100.0);
     }
@@ -5973,6 +6029,23 @@ mod tests {
         db.delete_recipe(recipe_id).unwrap();
         let recipes_after = db.get_recipes(None).unwrap();
         assert!(recipes_after.iter().all(|r| r.id != recipe_id));
+    }
+
+    #[test]
+    fn test_get_recipe_dependents() {
+        let (db, _dir) = test_db();
+        seed_minimal(&db);
+
+        let units = db.get_units().unwrap();
+        let unit_id = units.first().map(|unit| unit.id).unwrap_or(1);
+        let recipe_id = db.create_recipe("DEP001", "依賴測試食譜", "半成品", 1.0, None, None, Some(unit_id)).unwrap();
+        let categories = db.get_menu_categories().unwrap();
+        let category_id = categories.first().map(|category| category.id);
+        let menu_item_id = db.create_menu_item("依賴測試菜品", category_id, Some(recipe_id), 42.0).unwrap();
+
+        let (menu_items, parent_recipes) = db.get_recipe_dependents(recipe_id).unwrap();
+        assert!(menu_items.iter().any(|(id, name)| *id == menu_item_id && name == "依賴測試菜品"));
+        assert!(parent_recipes.is_empty());
     }
 
     #[test]

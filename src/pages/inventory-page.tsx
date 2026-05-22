@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Plus, Package, ArrowUpDown, Trash2, ArrowRightLeft, Settings } from "lucide-react";
+import { AlertTriangle, Plus, Package, ArrowUpDown, Trash2, ArrowRightLeft, Settings, Download } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
@@ -85,6 +85,18 @@ export function InventoryPage({
   materials, recipes, suppliers, onCreateBatch, onAdjustInventory, onRecordWastage,
   onUpdateMaterial, searchQuery,
 }: InventoryPageProps) {
+  function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+    const escape = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [headers.map(escape), ...rows.map((r) => r.map(escape))].map((r) => r.join(",")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const location = useLocation();
   const navigate = useNavigate();
   const filteredSummary = inventorySummary.filter((s) => {
@@ -246,6 +258,47 @@ export function InventoryPage({
     setBatchDialogOpen(false);
   }
 
+  const exportInventoryCSV = () => {
+    downloadCSV(
+      "库存汇总.csv",
+      ["材料", "总库存", "预扣", "可用"],
+      filteredSummary.map((item) => [
+        item.material_name,
+        item.total_qty.toFixed(4),
+        item.reserved_qty.toFixed(4),
+        item.available_qty.toFixed(4),
+      ]),
+    );
+
+    downloadCSV(
+      "库存批次.csv",
+      ["批次号", "材料", "数量", "单成本", "到期日", "供应商"],
+      filteredBatches.map((batch) => [
+        batch.lot_no,
+        batch.material_name || "",
+        batch.quantity.toFixed(4),
+        batch.cost_per_unit.toFixed(2),
+        batch.expiry_date || "",
+        suppliers.find((supplier) => supplier.id === batch.supplier_id)?.name || "",
+      ]),
+    );
+
+    downloadCSV(
+      "库存流水.csv",
+      ["流水号", "类型", "材料", "批次 ID", "数量变化", "关联类型", "关联 ID", "创建时间"],
+      filteredTxns.map((txn) => [
+        txn.txn_no,
+        txn.txn_type,
+        getMaterialName(txn.material_id),
+        txn.lot_id || "",
+        txn.qty_delta.toFixed(4),
+        txn.ref_type || "",
+        txn.ref_id || "",
+        txn.created_at,
+      ]),
+    );
+  };
+
 function handleAdjust() {
     if (!adjustForm.lot_id || !adjustForm.qty_delta || !adjustForm.reason) {
       toast.error("请填写所有字段");
@@ -286,6 +339,9 @@ function handleAdjust() {
           <p className="text-sm text-muted-foreground">入库、调整、损耗与库存追踪</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={exportInventoryCSV} disabled={filteredSummary.length === 0 && filteredBatches.length === 0 && filteredTxns.length === 0}>
+            <Download className="mr-2 h-4 w-4" />导出 CSV
+          </Button>
           <Button onClick={openBatchDialog}>
             <Plus className="mr-2 h-4 w-4" />进货入库
           </Button>

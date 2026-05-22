@@ -8,7 +8,20 @@ import type {
 import { toast } from "sonner";
 
 export interface UseAppActionsParams {
-  loadData: () => Promise<void>;
+  loadMaterials: () => Promise<void>;
+  loadRecipes: () => Promise<void>;
+  loadMenu: () => Promise<void>;
+  loadOrders: (limit?: number, offset?: number) => Promise<void>;
+  loadKDS: () => Promise<void>;
+  loadInventory: () => Promise<void>;
+  loadPurchaseOrders: () => Promise<void>;
+  loadProductionOrders: () => Promise<void>;
+  loadStocktakes: () => Promise<void>;
+  loadSuppliers: () => Promise<void>;
+  loadMaterialStates: () => Promise<void>;
+  loadExpenses: () => Promise<void>;
+  loadSupplierProducts: () => Promise<void>;
+  loadCustomers: () => Promise<void>;
   categories: MaterialCategory[];
   menuCategories: MenuCategory[];
   orders: Order[];
@@ -32,7 +45,20 @@ export interface UseAppActionsParams {
 }
 
 export function useAppActions({
-  loadData,
+  loadMaterials,
+  loadRecipes,
+  loadMenu,
+  loadOrders,
+  loadKDS,
+  loadInventory,
+  loadPurchaseOrders,
+  loadProductionOrders,
+  loadStocktakes,
+  loadSuppliers,
+  loadMaterialStates,
+  loadExpenses,
+  loadSupplierProducts,
+  loadCustomers,
   categories,
   menuCategories,
   orders,
@@ -90,43 +116,43 @@ export function useAppActions({
 
   // 材料相關
   const handleCreateMaterial = async (data: { code: string; name: string; base_unit_id: number; category_id: number | null; tag_ids: number[] }) => {
-    try { await invoke("create_material", { req: { code: data.code, name: data.name, base_unit_id: data.base_unit_id, category_id: data.category_id, shelf_life_days: null, tag_ids: data.tag_ids } }); toast.success("材料已创建", { description: data.name }); loadData(); }
+    try { await invoke("create_material", { req: { code: data.code, name: data.name, base_unit_id: data.base_unit_id, category_id: data.category_id, shelf_life_days: null, tag_ids: data.tag_ids } }); toast.success("材料已创建", { description: data.name }); loadMaterials(); }
     catch (e) { logError("create_material", e, "创建材料失败", { name: data.name }); }
   };
 
   const handleUpdateMaterial = async (id: number, data: { name?: string; category_id?: number | null; min_qty?: number }) => {
-    try { await invoke("update_material", { id, name: data.name || null, categoryId: data.category_id, shelfLifeDays: null, minQty: data.min_qty ?? null }); toast.success("材料已更新"); loadData(); }
+    try { await invoke("update_material", { id, name: data.name || null, categoryId: data.category_id, shelfLifeDays: null, minQty: data.min_qty ?? null }); toast.success("材料已更新"); loadMaterials(); }
     catch (e) { logError("update_material", e, "更新材料失败", { id }); }
   };
 
   const handleDeleteMaterial = async (id: number) => {
-    try { await invoke("delete_material", { id }); toast.success("材料已删除"); loadData(); }
+    try { await invoke("delete_material", { id }); toast.success("材料已删除"); loadMaterials(); }
     catch (e) { logError("delete_material", e, "删除材料失败", { id }); }
   };
 
   const handleRemoveMaterialTag = async (material_id: number, tag_id: number) => {
-    try { await invoke("remove_material_tag", { materialId: material_id, tagId: tag_id }); loadData(); }
+    try { await invoke("remove_material_tag", { materialId: material_id, tagId: tag_id }); loadMaterials(); }
     catch (e) { logError("remove_material_tag", e, "移除标签失败", { material_id, tag_id }); }
   };
 
   // 分類與標籤
   const handleCreateCategory = async (data: { code: string; name: string }) => {
-    try { await invoke("create_material_category", { req: { ...data, sort_no: categories.length + 1 } }); toast.success("分类已创建", { description: data.name }); loadData(); }
+    try { await invoke("create_material_category", { req: { ...data, sort_no: categories.length + 1 } }); toast.success("分类已创建", { description: data.name }); loadMaterials(); }
     catch (e) { logError("create_material_category", e, "创建分类失败", { name: data.name }); }
   };
 
   const handleDeleteCategory = async (id: number) => {
-    try { await invoke("delete_material_category", { id }); toast.success("分类已删除"); loadData(); }
+    try { await invoke("delete_material_category", { id }); toast.success("分类已删除"); loadMaterials(); }
     catch (e) { logError("delete_material_category", e, "删除分类失败", { id }); }
   };
 
   const handleCreateTag = async (data: { code: string; name: string; color?: string }) => {
-    try { await invoke("create_tag", { req: { ...data, color: data.color || null } }); toast.success("标签已创建", { description: data.name }); loadData(); }
+    try { await invoke("create_tag", { req: { ...data, color: data.color || null } }); toast.success("标签已创建", { description: data.name }); loadMaterials(); }
     catch (e) { logError("create_tag", e, "创建标签失败", { name: data.name }); }
   };
 
   const handleDeleteTag = async (id: number) => {
-    try { await invoke("delete_tag", { id }); toast.success("标签已删除"); loadData(); }
+    try { await invoke("delete_tag", { id }); toast.success("标签已删除"); loadMaterials(); }
     catch (e) { logError("delete_tag", e, "删除标签失败", { id }); }
   };
 
@@ -135,7 +161,7 @@ export function useAppActions({
     try {
       const newId = await invoke<number>("create_recipe", { req: { ...data, output_qty: 1.0, output_material_id: data.output_material_id ?? null, output_state_id: null, output_unit_id: data.output_unit_id ?? null, items: null } });
       toast.success("配方已创建", { description: data.name });
-      await loadData();
+      await loadRecipes();
       return newId;
     }
     catch (e) { logError("create_recipe", e, "创建配方失败", { name: data.name }); return null; }
@@ -148,14 +174,14 @@ export function useAppActions({
   };
 
   const handleDeleteRecipe = async (id: number) => {
-    try { await invoke("delete_recipe", { id }); toast.success("配方已删除"); setSelectedRecipe(null); setRecipeCost(null); loadData(); }
+    try { await invoke("delete_recipe", { id }); toast.success("配方已删除"); setSelectedRecipe(null); setRecipeCost(null); loadRecipes(); }
     catch (e) { logError("delete_recipe", e, "删除配方失败", { id }); }
   };
 
   const handleUpdateRecipe = async (id: number, data: { name: string; recipe_type: string; output_qty: number }) => {
     try {
       await invoke("update_recipe", { id, name: data.name, recipeType: data.recipe_type, outputQty: data.output_qty });
-      await Promise.all([loadData(), refreshRecipeSelection(id)]);
+      await Promise.all([loadRecipes(), refreshRecipeSelection(id)]);
       toast.success("配方已更新");
     }
     catch (e) { logError("update_recipe", e, "更新配方失败", { id }); }
@@ -165,7 +191,7 @@ export function useAppActions({
     try {
       await invoke("create_recipe_type", { req: data });
       toast.success("配方类型已创建", { description: data.name });
-      await loadData();
+      await loadRecipes();
     } catch (e) { logError("create_recipe_type", e, "创建配方类型失败", { code: data.code }); }
   };
 
@@ -173,7 +199,7 @@ export function useAppActions({
     try {
       await invoke("update_recipe_type", { id, code: data.code, name: data.name, description: data.description ?? null, sortNo: data.sort_no });
       toast.success("配方类型已更新");
-      await loadData();
+      await loadRecipes();
     } catch (e) { logError("update_recipe_type", e, "更新配方类型失败", { id }); }
   };
 
@@ -181,7 +207,7 @@ export function useAppActions({
     try {
       await invoke("delete_recipe_type", { id });
       toast.success("配方类型已删除");
-      await loadData();
+      await loadRecipes();
     } catch (e) { logError("delete_recipe_type", e, "删除配方类型失败", { id }); }
   };
 
@@ -190,7 +216,7 @@ export function useAppActions({
       await invoke("seed_sample_recipes");
       setSelectedRecipe(null);
       setRecipeCost(null);
-      await loadData();
+      await loadRecipes();
       toast.success("示例配方已创建");
     } catch (e) { logError("seed_sample_recipes", e, "创建示例配方失败"); }
   };
@@ -217,7 +243,7 @@ export function useAppActions({
         recipeId,
         salesPrice: null,
       });
-      await loadData();
+      await loadMenu();
       toast.success("已加入配方清单", { description: `${menuItemName} 已标记为待完善` });
       return recipeId;
     } catch (e) { logError("create_pending_recipe_for_menu", e, "加入配方清单失败", { menu_item_id: menuItemId }); return null; }
@@ -232,7 +258,7 @@ export function useAppActions({
         recipeId,
         salesPrice: null,
       });
-      await loadData();
+      await loadMenu();
       toast.success("菜单已绑定配方");
     } catch (e) { logError("bind_menu_item_to_recipe", e, "绑定菜单失败", { menu_item_id: menuItemId, recipe_id: recipeId }); }
   };
@@ -271,47 +297,56 @@ export function useAppActions({
 
   // 菜單
   const handleCreateMenuCategory = async (name: string) => {
-    try { await invoke("create_menu_category", { name, sortNo: menuCategories.length + 1 }); toast.success("菜单分类已创建", { description: name }); loadData(); }
+    try { await invoke("create_menu_category", { name, sortNo: menuCategories.length + 1 }); toast.success("菜单分类已创建", { description: name }); loadMenu(); }
     catch (e) { logError("create_menu_category", e, "创建菜单分类失败", { name }); }
   };
 
   const handleCreateMenuItem = async (data: { name: string; price: number; category_id: number | null; recipe_id: number | null }) => {
-    try { await invoke("create_menu_item", { req: { name: data.name, category_id: data.category_id, recipe_id: data.recipe_id, sales_price: data.price } }); toast.success("菜品已添加", { description: data.name }); loadData(); }
+    try { await invoke("create_menu_item", { req: { name: data.name, category_id: data.category_id, recipe_id: data.recipe_id, sales_price: data.price } }); toast.success("菜品已添加", { description: data.name }); loadMenu(); }
     catch (e) { logError("create_menu_item", e, "添加菜品失败", { name: data.name }); }
   };
 
   const handleToggleMenuItem = async (id: number, is_available: boolean) => {
-    try { await invoke("toggle_menu_item_availability", { id, isAvailable: is_available }); loadData(); }
+    try { await invoke("toggle_menu_item_availability", { id, isAvailable: is_available }); loadMenu(); }
     catch (e) { logError("toggle_menu_item_availability", e, "切换菜品状态失败", { id, is_available }); }
   };
 
   const handleBatchToggleMenuItem = async (ids: number[], is_available: boolean) => {
-    try { const count = await invoke<number>("batch_toggle_menu_item_availability", { ids, isAvailable: is_available }); toast.success(`已批量切换 ${count} 个菜品`); loadData(); }
+    try { const count = await invoke<number>("batch_toggle_menu_item_availability", { ids, isAvailable: is_available }); toast.success(`已批量切换 ${count} 个菜品`); loadMenu(); }
     catch (e) { logError("batch_toggle_menu_item_availability", e, "批量切换失败", { count: ids.length }); }
   };
 
+  const handleBatchUpdateMenuItemPrices = async (ids: number[], mode: "set" | "delta" | "percent", value: number) => {
+    try {
+      const count = await invoke<number>("batch_update_menu_item_prices", { ids, mode, value });
+      toast.success(`已批量更新 ${count} 个菜品价格`);
+      loadMenu();
+    }
+    catch (e) { logError("batch_update_menu_item_prices", e, "批量调价失败", { count: ids.length, mode, value }); }
+  };
+
   const handleToggleFavorite = async (id: number) => {
-    try { const now = await invoke<boolean>("toggle_menu_item_favorite", { id }); toast.success(now ? "已加入常用" : "已移出常用"); loadData(); }
+    try { const now = await invoke<boolean>("toggle_menu_item_favorite", { id }); toast.success(now ? "已加入常用" : "已移出常用"); loadMenu(); }
     catch (e) { logError("toggle_menu_item_favorite", e, "切换常用失败", { id }); }
   };
 
   const handleUpdateMenuItem = async (id: number, data: { name?: string; category_id?: number | null; recipe_id?: number | null; sales_price?: number }) => {
-    try { await invoke("update_menu_item", { id, name: data.name || null, categoryId: data.category_id, recipeId: data.recipe_id, salesPrice: data.sales_price }); toast.success("菜品已更新"); loadData(); }
+    try { await invoke("update_menu_item", { id, name: data.name || null, categoryId: data.category_id, recipeId: data.recipe_id, salesPrice: data.sales_price }); toast.success("菜品已更新"); loadMenu(); }
     catch (e) { logError("update_menu_item", e, "更新菜品失败", { id }); }
   };
 
   const handleDeleteMenuItem = async (id: number) => {
-    try { await invoke("delete_menu_item", { id }); toast.success("菜品已删除"); loadData(); }
+    try { await invoke("delete_menu_item", { id }); toast.success("菜品已删除"); loadMenu(); }
     catch (e) { logError("delete_menu_item", e, "删除菜品失败", { id }); }
   };
 
   const handleUpdateMenuCategory = async (id: number, name: string) => {
-    try { await invoke("update_menu_category", { id, name, sortNo: null }); toast.success("分类已更新"); loadData(); }
+    try { await invoke("update_menu_category", { id, name, sortNo: null }); toast.success("分类已更新"); loadMenu(); }
     catch (e) { logError("update_menu_category", e, "更新分类失败", { id }); }
   };
 
   const handleDeleteMenuCategory = async (id: number) => {
-    try { await invoke("delete_menu_category", { id }); toast.success("分类已删除"); loadData(); }
+    try { await invoke("delete_menu_category", { id }); toast.success("分类已删除"); loadMenu(); }
     catch (e) { logError("delete_menu_category", e, "删除分类失败", { id }); }
   };
 
@@ -320,7 +355,7 @@ export function useAppActions({
     try {
       const { order_no } = await invoke<{ id: number; order_no: string }>("create_order", { req: { source: "pos", dine_type: dineType, table_no: tableNo } });
       toast.success(`订单 ${order_no} 已创建`);
-      loadData();
+      loadOrders();
     }
     catch (e) { logError("create_order", e, "创建订单失败", { dineType, tableNo }); }
   };
@@ -366,7 +401,7 @@ export function useAppActions({
           appLogger.logInvokeError("auto_print_kitchen_ticket", pe, { orderId });
         }
       }
-      await loadData();
+      await Promise.all([loadOrders(), loadKDS()]);
       return true;
     } catch (e) { logError("pos_create_and_submit", e, "提交订单失败", { cart_size: cart.length, dineType }); return false; }
   };
@@ -387,13 +422,13 @@ export function useAppActions({
         });
       }
       toast.success("订单已创建");
-      loadData();
+      loadOrders();
       return true;
     } catch (e) { logError("pos_create_order", e, "创建订单失败", { cart_size: cart.length, dineType }); return false; }
   };
 
   const handleSubmitOrder = async (orderId: number) => {
-    try { await invoke("submit_order", { orderId }); toast.success("订单已提交"); loadData(); }
+    try { await invoke("submit_order", { orderId }); toast.success("订单已提交"); await Promise.all([loadOrders(), loadKDS()]); }
     catch (e) { logError("submit_order", e, "提交订单失败", { orderId }); }
   };
 
@@ -401,12 +436,12 @@ export function useAppActions({
     try {
       await invoke("cancel_order", { orderId, isServed: is_served, reason: reason || null });
       toast.success("订单已取消");
-      loadData();
+      loadOrders();
     } catch (e) { logError("cancel_order", e, "取消订单失败", { orderId, is_served }); }
   };
 
   const handleMarkOrderReady = async (orderId: number) => {
-    try { await invoke("mark_order_ready", { orderId }); toast.success("订单已标记出餐"); loadData(); }
+    try { await invoke("mark_order_ready", { orderId }); toast.success("订单已标记出餐"); await Promise.all([loadOrders(), loadKDS(), loadInventory()]); }
     catch (e) { logError("mark_order_ready", e, "标记出餐失败", { orderId }); }
   };
 
@@ -424,7 +459,7 @@ export function useAppActions({
   };
 
   const handleBatchCancelOrder = async (ids: number[]) => {
-    try { const count = await invoke<number>("batch_cancel_orders", { ids }); toast.success(`已取消 ${count} 个订单`); loadData(); }
+    try { const count = await invoke<number>("batch_cancel_orders", { ids }); toast.success(`已取消 ${count} 个订单`); await Promise.all([loadOrders(), loadInventory()]); }
     catch (e) { logError("batch_cancel_orders", e, "批量取消失败", { count: ids.length }); }
   };
 
@@ -434,60 +469,60 @@ export function useAppActions({
   };
 
   const handleCreateSpec = async (data: { menu_item_id: number; spec_code: string; spec_name: string; price_delta: number; qty_multiplier: number }) => {
-    try { await invoke("create_menu_item_spec", { req: data }); toast.success("规格已创建"); await loadData(); }
+    try { await invoke("create_menu_item_spec", { req: data }); toast.success("规格已创建"); await loadMenu(); }
     catch (e) { logError("create_menu_item_spec", e, "创建规格失败", { menu_item_id: data.menu_item_id }); }
   };
 
   const handleUpdateSpec = async (id: number, data: { spec_code?: string; spec_name?: string; price_delta?: number; qty_multiplier?: number }) => {
-    try { await invoke("update_menu_item_spec", { id, specCode: data.spec_code || null, specName: data.spec_name || null, priceDelta: data.price_delta, qtyMultiplier: data.qty_multiplier }); toast.success("规格已更新"); await loadData(); }
+    try { await invoke("update_menu_item_spec", { id, specCode: data.spec_code || null, specName: data.spec_name || null, priceDelta: data.price_delta, qtyMultiplier: data.qty_multiplier }); toast.success("规格已更新"); await loadMenu(); }
     catch (e) { logError("update_menu_item_spec", e, "更新规格失败", { id }); }
   };
 
   const handleDeleteSpec = async (id: number) => {
-    try { await invoke("delete_menu_item_spec", { id }); toast.success("规格已删除"); await loadData(); }
+    try { await invoke("delete_menu_item_spec", { id }); toast.success("规格已删除"); await loadMenu(); }
     catch (e) { logError("delete_menu_item_spec", e, "删除规格失败", { id }); }
   };
 
   // 供應商
   const handleCreateSupplier = async (data: { name: string; phone?: string; contact_person?: string }) => {
-    try { await invoke("create_supplier", { req: { name: data.name, phone: data.phone || null, contact_person: data.contact_person || null } }); toast.success("供应商已创建", { description: data.name }); loadData(); }
+    try { await invoke("create_supplier", { req: { name: data.name, phone: data.phone || null, contact_person: data.contact_person || null } }); toast.success("供应商已创建", { description: data.name }); loadSuppliers(); }
     catch (e) { logError("create_supplier", e, "创建供应商失败", { name: data.name }); }
   };
 
   const handleUpdateSupplier = async (id: number, data: { name?: string; phone?: string | null; contact_person?: string | null; address?: string | null; note?: string | null }) => {
-    try { await invoke("update_supplier", { id, name: data.name || null, phone: data.phone, contactPerson: data.contact_person, address: data.address, note: data.note }); toast.success("供应商已更新"); loadData(); }
+    try { await invoke("update_supplier", { id, name: data.name || null, phone: data.phone, contactPerson: data.contact_person, address: data.address, note: data.note }); toast.success("供应商已更新"); loadSuppliers(); }
     catch (e) { logError("update_supplier", e, "更新供应商失败", { id }); }
   };
 
   const handleDeleteSupplier = async (id: number) => {
-    try { await invoke("delete_supplier", { id }); toast.success("供应商已删除"); loadData(); }
+    try { await invoke("delete_supplier", { id }); toast.success("供应商已删除"); loadSuppliers(); }
     catch (e) { logError("delete_supplier", e, "删除供应商失败", { id }); }
   };
 
   // 材料狀態
   const handleCreateMaterialState = async (data: { material_id: number; state_code: string; state_name: string; unit_id: number | null; yield_rate: number; cost_multiplier: number }) => {
-    try { await invoke("create_material_state", { req: data }); toast.success("材料状态已创建"); loadData(); }
+    try { await invoke("create_material_state", { req: data }); toast.success("材料状态已创建"); await Promise.all([loadMaterials(), loadMaterialStates()]); }
     catch (e) { logError("create_material_state", e, "创建材料状态失败", { material_id: data.material_id }); }
   };
 
   const handleUpdateMaterialState = async (id: number, data: { state_code?: string; state_name?: string; unit_id?: number | null; yield_rate?: number; cost_multiplier?: number }) => {
-    try { await invoke("update_material_state", { id, stateCode: data.state_code || null, stateName: data.state_name || null, unitId: data.unit_id, yieldRate: data.yield_rate, costMultiplier: data.cost_multiplier }); toast.success("材料状态已更新"); loadData(); }
+    try { await invoke("update_material_state", { id, stateCode: data.state_code || null, stateName: data.state_name || null, unitId: data.unit_id, yieldRate: data.yield_rate, costMultiplier: data.cost_multiplier }); toast.success("材料状态已更新"); await Promise.all([loadMaterials(), loadMaterialStates()]); }
     catch (e) { logError("update_material_state", e, "更新材料状态失败", { id }); }
   };
 
   const handleDeleteMaterialState = async (id: number) => {
-    try { await invoke("delete_material_state", { id }); toast.success("材料状态已删除"); loadData(); }
+    try { await invoke("delete_material_state", { id }); toast.success("材料状态已删除"); await Promise.all([loadMaterials(), loadMaterialStates()]); }
     catch (e) { logError("delete_material_state", e, "删除材料状态失败", { id }); }
   };
 
   // 採購單
   const handleCreatePurchaseOrder = async (data: { supplier_id: number | null; expected_date: string | null }) => {
-    try { await invoke("create_purchase_order", { supplierId: data.supplier_id, expectedDate: data.expected_date }); toast.success("采购单已创建"); loadData(); }
+    try { await invoke("create_purchase_order", { supplierId: data.supplier_id, expectedDate: data.expected_date }); toast.success("采购单已创建"); loadPurchaseOrders(); }
     catch (e) { logError("create_purchase_order", e, "创建采购单失败", { supplier_id: data.supplier_id }); }
   };
 
   const handleAddPurchaseOrderItem = async (data: { po_id: number; material_id: number; qty: number; unit_id: number | null; cost_per_unit: number }) => {
-    try { await invoke("add_purchase_order_item", { req: data }); toast.success("采购项已添加"); loadData(); }
+    try { await invoke("add_purchase_order_item", { req: data }); toast.success("采购项已添加"); loadPurchaseOrders(); }
     catch (e) { logError("add_purchase_order_item", e, "添加采购项失败", { po_id: data.po_id, material_id: data.material_id }); }
   };
 
@@ -497,13 +532,13 @@ export function useAppActions({
   };
 
   const handleDeletePurchaseOrder = async (po_id: number) => {
-    try { await invoke("delete_purchase_order", { poId: po_id }); toast.success("采购单已删除"); loadData(); setSelectedPurchaseOrder(null); }
+    try { await invoke("delete_purchase_order", { poId: po_id }); toast.success("采购单已删除"); loadPurchaseOrders(); setSelectedPurchaseOrder(null); }
     catch (e) { logError("delete_purchase_order", e, "删除采购单失败", { po_id }); }
   };
 
   const handleReceivePurchaseOrder = async (po_id: number) => {
     const autoPrint = localStorage.getItem("auto_print_po") === "true";
-    try { await invoke("receive_purchase_order", { poId: po_id, operator: null, autoPrint }); toast.success("采购单已入库"); loadData(); }
+    try { await invoke("receive_purchase_order", { poId: po_id, operator: null, autoPrint }); toast.success("采购单已入库"); await Promise.all([loadPurchaseOrders(), loadInventory()]); }
     catch (e) { logError("receive_purchase_order", e, "入库失败", { po_id }); }
   };
 
@@ -511,7 +546,7 @@ export function useAppActions({
     try {
       const result = await invoke<string[]>("receive_purchase_order_items", { poId: po_id, items, operator: null });
       toast.success(`已入库 ${result.length} 项`, { description: result.join("，") || undefined });
-      loadData();
+      loadOrders();
     } catch (e) { logError("receive_purchase_order_items", e, "部分收货失败", { po_id }); }
   };
 
@@ -523,23 +558,23 @@ export function useAppActions({
         try { await invoke("print_order_receipt", { orderId: id, printerId: null }); }
         catch (pe) { appLogger.logInvokeError("auto_print_receipt", pe, { orderId: id }); }
       }
-      loadData();
+      loadOrders();
     } catch (e) { logError("update_order_payment", e, "收款登记失败", { id }); }
   };
 
   // 生產單
   const handleCreateProductionOrder = async (data: { recipe_id: number; planned_qty: number; operator: string | null }) => {
-    try { await invoke("create_production_order", { recipeId: data.recipe_id, plannedQty: data.planned_qty, operator: data.operator }); toast.success("生产单已创建"); loadData(); }
+    try { await invoke("create_production_order", { recipeId: data.recipe_id, plannedQty: data.planned_qty, operator: data.operator }); toast.success("生产单已创建"); loadProductionOrders(); }
     catch (e) { logError("create_production_order", e, "创建生产单失败", { recipe_id: data.recipe_id }); }
   };
 
   const handleStartProductionOrder = async (production_id: number) => {
-    try { await invoke("start_production_order", { productionId: production_id, operator: null }); toast.success("生产已开始"); loadData(); }
+    try { await invoke("start_production_order", { productionId: production_id, operator: null }); toast.success("生产已开始"); loadProductionOrders(); }
     catch (e) { logError("start_production_order", e, "开始生产失败", { production_id }); }
   };
 
   const handleCompleteProductionOrder = async (production_id: number, actual_qty: number) => {
-    try { await invoke("complete_production_order", { productionId: production_id, actualQty: actual_qty, operator: null }); toast.success("生产已完成"); loadData(); }
+    try { await invoke("complete_production_order", { productionId: production_id, actualQty: actual_qty, operator: null }); toast.success("生产已完成"); await Promise.all([loadProductionOrders(), loadInventory()]); }
     catch (e) { logError("complete_production_order", e, "完成生产失败", { production_id, actual_qty }); }
   };
 
@@ -549,23 +584,23 @@ export function useAppActions({
   };
 
   const handleDeleteProductionOrder = async (production_id: number) => {
-    try { await invoke("delete_production_order", { productionId: production_id }); toast.success("生产单已删除"); loadData(); setSelectedProductionOrder(null); }
+    try { await invoke("delete_production_order", { productionId: production_id }); toast.success("生产单已删除"); loadProductionOrders(); setSelectedProductionOrder(null); }
     catch (e) { logError("delete_production_order", e, "删除生产单失败", { production_id }); }
   };
 
   // 盤點
   const handleCreateStocktake = async (data: { operator: string | null; note: string | null }) => {
-    try { await invoke("create_stocktake", { operator: data.operator, note: data.note }); toast.success("盘点已创建"); loadData(); }
+    try { await invoke("create_stocktake", { operator: data.operator, note: data.note }); toast.success("盘点已创建"); loadStocktakes(); }
     catch (e) { logError("create_stocktake", e, "创建盘点失败"); }
   };
 
   const handleUpdateStocktakeItem = async (item_id: number, actual_qty: number) => {
-    try { await invoke("update_stocktake_item", { itemId: item_id, actualQty: actual_qty }); loadData(); }
+    try { await invoke("update_stocktake_item", { itemId: item_id, actualQty: actual_qty }); loadStocktakes(); }
     catch (e) { logError("update_stocktake_item", e, "更新盘点项失败", { item_id, actual_qty }); }
   };
 
   const handleCompleteStocktake = async (stocktake_id: number) => {
-    try { await invoke("complete_stocktake", { stocktakeId: stocktake_id, operator: null }); toast.success("盘点已完成"); loadData(); }
+    try { await invoke("complete_stocktake", { stocktakeId: stocktake_id, operator: null }); toast.success("盘点已完成"); await Promise.all([loadStocktakes(), loadInventory()]); }
     catch (e) { logError("complete_stocktake", e, "完成盘点失败", { stocktake_id }); }
   };
 
@@ -575,7 +610,7 @@ export function useAppActions({
   };
 
   const handleDeleteStocktake = async (stocktake_id: number) => {
-    try { await invoke("delete_stocktake", { stocktakeId: stocktake_id }); toast.success("盘点已删除"); loadData(); setSelectedStocktake(null); }
+    try { await invoke("delete_stocktake", { stocktakeId: stocktake_id }); toast.success("盘点已删除"); loadStocktakes(); setSelectedStocktake(null); }
     catch (e) { logError("delete_stocktake", e, "删除盘点失败", { stocktake_id }); }
   };
 
@@ -584,17 +619,17 @@ export function useAppActions({
     try {
       await invoke("create_expense", { req: { expense_type: data.expense_type, amount: data.amount, expense_date: data.expense_date, note: data.note || null, operator: null } });
       toast.success("支出已记录", { description: `¥${data.amount}` });
-      loadData();
+      loadExpenses();
     } catch (e) { logError("create_expense", e, "记录支出失败", { expense_type: data.expense_type }); }
   };
 
   const handleUpdateExpense = async (id: number, data: { expense_type?: string; amount?: number; expense_date?: string; note?: string }) => {
-    try { await invoke("update_expense", { id, expenseType: data.expense_type || null, amount: data.amount ?? null, expenseDate: data.expense_date || null, note: data.note || null }); toast.success("支出已更新"); loadData(); }
+    try { await invoke("update_expense", { id, expenseType: data.expense_type || null, amount: data.amount ?? null, expenseDate: data.expense_date || null, note: data.note || null }); toast.success("支出已更新"); loadExpenses(); }
     catch (e) { logError("update_expense", e, "更新支出失败", { id }); }
   };
 
   const handleDeleteExpense = async (id: number) => {
-    try { await invoke("delete_expense", { id }); toast.success("支出已删除"); loadData(); }
+    try { await invoke("delete_expense", { id }); toast.success("支出已删除"); loadExpenses(); }
     catch (e) { logError("delete_expense", e, "删除支出失败", { id }); }
   };
 
@@ -602,7 +637,7 @@ export function useAppActions({
     try {
       await invoke("create_supplier_product", { req: data });
       toast.success("商品已添加");
-      loadData();
+      loadSupplierProducts();
     } catch (e) { logError("create_supplier_product", e, "添加商品失败", { product_name: data.product_name }); }
   };
 
@@ -610,12 +645,12 @@ export function useAppActions({
     try {
       await invoke("update_supplier_product", { req: { id, ...data } });
       toast.success("商品已更新");
-      loadData();
+      loadSupplierProducts();
     } catch (e) { logError("update_supplier_product", e, "更新商品失败", { id }); }
   };
 
   const handleDeleteSupplierProduct = async (id: number) => {
-    try { await invoke("delete_supplier_product", { id }); toast.success("商品已删除"); loadData(); }
+    try { await invoke("delete_supplier_product", { id }); toast.success("商品已删除"); loadSupplierProducts(); }
     catch (e) { logError("delete_supplier_product", e, "删除商品失败", { id }); }
   };
 
@@ -640,7 +675,7 @@ export function useAppActions({
       } catch (pe) {
         appLogger.logInvokeError("print_batch_label", pe, { lot_no: data.lot_no });
       }
-      loadData();
+      loadInventory();
     } catch (e) { logError("create_inventory_batch", e, "创建批次失败", { lot_no: data.lot_no, material_id: data.material_id }); }
   };
 
@@ -650,7 +685,7 @@ export function useAppActions({
       if (!batch) return;
       await invoke("adjust_inventory", { req: { material_id: batch.material_id, lot_id, qty_delta, reason, operator: null, note: null } });
       toast.success("库存已调整");
-      loadData();
+      loadInventory();
     } catch (e) { logError("adjust_inventory", e, "调整库存失败", { lot_id, qty_delta, reason }); }
   };
 
@@ -660,12 +695,12 @@ export function useAppActions({
       if (!batch) return;
       await invoke("record_wastage", { req: { material_id: batch.material_id, lot_id, qty, wastage_type, operator: null, note: null } });
       toast.success("废弃已记录");
-      loadData();
+      loadInventory();
     } catch (e) { logError("record_wastage", e, "记录废弃失败", { lot_id, qty, wastage_type }); }
   };
 
   const handleDeleteBatch = async (batch_id: number) => {
-    try { await invoke("delete_inventory_batch", { batchId: batch_id }); toast.success("批次已删除"); loadData(); }
+    try { await invoke("delete_inventory_batch", { batchId: batch_id }); toast.success("批次已删除"); loadInventory(); }
     catch (e) { logError("delete_inventory_batch", e, "删除批次失败", { batch_id }); }
   };
 
@@ -698,18 +733,18 @@ export function useAppActions({
       } catch (pe) {
         appLogger.logInvokeError("print_kitchen_ticket", pe, { ticket_id: ticket.id, order_no: ticket.order_no });
       }
-      loadData();
+      loadKDS();
     } catch (e) { logError("finish_ticket", e, "完成工单失败", { ticket_id: ticket.id }); }
   };
 
   // 訂單修改器
   const handleAddModifier = async (data: { order_item_id: number; modifier_type: string; material_id: number | null; qty: number; price_delta: number }) => {
-    try { await invoke("add_order_item_modifier", { req: data }); toast.success("加料已添加"); loadData(); }
+    try { await invoke("add_order_item_modifier", { req: data }); toast.success("加料已添加"); loadOrders(); }
     catch (e) { logError("add_order_item_modifier", e, "添加加料失败", { order_item_id: data.order_item_id }); }
   };
 
   const handleDeleteModifier = async (modifier_id: number) => {
-    try { await invoke("delete_order_item_modifier", { modifierId: modifier_id }); toast.success("加料已删除"); loadData(); }
+    try { await invoke("delete_order_item_modifier", { modifierId: modifier_id }); toast.success("加料已删除"); loadOrders(); }
     catch (e) { logError("delete_order_item_modifier", e, "删除加料失败", { modifier_id }); }
   };
 
@@ -724,7 +759,7 @@ export function useAppActions({
 
   const handleRefundOrderItem = async (orderId: number, itemId: number): Promise<number> => {
     const refundedAmount = await invoke<number>("refund_order_item", { orderId, itemId });
-    await loadData();
+    await loadCustomers();
     return refundedAmount;
   };
 
@@ -732,7 +767,7 @@ export function useAppActions({
     try {
       await invoke("create_customer", { name, phone });
       toast.success("顾客已添加");
-      await loadData();
+      await loadCustomers();
     } catch (e) { toast.error(formatError(e)); }
   };
 
@@ -740,7 +775,7 @@ export function useAppActions({
     try {
       await invoke("update_customer", { id, name, phone, clearPhone });
       toast.success("顾客信息已更新");
-      await loadData();
+      await loadCustomers();
     } catch (e) { toast.error(formatError(e)); }
   };
 
@@ -748,13 +783,13 @@ export function useAppActions({
     try {
       await invoke("delete_customer", { id });
       toast.success("顾客已删除");
-      await loadData();
+      await loadCustomers();
     } catch (e) { toast.error(formatError(e)); }
   };
 
   const handleAddLoyaltyPoints = async (customerId: number, orderId: number | null, delta: number, reason: string): Promise<number> => {
     const newPoints = await invoke<number>("add_loyalty_points", { customerId, orderId, delta, reason });
-    await loadData();
+    await loadCustomers();
     return newPoints;
   };
 
@@ -766,7 +801,7 @@ export function useAppActions({
     // 配方
     handleCreateRecipe, handleViewRecipe, handleDeleteRecipe, handleUpdateRecipe, handleCreateRecipeType, handleUpdateRecipeType, handleDeleteRecipeType, handleSeedSampleRecipes, handleCreatePendingRecipeForMenu, handleBindMenuItemToRecipe, handleAddRecipeItem, handleDeleteRecipeItem, handleUpdateRecipeItem, handleRecalculateCost,
     // 菜單
-    handleCreateMenuCategory, handleUpdateMenuCategory, handleDeleteMenuCategory, handleCreateMenuItem, handleToggleMenuItem, handleBatchToggleMenuItem, handleToggleFavorite, handleUpdateMenuItem, handleDeleteMenuItem,
+    handleCreateMenuCategory, handleUpdateMenuCategory, handleDeleteMenuCategory, handleCreateMenuItem, handleToggleMenuItem, handleBatchToggleMenuItem, handleBatchUpdateMenuItemPrices, handleToggleFavorite, handleUpdateMenuItem, handleDeleteMenuItem,
     // 訂單
     handleCreateOrder, handlePOSOrder, handlePOSAndSubmit, handleSubmitOrder, handleCancelOrder, handleMarkOrderReady, handleBatchCancelOrder, handleViewOrder, handleLoadMoreOrders,
     // 規格

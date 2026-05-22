@@ -2,11 +2,117 @@ use tauri::{State, Manager};
 use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, LoyaltyTxn, Coupon, RecipeComponentType, OrderComponentType};
 use crate::printer::{self, EscPosBuilder, LanPrinter, scan_lan_printers as LAN_SCAN};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 pub struct AppState {
     pub db: Database,
     pub db_path: std::path::PathBuf,
     pub sync_server: std::sync::Mutex<Option<crate::sync_server::SyncServerHandle>>,
+    pub role_auth: std::sync::Mutex<RoleAuthStore>,
+    pub role_auth_path: std::path::PathBuf,
+}
+
+const SYNC_PROTOCOL_VERSION: &str = "2";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UserRole {
+    Owner,
+    Cashier,
+    Chef,
+    Warehouse,
+}
+
+impl UserRole {
+    fn as_str(&self) -> &'static str {
+        match self {
+            UserRole::Owner => "owner",
+            UserRole::Cashier => "cashier",
+            UserRole::Chef => "chef",
+            UserRole::Warehouse => "warehouse",
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            UserRole::Owner => "老板",
+            UserRole::Cashier => "收银",
+            UserRole::Chef => "厨师",
+            UserRole::Warehouse => "仓库",
+        }
+    }
+}
+
+impl std::str::FromStr for UserRole {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_lowercase().as_str() {
+            "owner" => Ok(UserRole::Owner),
+            "cashier" => Ok(UserRole::Cashier),
+            "chef" => Ok(UserRole::Chef),
+            "warehouse" => Ok(UserRole::Warehouse),
+            _ => Err("未知角色".to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleAuthStore {
+    pub current_role: UserRole,
+    #[serde(default)]
+    pub pin_hashes: HashMap<String, String>,
+}
+
+impl Default for RoleAuthStore {
+    fn default() -> Self {
+        Self {
+            current_role: UserRole::Owner,
+            pin_hashes: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct RolePinStatus {
+    pub role: String,
+    pub has_pin: bool,
+}
+
+fn hash_pin(pin: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(pin.as_bytes());
+    let digest = hasher.finalize();
+    digest.iter().map(|byte| format!("{:02x}", byte)).collect()
+}
+
+pub fn load_role_auth_store(path: &std::path::Path) -> RoleAuthStore {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<RoleAuthStore>(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn save_role_auth_store(path: &std::path::Path, store: &RoleAuthStore) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建权限目录失败: {}", e))?;
+    }
+    let json = serde_json::to_string_pretty(store).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| format!("保存权限配置失败: {}", e))
+}
+
+fn current_role(state: &State<AppState>) -> Result<UserRole, String> {
+    Ok(state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?.current_role)
+}
+
+fn require_roles(state: &State<AppState>, allowed: &[UserRole], action: &str) -> Result<UserRole, String> {
+    let role = current_role(state)?;
+    if allowed.iter().any(|allowed_role| *allowed_role == role) {
+        Ok(role)
+    } else {
+        Err(format!("当前角色「{}」无权执行：{}", role.label(), action))
+    }
 }
 
 fn db_err(e: rusqlite::Error) -> String {
@@ -72,6 +178,62 @@ fn print_err(raw: String) -> String {
     if s.contains("未配置") || s.contains("not configured") { return "打印机未配置，请在打印设置中添加打印机".to_string(); }
     if s.contains("no printer") || s.contains("找不到") { return "未找到默认打印机，请在打印设置中设置默认打印机".to_string(); }
     raw
+}
+
+#[tauri::command]
+pub fn get_current_role(state: State<AppState>) -> Result<String, String> {
+    Ok(current_role(&state)?.as_str().to_string())
+}
+
+#[tauri::command]
+pub fn get_role_pin_statuses(state: State<AppState>) -> Result<Vec<RolePinStatus>, String> {
+    let auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
+    Ok([
+        UserRole::Owner,
+        UserRole::Cashier,
+        UserRole::Chef,
+        UserRole::Warehouse,
+    ]
+    .into_iter()
+    .map(|role| RolePinStatus {
+        role: role.as_str().to_string(),
+        has_pin: auth.pin_hashes.contains_key(role.as_str()),
+    })
+    .collect())
+}
+
+#[tauri::command]
+pub fn set_role_pin(state: State<AppState>, role: String, pin: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "设置角色 PIN")?;
+    let role = role.parse::<UserRole>()?;
+    let mut auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
+    match pin.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+        Some(value) => {
+            if value.len() < 4 {
+                return Err("PIN 至少 4 位".to_string());
+            }
+            auth.pin_hashes.insert(role.as_str().to_string(), hash_pin(&value));
+        }
+        None => {
+            auth.pin_hashes.remove(role.as_str());
+        }
+    }
+    save_role_auth_store(&state.role_auth_path, &auth)
+}
+
+#[tauri::command]
+pub fn switch_role(state: State<AppState>, role: String, pin: Option<String>) -> Result<String, String> {
+    let target = role.parse::<UserRole>()?;
+    let mut auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
+    if let Some(expected_hash) = auth.pin_hashes.get(target.as_str()) {
+        let provided = pin.unwrap_or_default();
+        if hash_pin(provided.trim()) != *expected_hash {
+            return Err("PIN 错误".to_string());
+        }
+    }
+    auth.current_role = target;
+    save_role_auth_store(&state.role_auth_path, &auth)?;
+    Ok(target.as_str().to_string())
 }
 
 // ==================== 請求體 ====================
@@ -226,6 +388,7 @@ pub fn get_material_categories(state: State<AppState>) -> Result<Vec<MaterialCat
 
 #[tauri::command]
 pub fn create_material_category(state: State<AppState>, req: CreateCategoryRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建材料分类")?;
     let sort_no = req.sort_no.unwrap_or(0);
     state.db.create_material_category(&req.code, &req.name, sort_no).map_err(db_err)
 }
@@ -239,6 +402,7 @@ pub fn get_tags(state: State<AppState>) -> Result<Vec<Tag>, String> {
 
 #[tauri::command]
 pub fn create_tag(state: State<AppState>, req: CreateTagRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建标签")?;
     state.db.create_tag(&req.code, &req.name, req.color.as_deref()).map_err(db_err)
 }
 
@@ -251,6 +415,7 @@ pub fn get_materials(state: State<AppState>, category_id: Option<i64>) -> Result
 
 #[tauri::command]
 pub fn create_material(state: State<AppState>, req: CreateMaterialRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建材料")?;
     let id = state.db.create_material(
         &req.code,
         &req.name,
@@ -268,6 +433,7 @@ pub fn create_material(state: State<AppState>, req: CreateMaterialRequest) -> Re
 
 #[tauri::command]
 pub fn add_material_tags(state: State<AppState>, material_id: i64, tag_ids: Vec<i64>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新材料标签")?;
     state.db.add_material_tags(material_id, &tag_ids).map_err(|e| e.to_string())
 }
 
@@ -280,6 +446,7 @@ pub fn get_material_states(state: State<AppState>, material_id: i64) -> Result<V
 
 #[tauri::command]
 pub fn create_material_state(state: State<AppState>, req: CreateMaterialStateRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建材料状态")?;
     let yield_rate = req.yield_rate.unwrap_or(1.0);
     let cost_multiplier = req.cost_multiplier.unwrap_or(1.0);
     state.db.create_material_state(
@@ -299,11 +466,13 @@ pub fn get_all_material_states(state: State<AppState>) -> Result<Vec<MaterialSta
 
 #[tauri::command]
 pub fn update_material_state(state: State<AppState>, id: i64, state_code: Option<String>, state_name: Option<String>, unit_id: Option<i64>, yield_rate: Option<f64>, cost_multiplier: Option<f64>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新材料状态")?;
     state.db.update_material_state(id, state_code.as_deref(), state_name.as_deref(), unit_id, yield_rate, cost_multiplier).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_material_state(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除材料状态")?;
     state.db.delete_material_state(id).map_err(|e| e.to_string())
 }
 
@@ -316,6 +485,7 @@ pub fn get_suppliers(state: State<AppState>) -> Result<Vec<Supplier>, String> {
 
 #[tauri::command]
 pub fn create_supplier(state: State<AppState>, req: CreateSupplierRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建供应商")?;
     state.db.create_supplier(&req.name, req.phone.as_deref(), req.contact_person.as_deref()).map_err(db_err)
 }
 
@@ -337,16 +507,19 @@ pub struct CreateExpenseRequest {
 
 #[tauri::command]
 pub fn create_expense(state: State<AppState>, req: CreateExpenseRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建支出")?;
     state.db.create_expense(&req.expense_type, req.amount, &req.expense_date, req.note.as_deref(), req.operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_expense(state: State<AppState>, id: i64, expense_type: Option<String>, amount: Option<f64>, expense_date: Option<String>, note: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新支出")?;
     state.db.update_expense(id, expense_type.as_deref(), amount, expense_date.as_deref(), note.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_expense(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除支出")?;
     state.db.delete_expense(id).map_err(|e| e.to_string())
 }
 
@@ -366,6 +539,7 @@ pub struct CreateSupplierProductRequest {
 
 #[tauri::command]
 pub fn create_supplier_product(state: State<AppState>, req: CreateSupplierProductRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建供应商商品")?;
     state.db.create_supplier_product(&req.product_name, &req.supplier_name, &req.channel).map_err(|e| e.to_string())
 }
 
@@ -379,11 +553,13 @@ pub struct UpdateSupplierProductRequest {
 
 #[tauri::command]
 pub fn update_supplier_product(state: State<AppState>, req: UpdateSupplierProductRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新供应商商品")?;
     state.db.update_supplier_product(req.id, &req.product_name, &req.supplier_name, &req.channel).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_supplier_product(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除供应商商品")?;
     state.db.delete_supplier_product(id).map_err(|e| e.to_string())
 }
 
@@ -401,6 +577,7 @@ pub fn get_attribute_templates(state: State<AppState>, entity_type: Option<Strin
 
 #[tauri::command]
 pub fn create_attribute_template(state: State<AppState>, entity_type: String, category: Option<String>, attr_code: String, attr_name: String, data_type: String, unit: Option<String>, default_value: Option<f64>, formula: Option<String>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建属性模板")?;
     state.db.create_attribute_template(
         &entity_type,
         category.as_deref(),
@@ -415,6 +592,7 @@ pub fn create_attribute_template(state: State<AppState>, entity_type: String, ca
 
 #[tauri::command]
 pub fn update_attribute_template(state: State<AppState>, id: i64, entity_type: String, category: Option<String>, attr_code: String, attr_name: String, data_type: String, unit: Option<String>, default_value: Option<f64>, formula: Option<String>, is_active: bool) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新属性模板")?;
     state.db.update_attribute_template(
         id,
         &entity_type,
@@ -431,6 +609,7 @@ pub fn update_attribute_template(state: State<AppState>, id: i64, entity_type: S
 
 #[tauri::command]
 pub fn delete_attribute_template(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除属性模板")?;
     state.db.delete_attribute_template(id).map_err(|e| e.to_string())
 }
 
@@ -474,6 +653,7 @@ pub fn get_order_component_types(state: State<AppState>, is_packaging: Option<bo
 
 #[tauri::command]
 pub fn create_recipe_type(state: State<AppState>, req: CreateRecipeTypeRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建配方类型")?;
     state.db.create_recipe_type(&req.code, &req.name, req.description.as_deref(), req.sort_no.unwrap_or(0)).map_err(|e| e.to_string())
 }
 
@@ -489,12 +669,14 @@ pub fn generate_recipe_code(state: State<AppState>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn seed_sample_recipes(state: State<AppState>) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner], "创建示例配方")?;
     state.db.seed_sample_recipes().map_err(|e| e.to_string())?;
     Ok("示例配方已创建".to_string())
 }
 
 #[tauri::command]
 pub fn create_recipe(state: State<AppState>, req: CreateRecipeRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建配方")?;
     let id = state.db.create_recipe(
         &req.code,
         &req.name,
@@ -518,6 +700,7 @@ pub fn create_recipe(state: State<AppState>, req: CreateRecipeRequest) -> Result
 
 #[tauri::command]
 pub fn add_recipe_item(state: State<AppState>, recipe_id: i64, req: RecipeItemRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "添加配方项")?;
     let wastage_rate = req.wastage_rate.unwrap_or(0.0);
     state.db.add_recipe_item(recipe_id, &req.item_type, req.ref_id, req.qty, req.unit_id, wastage_rate, 0)
         .map_err(|e| e.to_string())
@@ -580,6 +763,7 @@ pub fn get_menu_categories(state: State<AppState>) -> Result<Vec<MenuCategory>, 
 
 #[tauri::command]
 pub fn create_menu_category(state: State<AppState>, name: String, sort_no: Option<i32>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建菜单分类")?;
     state.db.create_menu_category(&name, sort_no.unwrap_or(0)).map_err(|e| e.to_string())
 }
 
@@ -590,6 +774,7 @@ pub fn get_menu_items(state: State<AppState>, category_id: Option<i64>) -> Resul
 
 #[tauri::command]
 pub fn create_menu_item(state: State<AppState>, req: CreateMenuItemRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建菜单项")?;
     state.db.create_menu_item(&req.name, req.category_id, req.recipe_id, req.sales_price).map_err(db_err)
 }
 
@@ -600,16 +785,19 @@ pub fn get_menu_item_specs(state: State<AppState>, menu_item_id: i64) -> Result<
 
 #[tauri::command]
 pub fn create_menu_item_spec(state: State<AppState>, req: CreateMenuItemSpecRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建菜单规格")?;
     state.db.create_menu_item_spec(req.menu_item_id, &req.spec_code, &req.spec_name, req.price_delta, req.qty_multiplier, 0).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_menu_item_spec(state: State<AppState>, id: i64, spec_code: Option<String>, spec_name: Option<String>, price_delta: Option<f64>, qty_multiplier: Option<f64>, sort_no: Option<i32>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新菜单规格")?;
     state.db.update_menu_item_spec(id, spec_code.as_deref(), spec_name.as_deref(), price_delta, qty_multiplier, sort_no).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_menu_item_spec(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除菜单规格")?;
     state.db.delete_menu_item_spec(id).map_err(|e| e.to_string())
 }
 
@@ -628,6 +816,7 @@ pub struct CreateOrderResponse {
 
 #[tauri::command]
 pub fn create_order(state: State<AppState>, req: CreateOrderRequest) -> Result<CreateOrderResponse, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "创建订单")?;
     let (id, order_no) = state.db.create_order(&req.source, &req.dine_type, req.table_no.as_deref()).map_err(|e| e.to_string())?;
     Ok(CreateOrderResponse { id, order_no })
 }
@@ -644,6 +833,7 @@ pub fn get_order_with_items(state: State<AppState>, order_id: i64) -> Result<Ord
 
 #[tauri::command]
 pub fn add_order_item(state: State<AppState>, req: AddOrderItemRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "添加订单商品")?;
     state.db.add_order_item(
         req.order_id,
         req.menu_item_id,
@@ -656,11 +846,13 @@ pub fn add_order_item(state: State<AppState>, req: AddOrderItemRequest) -> Resul
 
 #[tauri::command]
 pub fn submit_order(state: State<AppState>, order_id: i64) -> Result<Vec<String>, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "提交订单")?;
     state.db.submit_order_full(order_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn cancel_order(state: State<AppState>, order_id: i64, is_served: bool, reason: Option<String>) -> Result<Vec<String>, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "取消订单")?;
     if is_served {
         state.db.cancel_order_confirmed(order_id, reason.as_deref()).map_err(|e| e.to_string())
     } else {
@@ -675,6 +867,7 @@ pub fn check_expiry_alerts(state: State<AppState>) -> Result<i64, String> {
 
 #[tauri::command]
 pub fn mark_order_ready(state: State<AppState>, order_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "标记订单出餐")?;
     state.db.mark_order_ready(order_id).map_err(|e| e.to_string())
 }
 
@@ -688,17 +881,20 @@ pub struct UpdateOrderPaymentRequest {
 
 #[tauri::command]
 pub fn update_order_payment(state: State<AppState>, req: UpdateOrderPaymentRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "更新订单支付")?;
     state.db.update_order_payment(req.order_id, &req.payment_status, req.payment_method.as_deref(), req.amount_paid)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn record_order_refund(state: State<AppState>, order_id: i64, refund_amount: f64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "记录退款")?;
     state.db.record_order_refund(order_id, refund_amount).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn refund_order_item(state: State<AppState>, order_id: i64, item_id: i64) -> Result<f64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "退款订单项")?;
     state.db.refund_order_item(order_id, item_id).map_err(|e| e.to_string())
 }
 
@@ -721,6 +917,7 @@ pub struct ReceivePOItemRequest {
 
 #[tauri::command]
 pub fn receive_purchase_order_items(state: State<AppState>, po_id: i64, items: Vec<ReceivePOItemRequest>, operator: Option<String>) -> Result<Vec<String>, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "采购单入库")?;
     let mapped: Vec<(i64, f64, Option<String>)> = items.into_iter().map(|r| (r.item_id, r.received_qty, r.lot_no)).collect();
     state.db.receive_purchase_order_items(po_id, mapped, operator.as_deref())
         .map(|details| details.into_iter().map(|(_, lot, name, _, _, _)| format!("{}: {}", name, lot)).collect())
@@ -729,6 +926,7 @@ pub fn receive_purchase_order_items(state: State<AppState>, po_id: i64, items: V
 
 #[tauri::command]
 pub fn batch_cancel_orders(state: State<AppState>, ids: Vec<i64>) -> Result<usize, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "批量取消订单")?;
     state.db.batch_cancel_orders(&ids).map_err(|e| e.to_string())
 }
 
@@ -741,6 +939,7 @@ pub fn get_kitchen_stations(state: State<AppState>) -> Result<Vec<KitchenStation
 
 #[tauri::command]
 pub fn update_station_printer(state: State<AppState>, station_id: i64, printer_id: Option<i64>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新工作站打印机")?;
     state.db.update_station_printer(station_id, printer_id).map_err(|e| e.to_string())
 }
 
@@ -796,11 +995,13 @@ pub fn get_tickets_for_order(state: State<AppState>, order_id: i64) -> Result<Ve
 
 #[tauri::command]
 pub fn start_ticket(state: State<AppState>, ticket_id: i64, operator: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier, UserRole::Chef], "开始工单")?;
     state.db.start_ticket(ticket_id, operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn finish_ticket(state: State<AppState>, ticket_id: i64, operator: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier, UserRole::Chef], "完成工单")?;
     state.db.finish_ticket(ticket_id, operator.as_deref()).map_err(|e| e.to_string())
 }
 
@@ -818,6 +1019,7 @@ pub fn get_inventory_summary(state: State<AppState>) -> Result<Vec<InventorySumm
 
 #[tauri::command]
 pub fn create_inventory_txn(state: State<AppState>, req: CreateInventoryTxnRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建库存流水")?;
     let cost_delta = req.cost_delta.unwrap_or(0.0);
     state.db.create_inventory_txn(
         &req.txn_type,
@@ -877,6 +1079,7 @@ pub struct RecordWastageRequest {
 
 #[tauri::command]
 pub fn create_inventory_batch(state: State<AppState>, req: CreateBatchRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建库存批次")?;
     let seasonal = req.seasonal_factor.unwrap_or(1.0);
     state.db.create_inventory_batch(
         req.material_id, req.state_id, &req.lot_no, req.supplier_id,
@@ -888,131 +1091,167 @@ pub fn create_inventory_batch(state: State<AppState>, req: CreateBatchRequest) -
 
 #[tauri::command]
 pub fn delete_inventory_batch(state: State<AppState>, batch_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除库存批次")?;
     state.db.delete_inventory_batch(batch_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn adjust_inventory(state: State<AppState>, req: AdjustInventoryRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "调整库存")?;
     state.db.adjust_inventory(req.lot_id, req.qty_delta, req.operator.as_deref(), req.note.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn record_wastage(state: State<AppState>, req: RecordWastageRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "记录损耗")?;
     state.db.record_wastage(req.lot_id, req.qty, Some(&req.wastage_type), req.operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_material(state: State<AppState>, id: i64, name: Option<String>, category_id: Option<i64>, shelf_life_days: Option<i32>, min_qty: Option<f64>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新材料")?;
     state.db.update_material(id, name.as_deref(), category_id, shelf_life_days, min_qty).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_material(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除材料")?;
     state.db.delete_material(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_material_category(state: State<AppState>, id: i64, name: String, sort_no: i32) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新材料分类")?;
     state.db.update_material_category(id, &name, sort_no).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_material_category(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除材料分类")?;
     state.db.delete_material_category(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_tag(state: State<AppState>, id: i64, name: String, color: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新标签")?;
     state.db.update_tag(id, &name, color.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_tag(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除标签")?;
     state.db.delete_tag(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn remove_material_tag(state: State<AppState>, material_id: i64, tag_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "移除材料标签")?;
     state.db.remove_material_tag(material_id, tag_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_supplier(state: State<AppState>, id: i64, name: Option<String>, phone: Option<String>, contact_person: Option<String>, address: Option<String>, note: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新供应商")?;
     state.db.update_supplier(id, name.as_deref(), phone.as_deref(), contact_person.as_deref(), address.as_deref(), note.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_supplier(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除供应商")?;
     state.db.delete_supplier(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_menu_item(state: State<AppState>, id: i64, name: Option<String>, category_id: Option<i64>, recipe_id: Option<i64>, sales_price: Option<f64>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新菜单项")?;
     state.db.update_menu_item(id, name.as_deref(), category_id, recipe_id, sales_price).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn toggle_menu_item_availability(state: State<AppState>, id: i64, is_available: bool) -> Result<bool, String> {
+    require_roles(&state, &[UserRole::Owner], "更新菜单上下架")?;
     state.db.set_menu_item_availability(id, is_available).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn batch_toggle_menu_item_availability(state: State<AppState>, ids: Vec<i64>, is_available: bool) -> Result<usize, String> {
+    require_roles(&state, &[UserRole::Owner], "批量更新菜单上下架")?;
     state.db.batch_toggle_menu_item_availability(&ids, is_available).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
+pub fn batch_update_menu_item_prices(state: State<AppState>, ids: Vec<i64>, mode: String, value: f64) -> Result<usize, String> {
+    require_roles(&state, &[UserRole::Owner], "批量更新菜单价格")?;
+    let normalized_mode = mode.trim().to_lowercase();
+    match normalized_mode.as_str() {
+        "set" | "delta" | "percent" => state.db.batch_update_menu_item_prices(&ids, &normalized_mode, value).map_err(|e| e.to_string()),
+        _ => Err("不支持的调价模式".to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn toggle_menu_item_favorite(state: State<AppState>, id: i64) -> Result<bool, String> {
+    require_roles(&state, &[UserRole::Owner], "更新菜单收藏状态")?;
     state.db.toggle_menu_item_favorite(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_menu_item(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除菜单项")?;
     state.db.delete_menu_item(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_menu_category(state: State<AppState>, id: i64, name: String, sort_no: i32) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新菜单分类")?;
     state.db.update_menu_category(id, Some(&name), Some(sort_no)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_menu_category(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除菜单分类")?;
     state.db.delete_menu_category(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_recipe(state: State<AppState>, id: i64, name: Option<String>, recipe_type: Option<String>, output_qty: Option<f64>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新配方")?;
     state.db.update_recipe(id, name.as_deref(), recipe_type.as_deref(), output_qty, None).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_recipe_type(state: State<AppState>, id: i64, code: String, name: String, description: Option<String>, sort_no: i32) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新配方类型")?;
     state.db.update_recipe_type(id, &code, &name, description.as_deref(), sort_no).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_recipe_type(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除配方类型")?;
     state.db.delete_recipe_type(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_recipe(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除配方")?;
     state.db.delete_recipe(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_recipe_item(state: State<AppState>, item_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除配方项")?;
     state.db.delete_recipe_item(item_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn add_station_menu_item(state: State<AppState>, station_id: i64, menu_item_id: i64) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "配置工作站菜单")?;
     state.db.add_station_menu_item(station_id, menu_item_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn remove_station_menu_item(state: State<AppState>, station_id: i64, menu_item_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "移除工作站菜单")?;
     state.db.remove_station_menu_item(station_id, menu_item_id).map_err(|e| e.to_string())
 }
 
@@ -1088,6 +1327,7 @@ pub fn health_check(state: State<AppState>) -> String {
 
 #[tauri::command]
 pub fn backup_database(state: State<AppState>, dest_dir: Option<String>) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner], "备份数据库")?;
     let backup_dir = match dest_dir {
         Some(d) => std::path::PathBuf::from(d),
         None => dirs::document_dir()
@@ -1140,6 +1380,7 @@ pub fn get_default_printer(state: State<AppState>) -> Result<Option<PrinterConfi
 
 #[tauri::command]
 pub fn create_printer(state: State<AppState>, req: CreatePrinterRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建打印机")?;
     state.db.create_printer(
         &req.name,
         &req.printer_type,
@@ -1157,6 +1398,7 @@ pub fn create_printer(state: State<AppState>, req: CreatePrinterRequest) -> Resu
 
 #[tauri::command]
 pub fn update_printer(state: State<AppState>, id: i64, name: Option<String>, printer_type: Option<String>, connection_type: Option<String>, feie_user: Option<String>, feie_ukey: Option<String>, feie_sn: Option<String>, feie_key: Option<String>, lan_ip: Option<String>, lan_port: Option<i32>, paper_width: Option<String>, is_default: Option<bool>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新打印机")?;
     state.db.update_printer(
         id,
         name.as_deref(),
@@ -1175,6 +1417,7 @@ pub fn update_printer(state: State<AppState>, id: i64, name: Option<String>, pri
 
 #[tauri::command]
 pub fn delete_printer(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除打印机")?;
     state.db.delete_printer(id).map_err(|e| e.to_string())
 }
 
@@ -1212,6 +1455,7 @@ pub fn test_lan_printer(_state: State<AppState>, ip: String, port: Option<i32>) 
 
 #[tauri::command]
 pub fn send_print_task(state: State<AppState>, app: tauri::AppHandle, req: SendPrintTaskRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "发送打印任务")?;
     let printer = state.db.get_printers().map_err(|e| e.to_string())?
         .into_iter()
         .find(|p| p.id == req.printer_id)
@@ -1247,6 +1491,7 @@ pub fn send_print_task(state: State<AppState>, app: tauri::AppHandle, req: SendP
 
 #[tauri::command]
 pub fn print_kitchen_ticket(state: State<AppState>, app: tauri::AppHandle, order_no: String, dine_type: String, items: Vec<(String, f64, Option<String>)>, note: Option<String>, printer_id: Option<i64>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier, UserRole::Chef], "打印厨房票")?;
     let printer = match printer_id {
         Some(id) => state.db.get_printers().map_err(|e| e.to_string())?
             .into_iter()
@@ -1287,6 +1532,7 @@ pub fn print_kitchen_ticket(state: State<AppState>, app: tauri::AppHandle, order
 
 #[tauri::command]
 pub fn print_order_receipt(state: State<AppState>, app: tauri::AppHandle, order_id: i64, printer_id: Option<i64>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "打印小票")?;
     let (order, order_items) = state.db.get_order_with_items(order_id).map_err(|e| e.to_string())?;
     let menu_items = state.db.get_menu_items(None).map_err(|e| e.to_string())?;
     let item_map: std::collections::HashMap<i64, String> = menu_items.into_iter().map(|m| (m.id, m.name)).collect();
@@ -1336,6 +1582,7 @@ pub fn print_order_receipt(state: State<AppState>, app: tauri::AppHandle, order_
 
 #[tauri::command]
 pub fn print_batch_label(state: State<AppState>, app: tauri::AppHandle, lot_no: String, material_name: String, quantity: f64, unit: String, expiry_date: Option<String>, supplier_name: Option<String>, printer_id: Option<i64>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "打印批次标签")?;
     let printer = match printer_id {
         Some(id) => state.db.get_printers().map_err(|e| e.to_string())?
             .into_iter()
@@ -1398,6 +1645,7 @@ pub fn get_purchase_order_with_items(state: State<AppState>, po_id: i64) -> Resu
 
 #[tauri::command]
 pub fn create_purchase_order(state: State<AppState>, supplier_id: Option<i64>, expected_date: Option<String>) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建采购单")?;
     state.db.create_purchase_order(supplier_id, expected_date.as_deref()).map_err(|e| e.to_string())
 }
 
@@ -1412,21 +1660,25 @@ pub struct CreatePurchaseOrderItemRequest {
 
 #[tauri::command]
 pub fn add_purchase_order_item(state: State<AppState>, req: CreatePurchaseOrderItemRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "添加采购项")?;
     state.db.add_purchase_order_item(req.po_id, req.material_id, req.qty, req.unit_id, req.cost_per_unit).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_purchase_order_status(state: State<AppState>, po_id: i64, status: String) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新采购单状态")?;
     state.db.update_purchase_order_status(po_id, &status).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_purchase_order(state: State<AppState>, po_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除采购单")?;
     state.db.delete_purchase_order(po_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn receive_purchase_order(state: State<AppState>, app: tauri::AppHandle, po_id: i64, operator: Option<String>, auto_print: Option<bool>) -> Result<Vec<i64>, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "采购单入库")?;
     let batches = state.db.receive_purchase_order(po_id, operator.as_deref()).map_err(|e| e.to_string())?;
     if auto_print.unwrap_or(false) {
         let mut print_ids = Vec::new();
@@ -1464,21 +1716,25 @@ pub fn get_production_order_with_items(state: State<AppState>, production_id: i6
 
 #[tauri::command]
 pub fn create_production_order(state: State<AppState>, recipe_id: i64, planned_qty: f64, operator: Option<String>) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Chef, UserRole::Warehouse], "创建生产单")?;
     state.db.create_production_order(recipe_id, planned_qty, operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn start_production_order(state: State<AppState>, production_id: i64, operator: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Chef, UserRole::Warehouse], "开始生产")?;
     state.db.start_production_order(production_id, operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn complete_production_order(state: State<AppState>, production_id: i64, actual_qty: f64, operator: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Chef, UserRole::Warehouse], "完成生产")?;
     state.db.complete_production_order(production_id, actual_qty, operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_production_order(state: State<AppState>, production_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Chef, UserRole::Warehouse], "删除生产单")?;
     state.db.delete_production_order(production_id).map_err(|e| e.to_string())
 }
 
@@ -1501,21 +1757,25 @@ pub fn get_stocktake_with_items(state: State<AppState>, stocktake_id: i64) -> Re
 
 #[tauri::command]
 pub fn create_stocktake(state: State<AppState>, operator: Option<String>, note: Option<String>) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "创建盘点")?;
     state.db.create_stocktake(operator.as_deref(), note.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_stocktake_item(state: State<AppState>, item_id: i64, actual_qty: f64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "更新盘点项")?;
     state.db.update_stocktake_item(item_id, actual_qty).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn complete_stocktake(state: State<AppState>, stocktake_id: i64, operator: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "完成盘点")?;
     state.db.complete_stocktake(stocktake_id, operator.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_stocktake(state: State<AppState>, stocktake_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Warehouse], "删除盘点")?;
     state.db.delete_stocktake(stocktake_id).map_err(|e| e.to_string())
 }
 
@@ -1532,6 +1792,7 @@ pub struct AddModifierRequest {
 
 #[tauri::command]
 pub fn add_order_item_modifier(state: State<AppState>, req: AddModifierRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "添加订单加料")?;
     state.db.add_order_item_modifier(req.order_item_id, &req.modifier_type, req.material_id, req.qty, req.price_delta).map_err(|e| e.to_string())
 }
 
@@ -1542,6 +1803,7 @@ pub fn get_order_item_modifiers(state: State<AppState>, order_item_id: i64) -> R
 
 #[tauri::command]
 pub fn delete_order_item_modifier(state: State<AppState>, modifier_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "删除订单加料")?;
     state.db.delete_order_item_modifier(modifier_id).map_err(|e| e.to_string())
 }
 
@@ -1619,6 +1881,7 @@ pub fn export_report_csv(state: State<AppState>, report_type: String, start_date
 
 #[tauri::command]
 pub fn update_recipe_item(state: State<AppState>, item_id: i64, qty: Option<f64>, wastage_rate: Option<f64>, note: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新配方项")?;
     state.db.update_recipe_item(item_id, qty, wastage_rate, note.as_deref()).map_err(|e| e.to_string())
 }
 
@@ -1648,26 +1911,31 @@ pub fn get_print_ticket_type(state: State<AppState>, id: i64) -> Result<PrintTic
 
 #[tauri::command]
 pub fn create_print_ticket_type(state: State<AppState>, req: CreatePrintTicketTypeRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建票据类型")?;
     state.db.create_print_ticket_type(&req).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_print_ticket_type(state: State<AppState>, id: i64, req: UpdatePrintTicketTypeRequest) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新票据类型")?;
     state.db.update_print_ticket_type(id, &req).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_print_ticket_type(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除票据类型")?;
     state.db.delete_print_ticket_type(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_default_ticket_type(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "设置默认票据类型")?;
     state.db.set_default_ticket_type(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn ensure_default_ticket_types(state: State<AppState>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "初始化默认票据类型")?;
     state.db.ensure_default_ticket_types().map_err(|e| e.to_string())
 }
 
@@ -1678,21 +1946,25 @@ pub fn get_print_template(state: State<AppState>, id: i64) -> Result<PrintTempla
 
 #[tauri::command]
 pub fn create_print_template(state: State<AppState>, req: CreatePrintTemplateRequest) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建打印模板")?;
     state.db.create_print_template(&req).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_print_template(state: State<AppState>, id: i64, name: Option<String>, content: Option<String>, paper_size: Option<String>, label_width_mm: Option<f64>, label_height_mm: Option<f64>, theme: Option<String>, restaurant_name: Option<String>, tagline: Option<String>, logo_data: Option<String>, show_price: Option<bool>, show_tax: Option<bool>, show_service_charge: Option<bool>, item_sort: Option<String>, modifiers_color: Option<String>, is_active: Option<bool>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新打印模板")?;
     state.db.update_print_template(id, name, content, paper_size, label_width_mm, label_height_mm, theme, restaurant_name, tagline, logo_data, show_price, show_tax, show_service_charge, item_sort, modifiers_color, is_active).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_print_template(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除打印模板")?;
     state.db.delete_print_template(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn set_default_template(state: State<AppState>, id: i64, template_type: String) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "设置默认打印模板")?;
     state.db.set_default_template(id, &template_type).map_err(|e| e.to_string())
 }
 
@@ -1728,6 +2000,7 @@ pub fn render_template_content_preview(
 #[allow(dead_code)]
 #[tauri::command]
 pub fn bind_feie_printer(state: State<AppState>, printer_id: i64, printer_key: String) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner], "绑定飞鹅打印机")?;
     let printer = state.db.get_printers().map_err(|e| e.to_string())?
         .into_iter()
         .find(|p| p.id == printer_id)
@@ -1776,16 +2049,19 @@ pub fn get_unread_notification_count(state: State<AppState>) -> Result<i64, Stri
 
 #[tauri::command]
 pub fn mark_notification_read(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier, UserRole::Chef, UserRole::Warehouse], "标记通知已读")?;
     state.db.mark_notification_read(id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn mark_all_notifications_read(state: State<AppState>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier, UserRole::Chef, UserRole::Warehouse], "全部通知已读")?;
     state.db.mark_all_notifications_read().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn delete_notification(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除通知")?;
     state.db.delete_notification(id).map_err(|e| e.to_string())
 }
 
@@ -1803,11 +2079,13 @@ pub fn get_customers(state: State<AppState>, search: Option<String>) -> Result<V
 
 #[tauri::command]
 pub fn create_customer(state: State<AppState>, name: String, phone: Option<String>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "创建顾客")?;
     state.db.create_customer(&name, phone.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn update_customer(state: State<AppState>, id: i64, name: Option<String>, phone: Option<String>, clear_phone: bool) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "更新顾客")?;
     let phone_param: Option<Option<&str>> = if clear_phone {
         Some(None)
     } else {
@@ -1818,6 +2096,7 @@ pub fn update_customer(state: State<AppState>, id: i64, name: Option<String>, ph
 
 #[tauri::command]
 pub fn delete_customer(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "删除顾客")?;
     state.db.delete_customer(id).map_err(|e| e.to_string())
 }
 
@@ -1828,6 +2107,7 @@ pub fn get_loyalty_txns(state: State<AppState>, customer_id: i64) -> Result<Vec<
 
 #[tauri::command]
 pub fn add_loyalty_points(state: State<AppState>, customer_id: i64, order_id: Option<i64>, delta: i64, reason: String) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "调整积分")?;
     state.db.add_loyalty_points(customer_id, order_id, delta, &reason).map_err(|e| e.to_string())
 }
 
@@ -1842,12 +2122,14 @@ pub fn get_coupons(state: State<AppState>) -> Result<Vec<Coupon>, String> {
 #[allow(dead_code)]
 #[tauri::command]
 pub fn create_coupon(state: State<AppState>, name: String, code: String, discount_percent: Option<f64>, discount_amount: Option<f64>, min_amount: Option<f64>, valid_from: Option<String>, valid_until: Option<String>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建优惠券")?;
     state.db.create_coupon(&name, &code, discount_percent, discount_amount, min_amount, valid_from.as_deref(), valid_until.as_deref()).map_err(|e| e.to_string())
 }
 
 #[allow(dead_code)]
 #[tauri::command]
 pub fn use_coupon(state: State<AppState>, customer_id: i64, coupon_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier], "使用优惠券")?;
     state.db.use_coupon(customer_id, coupon_id).map_err(|e| e.to_string())
 }
 
@@ -1930,6 +2212,7 @@ pub async fn check_for_update(app: tauri::AppHandle) -> Result<Option<crate::upd
 
 #[tauri::command]
 pub fn download_and_open_update(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    require_roles(&app.state::<AppState>(), &[UserRole::Owner], "安装更新")?;
     if !url.starts_with("https://github.com/0xRyanlee/Cuckoo/releases/") {
         return Err("更新下载地址无效".to_string());
     }
@@ -1942,7 +2225,16 @@ pub fn download_and_open_update(url: String, app: tauri::AppHandle) -> Result<()
 // ==================== 局域网同步命令 ====================
 
 #[tauri::command]
-pub fn start_sync_server(state: State<AppState>, port: u16) -> Result<String, String> {
+pub fn start_sync_server(
+    state: State<AppState>,
+    port: u16,
+    shared_secret: String,
+) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner], "启动同步服务")?;
+    let shared_secret = shared_secret.trim().to_string();
+    if shared_secret.is_empty() {
+        return Err("同步密钥不能为空".to_string());
+    }
     let mut guard = state.sync_server.lock().unwrap();
     if let Some(ref h) = *guard {
         if h.port == port {
@@ -1951,7 +2243,12 @@ pub fn start_sync_server(state: State<AppState>, port: u16) -> Result<String, St
         }
         h.stop();
     }
-    let handle = crate::sync_server::start_server(state.db_path.clone(), port)?;
+    let handle = crate::sync_server::start_server(
+        state.db_path.clone(),
+        port,
+        Some(shared_secret),
+        SYNC_PROTOCOL_VERSION.to_string(),
+    )?;
     *guard = Some(handle);
     let ip = crate::sync_server::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
     Ok(format!("http://{}:{}", ip, port))
@@ -1959,6 +2256,7 @@ pub fn start_sync_server(state: State<AppState>, port: u16) -> Result<String, St
 
 #[tauri::command]
 pub fn stop_sync_server(state: State<AppState>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "停止同步服务")?;
     let mut guard = state.sync_server.lock().unwrap();
     if let Some(h) = guard.take() {
         h.stop();
@@ -1978,16 +2276,93 @@ pub fn get_local_ips() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub async fn fetch_sync_orders(server_url: String, since_epoch_s: i64) -> Result<Vec<serde_json::Value>, String> {
+pub async fn fetch_sync_orders(
+    server_url: String,
+    since_epoch_s: i64,
+    shared_secret: String,
+    client_version: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let shared_secret = shared_secret.trim().to_string();
+    if shared_secret.is_empty() {
+        return Err("同步密钥不能为空".to_string());
+    }
     let url = format!("{}/api/orders?since={}", server_url.trim_end_matches('/'), since_epoch_s);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
+    let protocol_version = client_version.unwrap_or_else(|| SYNC_PROTOCOL_VERSION.to_string());
     let text = client.get(&url)
+        .header("X-Cuckoo-Sync-Token", shared_secret)
+        .header("X-Cuckoo-Sync-Version", protocol_version)
         .send().await
         .map_err(|e| e.to_string())?
         .text().await
         .map_err(|e| e.to_string())?;
     serde_json::from_str(&text).map_err(|e| format!("解析失败: {}", e))
+}
+
+#[tauri::command]
+pub async fn fetch_sync_tickets(
+    server_url: String,
+    shared_secret: String,
+    client_version: Option<String>,
+) -> Result<Vec<TicketWithItems>, String> {
+    let shared_secret = shared_secret.trim().to_string();
+    if shared_secret.is_empty() {
+        return Err("同步密钥不能为空".to_string());
+    }
+    let url = format!("{}/api/tickets", server_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let protocol_version = client_version.unwrap_or_else(|| SYNC_PROTOCOL_VERSION.to_string());
+    let text = client.get(&url)
+        .header("X-Cuckoo-Sync-Token", shared_secret)
+        .header("X-Cuckoo-Sync-Version", protocol_version)
+        .send().await
+        .map_err(|e| e.to_string())?
+        .text().await
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| format!("解析失败: {}", e))
+}
+
+#[tauri::command]
+pub async fn mutate_sync_ticket(
+    state: State<'_, AppState>,
+    server_url: String,
+    ticket_id: i64,
+    action: String,
+    shared_secret: String,
+    client_version: Option<String>,
+) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner, UserRole::Cashier, UserRole::Chef], "远程更新工单")?;
+    let shared_secret = shared_secret.trim().to_string();
+    if shared_secret.is_empty() {
+        return Err("同步密钥不能为空".to_string());
+    }
+    let action = action.trim().to_string();
+    if action != "start" && action != "finish" {
+        return Err("不支持的工单动作".to_string());
+    }
+    let url = format!(
+        "{}/api/tickets/{}/{}",
+        server_url.trim_end_matches('/'),
+        ticket_id,
+        action
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let protocol_version = client_version.unwrap_or_else(|| SYNC_PROTOCOL_VERSION.to_string());
+    client.post(&url)
+        .header("X-Cuckoo-Sync-Token", shared_secret)
+        .header("X-Cuckoo-Sync-Version", protocol_version)
+        .send().await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }

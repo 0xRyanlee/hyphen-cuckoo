@@ -9,6 +9,7 @@ import type {
   ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Expense, SupplierProduct,
   Customer
 } from "../types";
+import { usePartialLoadData } from "./usePartialLoadData";
 
 // Wraps invoke so any failure is logged with the operation name before re-throwing.
 // This lets the pipeline immediately identify which specific IPC call caused a black screen.
@@ -56,6 +57,77 @@ export function useAppData() {
   const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+
+  const partialLoaders = usePartialLoadData(
+    {
+      loading,
+      connected,
+      units,
+      categories,
+      tags,
+      materials,
+      recipes,
+      recipeTypes,
+      selectedRecipe,
+      recipeCost,
+      menuCategories,
+      menuItems,
+      orders,
+      ordersHasMore,
+      selectedOrder,
+      stations,
+      kdsTickets,
+      inventoryBatches,
+      inventorySummary,
+      inventoryTxns,
+      attributeTemplates,
+      suppliers,
+      materialStates,
+      purchaseOrders,
+      selectedPurchaseOrder,
+      productionOrders,
+      selectedProductionOrder,
+      stocktakes,
+      selectedStocktake,
+      expenses,
+      supplierProducts,
+      customers,
+    },
+    {
+      setUnits,
+      setCategories,
+      setTags,
+      setMaterials,
+      setRecipes,
+      setRecipeTypes,
+      setSelectedRecipe,
+      setRecipeCost,
+      setMenuCategories,
+      setMenuItems,
+      setOrders,
+      setOrdersHasMore,
+      setSelectedOrder,
+      setStations,
+      setKdsTickets,
+      setInventoryBatches,
+      setInventorySummary,
+      setInventoryTxns,
+      setAttributeTemplates,
+      setSuppliers,
+      setMaterialStates,
+      setPurchaseOrders,
+      setSelectedPurchaseOrder,
+      setProductionOrders,
+      setSelectedProductionOrder,
+      setStocktakes,
+      setSelectedStocktake,
+      setExpenses,
+      setSupplierProducts,
+      setCustomers,
+      setLoading,
+      setConnected,
+    },
+  );
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -168,5 +240,6 @@ export function useAppData() {
     customers, setCustomers,
     unreadNotificationCount, setUnreadNotificationCount,
     loadData,
+    ...partialLoaders,
   };
 }

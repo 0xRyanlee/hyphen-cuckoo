@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export type Role = "owner" | "cashier" | "chef" | "warehouse";
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -21,7 +23,6 @@ export const ROLE_COLORS: Record<Role, string> = {
   warehouse: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
 };
 
-// '*' = unrestricted; array = allowed page IDs
 export const ROLE_ALLOWED_PAGES: Record<Role, string[] | "*"> = {
   owner: "*",
   cashier: ["dashboard", "pos", "orders", "customers", "kds"],
@@ -33,19 +34,38 @@ export const ROLE_ALLOWED_PAGES: Record<Role, string[] | "*"> = {
   ],
 };
 
-const pinKey = (role: Role) => `cuckoo_pin_${role}`;
-
-export function getRolePin(role: Role): string | null {
-  return localStorage.getItem(pinKey(role));
-}
-
-export function setRolePin(role: Role, pin: string | null) {
-  if (pin) localStorage.setItem(pinKey(role), pin);
-  else localStorage.removeItem(pinKey(role));
+export interface RolePinStatus {
+  role: Role;
+  has_pin: boolean;
 }
 
 export function checkAccess(role: Role, page: string): boolean {
   const allowed = ROLE_ALLOWED_PAGES[role];
   if (allowed === "*") return true;
   return allowed.includes(page);
+}
+
+export async function getCurrentRole(): Promise<Role> {
+  return invoke<Role>("get_current_role");
+}
+
+export async function getRolePinStatuses(): Promise<Record<Role, boolean>> {
+  const statuses = await invoke<RolePinStatus[]>("get_role_pin_statuses");
+  return statuses.reduce<Record<Role, boolean>>((acc, status) => {
+    acc[status.role] = status.has_pin;
+    return acc;
+  }, {
+    owner: false,
+    cashier: false,
+    chef: false,
+    warehouse: false,
+  });
+}
+
+export async function saveRolePin(role: Role, pin: string | null): Promise<void> {
+  await invoke("set_role_pin", { role, pin });
+}
+
+export async function switchRole(role: Role, pin: string | null): Promise<Role> {
+  return invoke<Role>("switch_role", { role, pin });
 }
