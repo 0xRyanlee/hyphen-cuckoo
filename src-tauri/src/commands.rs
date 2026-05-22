@@ -1,10 +1,12 @@
 use tauri::{State, Manager};
-use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, Coupon, RecipeComponentType, OrderComponentType};
+use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, LoyaltyTxn, Coupon, RecipeComponentType, OrderComponentType};
 use crate::printer::{self, EscPosBuilder, LanPrinter, scan_lan_printers as LAN_SCAN};
 use serde::{Deserialize, Serialize};
 
 pub struct AppState {
     pub db: Database,
+    pub db_path: std::path::PathBuf,
+    pub sync_server: std::sync::Mutex<Option<crate::sync_server::SyncServerHandle>>,
 }
 
 fn db_err(e: rusqlite::Error) -> String {
@@ -693,6 +695,11 @@ pub fn update_order_payment(state: State<AppState>, req: UpdateOrderPaymentReque
 #[tauri::command]
 pub fn record_order_refund(state: State<AppState>, order_id: i64, refund_amount: f64) -> Result<(), String> {
     state.db.record_order_refund(order_id, refund_amount).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn refund_order_item(state: State<AppState>, order_id: i64, item_id: i64) -> Result<f64, String> {
+    state.db.refund_order_item(order_id, item_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1789,28 +1796,39 @@ pub fn check_and_create_alerts(state: State<AppState>) -> Result<(), String> {
 
 // ==================== 会员系统命令 ====================
 
-#[allow(dead_code)]
 #[tauri::command]
-pub fn get_customers(state: State<AppState>) -> Result<Vec<Customer>, String> {
-    state.db.get_customers().map_err(|e| e.to_string())
+pub fn get_customers(state: State<AppState>, search: Option<String>) -> Result<Vec<Customer>, String> {
+    state.db.get_customers(search.as_deref()).map_err(|e| e.to_string())
 }
 
-#[allow(dead_code)]
 #[tauri::command]
-pub fn create_customer(state: State<AppState>, name: Option<String>, phone: Option<String>, wechat_openid: Option<String>) -> Result<i64, String> {
-    state.db.create_customer(name.as_deref(), phone.as_deref(), wechat_openid.as_deref()).map_err(|e| e.to_string())
+pub fn create_customer(state: State<AppState>, name: String, phone: Option<String>) -> Result<i64, String> {
+    state.db.create_customer(&name, phone.as_deref()).map_err(|e| e.to_string())
 }
 
-#[allow(dead_code)]
 #[tauri::command]
-pub fn update_customer_points(state: State<AppState>, customer_id: i64, points_delta: i64) -> Result<(), String> {
-    state.db.update_customer_points(customer_id, points_delta).map_err(|e| e.to_string())
+pub fn update_customer(state: State<AppState>, id: i64, name: Option<String>, phone: Option<String>, clear_phone: bool) -> Result<(), String> {
+    let phone_param: Option<Option<&str>> = if clear_phone {
+        Some(None)
+    } else {
+        phone.as_ref().map(|p| Some(p.as_str()))
+    };
+    state.db.update_customer(id, name.as_deref(), phone_param).map_err(|e| e.to_string())
 }
 
-#[allow(dead_code)]
 #[tauri::command]
-pub fn update_customer_balance(state: State<AppState>, customer_id: i64, balance_delta: f64) -> Result<(), String> {
-    state.db.update_customer_balance(customer_id, balance_delta).map_err(|e| e.to_string())
+pub fn delete_customer(state: State<AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_customer(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_loyalty_txns(state: State<AppState>, customer_id: i64) -> Result<Vec<LoyaltyTxn>, String> {
+    state.db.get_loyalty_txns(customer_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn add_loyalty_points(state: State<AppState>, customer_id: i64, order_id: Option<i64>, delta: i64, reason: String) -> Result<i64, String> {
+    state.db.add_loyalty_points(customer_id, order_id, delta, &reason).map_err(|e| e.to_string())
 }
 
 // ==================== 优惠券命令 ====================
@@ -1919,4 +1937,57 @@ pub fn download_and_open_update(url: String, app: tauri::AppHandle) -> Result<()
         crate::updater_check::download_and_open(&url, app);
     });
     Ok(())
+}
+
+// ==================== 局域网同步命令 ====================
+
+#[tauri::command]
+pub fn start_sync_server(state: State<AppState>, port: u16) -> Result<String, String> {
+    let mut guard = state.sync_server.lock().unwrap();
+    if let Some(ref h) = *guard {
+        if h.port == port {
+            let ip = crate::sync_server::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+            return Ok(format!("http://{}:{}", ip, port));
+        }
+        h.stop();
+    }
+    let handle = crate::sync_server::start_server(state.db_path.clone(), port)?;
+    *guard = Some(handle);
+    let ip = crate::sync_server::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    Ok(format!("http://{}:{}", ip, port))
+}
+
+#[tauri::command]
+pub fn stop_sync_server(state: State<AppState>) -> Result<(), String> {
+    let mut guard = state.sync_server.lock().unwrap();
+    if let Some(h) = guard.take() {
+        h.stop();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_sync_server_status(state: State<AppState>) -> Result<Option<u16>, String> {
+    let guard = state.sync_server.lock().unwrap();
+    Ok(guard.as_ref().map(|h| h.port))
+}
+
+#[tauri::command]
+pub fn get_local_ips() -> Result<Vec<String>, String> {
+    Ok(crate::sync_server::get_local_ip().into_iter().collect())
+}
+
+#[tauri::command]
+pub async fn fetch_sync_orders(server_url: String, since_epoch_s: i64) -> Result<Vec<serde_json::Value>, String> {
+    let url = format!("{}/api/orders?since={}", server_url.trim_end_matches('/'), since_epoch_s);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let text = client.get(&url)
+        .send().await
+        .map_err(|e| e.to_string())?
+        .text().await
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| format!("解析失败: {}", e))
 }

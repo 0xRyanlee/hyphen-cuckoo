@@ -6,7 +6,8 @@ import type {
   RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderWithItems, KitchenStation,
   TicketWithItems, InventoryBatch, InventorySummary, InventoryTxn, AttributeTemplate,
   Supplier, MaterialState, PurchaseOrder, PurchaseOrderWithItems,
-  ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Expense, SupplierProduct
+  ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Expense, SupplierProduct,
+  Customer
 } from "../types";
 
 // Wraps invoke so any failure is logged with the operation name before re-throwing.
@@ -53,6 +54,7 @@ export function useAppData() {
   const [selectedStocktake, setSelectedStocktake] = useState<StocktakeWithItems | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   const loadData = useCallback(async () => {
@@ -74,7 +76,7 @@ export function useAppData() {
       menuCatsR, menuItemsR, ordersR, stationsR,
       batchesR, summaryR, txnsR, attrsR, suppliersR,
       statesR, posR, prodsR, stocktakesR, expensesR,
-      supplierProdsR, pendingR, startedR,
+      supplierProdsR, pendingR, startedR, customersR,
     ] = await Promise.allSettled([
       tracked("get_units", invoke<Unit[]>("get_units")),
       tracked("get_material_categories", invoke<MaterialCategory[]>("get_material_categories")),
@@ -99,6 +101,7 @@ export function useAppData() {
       tracked("get_supplier_products", invoke<SupplierProduct[]>("get_supplier_products", { channel: null })),
       tracked("get_tickets_pending", invoke<TicketWithItems[]>("get_all_tickets_with_items", { status: "pending" })),
       tracked("get_tickets_started", invoke<TicketWithItems[]>("get_all_tickets_with_items", { status: "started" })),
+      tracked("get_customers", invoke<Customer[]>("get_customers", { search: null })),
     ]);
     if (unitsR.status === "fulfilled") setUnits(unitsR.value);
     if (catsR.status === "fulfilled") setCategories(catsR.value);
@@ -127,6 +130,7 @@ export function useAppData() {
     if (pendingR.status === "fulfilled" && startedR.status === "fulfilled") {
       setKdsTickets([...pendingR.value, ...startedR.value]);
     }
+    if (customersR.status === "fulfilled") setCustomers(customersR.value);
     setLoading(false);
   }, []);
 
@@ -161,6 +165,7 @@ export function useAppData() {
     selectedStocktake, setSelectedStocktake,
     expenses, setExpenses,
     supplierProducts, setSupplierProducts,
+    customers, setCustomers,
     unreadNotificationCount, setUnreadNotificationCount,
     loadData,
   };

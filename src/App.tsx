@@ -26,6 +26,7 @@ import { PrintPage } from "@/pages/print-page";
 import { PrintSettingsPage } from "@/pages/print-settings-page";
 import { PrintTemplatesPage } from "@/pages/print-templates-page";
 import { ExpensesPage } from "@/pages/expenses-page";
+import { CustomersPage } from "@/pages/customers-page";
 import { Toaster } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
@@ -36,6 +37,8 @@ import type { OrderWithItems, OrderItemModifier } from "./types";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { listen } from "@tauri-apps/api/event";
+import { RoleSwitchDialog } from "@/components/role-switch-dialog";
+import { type Role, checkAccess } from "@/lib/roles";
 
 // ==================== App ====================
 
@@ -46,6 +49,17 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [confirmAction, setConfirmAction] = useState<{ title: string; description: string; onConfirm: () => void } | null>(null);
   const [appStartTime] = useState(Date.now());
+  const [currentRole, setCurrentRole] = useState<Role>("owner");
+  const [roleSwitchOpen, setRoleSwitchOpen] = useState(false);
+
+  // LAN client sync state — reads from localStorage, updated via custom event
+  const [syncClientUrl, setSyncClientUrl] = useState(
+    () => localStorage.getItem("cuckoo_sync_client_url") || ""
+  );
+  const [syncActive, setSyncActive] = useState(
+    () => localStorage.getItem("cuckoo_sync_client_active") === "true"
+  );
+  const [lastSyncEpochS, setLastSyncEpochS] = useState(0);
   const [unseenErrorCount, setUnseenErrorCount] = useState(0);
   const { updateInfo, dismiss: dismissUpdate, skip: skipUpdate } = useAutoUpdate();
 
@@ -97,6 +111,7 @@ function App() {
     stocktakes, selectedStocktake, setSelectedStocktake,
     expenses, setExpenses,
     supplierProducts, setSupplierProducts,
+    customers,
     unreadNotificationCount,
     loadData,
   } = useAppData();
@@ -218,9 +233,52 @@ function App() {
     handleDeleteModifier,
     handleLoadModifiers,
     handleReportTelemetry,
+    handleRefundOrderItem,
+    handleCreateCustomer,
+    handleUpdateCustomer,
+    handleDeleteCustomer,
+    handleAddLoyaltyPoints,
   } = actions;
 
   const handleCreateMenuItemFull = actions.handleCreateMenuItem;
+
+  // Re-read sync settings when the settings page updates them
+  useEffect(() => {
+    const handler = () => {
+      setSyncClientUrl(localStorage.getItem("cuckoo_sync_client_url") || "");
+      setSyncActive(localStorage.getItem("cuckoo_sync_client_active") === "true");
+    };
+    window.addEventListener("cuckoo:sync-settings-changed", handler);
+    return () => window.removeEventListener("cuckoo:sync-settings-changed", handler);
+  }, []);
+
+  // LAN client polling: merge server orders into local state every 4s
+  useEffect(() => {
+    if (!syncActive || !syncClientUrl) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const raw = await invoke<Record<string, unknown>[]>("fetch_sync_orders", {
+          serverUrl: syncClientUrl,
+          sinceEpochS: lastSyncEpochS,
+        });
+        if (active && raw.length > 0) {
+          setOrders(prev => {
+            const map = new Map(prev.map(o => [o.id, o]));
+            raw.forEach(r => { if (r.id) map.set(r.id as number, r as any); });
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+          });
+          setLastSyncEpochS(Math.floor(Date.now() / 1000));
+        }
+      } catch { /* sync errors are silent */ }
+    };
+    poll();
+    const id = setInterval(poll, 4000);
+    return () => { active = false; clearInterval(id); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncActive, syncClientUrl]);
 
   // Keep a ref to orders so the telemetry effect can read the latest value
   // without re-running every time orders change.
@@ -303,10 +361,20 @@ function App() {
     <TooltipProvider>
       <SidebarProvider>
         <div className="flex h-screen w-full bg-background">
-          <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} notificationCount={unreadNotificationCount} />
+          <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} notificationCount={unreadNotificationCount} currentRole={currentRole} onOpenRoleSwitch={() => setRoleSwitchOpen(true)} />
           <SidebarInset className="flex flex-col">
             <AppHeader searchQuery={searchQuery} onSearchChange={setSearchQuery} onRefresh={loadData} refreshing={loading} />
             <main className="flex-1 overflow-auto p-6">
+              {!checkAccess(currentRole, activeTab) ? (
+                <div className="flex flex-col items-center justify-center h-full gap-4">
+                  <div className="rounded-full bg-muted p-6">
+                    <svg className="w-10 h-10 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m0 0v2m0-2h2m-2 0H10m2-6V9a4 4 0 00-8 0v3H3a1 1 0 00-1 1v7a1 1 0 001 1h18a1 1 0 001-1v-7a1 1 0 00-1-1h-1V9a4 4 0 00-8 0" /></svg>
+                  </div>
+                  <p className="text-lg font-semibold">无权访问此页面</p>
+                  <p className="text-sm text-muted-foreground">当前角色没有访问此功能的权限</p>
+                  <button onClick={() => setRoleSwitchOpen(true)} className="mt-2 rounded-lg border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors">切换角色</button>
+                </div>
+              ) : (
               <Routes>
                 <Route path="/dashboard" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
                 <Route path="/materials" element={<MaterialsPage materials={materials} recipes={recipes} categories={categories} tags={tags} units={units} onCreateMaterial={handleCreateMaterial} onUpdateMaterial={handleUpdateMaterial} onDeleteMaterial={handleDeleteMaterial} onRemoveMaterialTag={handleRemoveMaterialTag} onCreateCategory={handleCreateCategory} onDeleteCategory={handleDeleteCategory} onCreateTag={handleCreateTag} onDeleteTag={handleDeleteTag} searchQuery={searchQuery} />} />
@@ -315,7 +383,7 @@ function App() {
                 <Route path="/menu" element={<MenuPage menuCategories={menuCategories} menuItems={menuItems} recipes={recipes} onCreateMenuCategory={handleCreateMenuCategory} onCreateMenuItem={handleCreateMenuItemFull} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onToggleAvailability={handleToggleMenuItem} onBatchToggleAvailability={handleBatchToggleMenuItem} onToggleFavorite={handleToggleFavorite} onUpdateMenuItem={handleUpdateMenuItem} onDeleteMenuItem={handleDeleteMenuItem} onUpdateMenuCategory={handleUpdateMenuCategory} onDeleteMenuCategory={handleDeleteMenuCategory} onGetSpecs={handleGetSpecs} onCreateSpec={handleCreateSpec} onUpdateSpec={handleUpdateSpec} onDeleteSpec={handleDeleteSpec} searchQuery={searchQuery} />} />
                 <Route path="/pos" element={<POSPage menuCategories={menuCategories} menuItems={menuItems} onCreateOrder={handlePOSOrder} onCreateAndSubmit={handlePOSAndSubmit} onGetSpecs={handleGetSpecs} searchQuery={searchQuery} loading={loading} />} />
                 <Route path="/suppliers" element={<SuppliersPage suppliers={suppliers} supplierProducts={supplierProducts} onCreateSupplier={handleCreateSupplier} onUpdateSupplier={handleUpdateSupplier} onDeleteSupplier={handleDeleteSupplier} onCreateSupplierProduct={handleCreateSupplierProduct} onUpdateSupplierProduct={handleUpdateSupplierProduct} onDeleteSupplierProduct={handleDeleteSupplierProduct} searchQuery={searchQuery} />} />
-                <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onMarkReady={handleMarkOrderReady} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onPrintReceipt={handlePrintReceipt} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} />} />
+                <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onMarkReady={handleMarkOrderReady} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onPrintReceipt={handlePrintReceipt} onRefundOrderItem={handleRefundOrderItem} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} />} />
                 <Route path="/kds" element={<KDSPage allTickets={kdsTickets} stations={stations} menuItemNames={Object.fromEntries(menuItems.map((m) => [m.id, m.name]))} onStartTicket={async (id) => { try { await invoke("start_ticket", { ticketId: id, operator: null }); toast.success("工单已开始"); loadData(); } catch (e) { toast.error("开始工单失败", { description: String(e) }); } }} onFinishTicket={async (id) => { const ticket = kdsTickets.find((t) => t.id === id); if (ticket) { await handleFinishTicket(ticket); } else { await invoke("finish_ticket", { ticketId: id, operator: null }); toast.success("工单已完成"); loadData(); } }} onReprintTicket={handleReprintTicket} onRefresh={handleLoadKDS} />} />
                 <Route path="/attributes" element={<AttributesPage attributeTemplates={attributeTemplates} onRefresh={loadData} />} />
                 <Route path="/settings" element={<SettingsPage connected={connected} />} />
@@ -325,11 +393,13 @@ function App() {
                 <Route path="/stocktakes" element={<StocktakesPage stocktakes={stocktakes} onCreateStocktake={handleCreateStocktake} onUpdateItem={handleUpdateStocktakeItem} onCompleteStocktake={handleCompleteStocktake} onViewStocktake={handleViewStocktake} onDeleteStocktake={handleDeleteStocktake} selectedStocktake={selectedStocktake} searchQuery={searchQuery} />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/expenses" element={<ExpensesPage expenses={expenses} onCreateExpense={handleCreateExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />} />
+                <Route path="/customers" element={<CustomersPage customers={customers} onCreateCustomer={handleCreateCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onAddLoyaltyPoints={handleAddLoyaltyPoints} />} />
                 <Route path="/print" element={<PrintPage />} />
                 <Route path="/print-templates" element={<PrintTemplatesPage />} />
                 <Route path="/print-settings" element={<PrintSettingsPage />} />
                 <Route path="*" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
               </Routes>
+              )}
             </main>
           </SidebarInset>
         </div>
@@ -343,6 +413,7 @@ function App() {
         onConfirm={() => confirmAction?.onConfirm()}
       />
       {updateInfo && <UpdateBanner info={updateInfo} onDismiss={dismissUpdate} onSkip={skipUpdate} />}
+      <RoleSwitchDialog open={roleSwitchOpen} currentRole={currentRole} onSwitch={setCurrentRole} onClose={() => setRoleSwitchOpen(false)} />
     </TooltipProvider>
   );
 }

@@ -8,7 +8,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash2,
-         ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2 } from "lucide-react";
+         ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2, ShieldCheck, Eye, EyeOff,
+         Radio, ServerCrash, Link2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePin, setRolePin } from "@/lib/roles";
 import { toast } from "sonner";
 import { appLogger, type LogEntry, type ErrorCategory } from "@/lib/logger";
 import { UpdateDialog } from "@/components/UpdateDialog";
@@ -339,6 +342,289 @@ function ErrorLogPanel() {
   );
 }
 
+// ── LAN Sync ─────────────────────────────────────────────────────────────────
+
+const SYNC_CLIENT_URL_KEY = "cuckoo_sync_client_url";
+const SYNC_CLIENT_ACTIVE_KEY = "cuckoo_sync_client_active";
+
+function LanSyncCard() {
+  const [serverRunning, setServerRunning] = useState(false);
+  const [serverPort, setServerPort] = useState("7070");
+  const [serverUrl, setServerUrl] = useState("");
+
+  const [clientUrl, setClientUrl] = useState(
+    () => localStorage.getItem(SYNC_CLIENT_URL_KEY) || ""
+  );
+  const [clientActive, setClientActive] = useState(
+    () => localStorage.getItem(SYNC_CLIENT_ACTIVE_KEY) === "true"
+  );
+  const [clientStatus, setClientStatus] = useState<"idle" | "ok" | "error">("idle");
+
+  // Restore server state on mount
+  useEffect(() => {
+    invoke<number | null>("get_sync_server_status").then(port => {
+      if (port) {
+        setServerRunning(true);
+        setServerPort(String(port));
+        invoke<string[]>("get_local_ips").then(ips => {
+          if (ips[0]) setServerUrl(`http://${ips[0]}:${port}`);
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleStartServer = async () => {
+    try {
+      const port = parseInt(serverPort, 10);
+      if (isNaN(port) || port < 1024 || port > 65535) {
+        toast.error("端口号必须在 1024–65535 之间");
+        return;
+      }
+      const url = await invoke<string>("start_sync_server", { port });
+      setServerUrl(url);
+      setServerRunning(true);
+      toast.success(`服务已启动：${url}`);
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleStopServer = async () => {
+    try {
+      await invoke("stop_sync_server");
+      setServerRunning(false);
+      setServerUrl("");
+      toast.success("服务已停止");
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
+  const handleTestClient = async () => {
+    if (!clientUrl.trim()) { toast.error("请输入服务端地址"); return; }
+    try {
+      const url = clientUrl.trim().replace(/\/$/, "");
+      await invoke("fetch_sync_orders", { serverUrl: url, sinceEpochS: Math.floor(Date.now() / 1000) - 10 });
+      setClientStatus("ok");
+      toast.success("连接成功");
+    } catch (e) {
+      setClientStatus("error");
+      toast.error(`连接失败: ${String(e)}`);
+    }
+  };
+
+  const handleClientActivate = (active: boolean) => {
+    setClientActive(active);
+    localStorage.setItem(SYNC_CLIENT_ACTIVE_KEY, active ? "true" : "false");
+    localStorage.setItem(SYNC_CLIENT_URL_KEY, clientUrl.trim());
+    window.dispatchEvent(new CustomEvent("cuckoo:sync-settings-changed"));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Radio className="h-4 w-4" />
+          局域网多设备同步
+        </CardTitle>
+        <CardDescription>同一局域网内的多台设备可实时共享订单数据</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Server mode */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium flex items-center gap-1.5">
+            <ServerCrash className="w-3.5 h-3.5" />
+            主机模式（此设备作为数据源）
+          </p>
+          <div className="flex gap-2 items-center">
+            <Input
+              className="w-28 text-sm"
+              value={serverPort}
+              onChange={e => setServerPort(e.target.value)}
+              placeholder="7070"
+              disabled={serverRunning}
+            />
+            <span className="text-xs text-muted-foreground">端口</span>
+            {serverRunning ? (
+              <Button size="sm" variant="destructive" className="h-8" onClick={handleStopServer}>停止</Button>
+            ) : (
+              <Button size="sm" className="h-8" onClick={handleStartServer}>启动</Button>
+            )}
+          </div>
+          {serverRunning && serverUrl && (
+            <div className="flex items-center gap-2 rounded-lg bg-muted p-2.5">
+              <span className="text-xs font-mono flex-1 text-emerald-600 dark:text-emerald-400 break-all">
+                {serverUrl}
+              </span>
+              <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => {
+                navigator.clipboard.writeText(serverUrl);
+                toast.success("已复制");
+              }}>
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+          {serverRunning && (
+            <p className="text-xs text-muted-foreground">将此地址填入其他设备的「从机模式」</p>
+          )}
+        </div>
+
+        <Separator />
+
+        {/* Client mode */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium flex items-center gap-1.5">
+            <Link2 className="w-3.5 h-3.5" />
+            从机模式（连接到主机，只读同步）
+          </p>
+          <div className="flex gap-2">
+            <Input
+              className="flex-1 text-sm font-mono"
+              value={clientUrl}
+              onChange={e => { setClientUrl(e.target.value); setClientStatus("idle"); }}
+              placeholder="http://192.168.x.x:7070"
+              disabled={clientActive}
+            />
+            <Button size="sm" variant="outline" className="h-9 shrink-0" onClick={handleTestClient} disabled={clientActive}>
+              测试
+            </Button>
+          </div>
+          {clientStatus === "ok" && (
+            <p className="text-xs text-emerald-600 flex items-center gap-1"><Wifi className="w-3 h-3" />连接正常</p>
+          )}
+          {clientStatus === "error" && (
+            <p className="text-xs text-destructive flex items-center gap-1"><WifiOff className="w-3 h-3" />连接失败，请检查地址与网络</p>
+          )}
+          <div className="flex items-center justify-between">
+            <Label htmlFor="client-active-switch" className="flex flex-col gap-0.5 cursor-pointer">
+              <span className="text-sm font-medium">启用同步（每 4 秒拉取一次）</span>
+              <span className="text-xs text-muted-foreground">启用后此设备订单列表将包含主机数据</span>
+            </Label>
+            <Switch
+              id="client-active-switch"
+              checked={clientActive}
+              onCheckedChange={handleClientActivate}
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Role PIN management ───────────────────────────────────────────────────────
+
+const ROLES: Role[] = ["owner", "cashier", "chef", "warehouse"];
+
+function RolePinCard() {
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [_, forceUpdate] = useState(0);
+
+  const startEdit = (role: Role) => {
+    setEditingRole(role);
+    setNewPin("");
+    setConfirmPin("");
+    setShowPin(false);
+  };
+
+  const handleSave = () => {
+    if (!editingRole) return;
+    if (newPin && newPin !== confirmPin) {
+      toast.error("两次输入的 PIN 不一致");
+      return;
+    }
+    if (newPin && newPin.length < 4) {
+      toast.error("PIN 至少 4 位");
+      return;
+    }
+    setRolePin(editingRole, newPin || null);
+    toast.success(newPin ? `${ROLE_LABELS[editingRole]} PIN 已设置` : `${ROLE_LABELS[editingRole]} PIN 已清除`);
+    setEditingRole(null);
+    forceUpdate(n => n + 1);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4" />
+          角色权限 PIN 管理
+        </CardTitle>
+        <CardDescription>为每个角色设置 PIN 码。切换到该角色时需要输入对应 PIN。不设置 PIN 则可自由切换。</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {ROLES.map((role) => {
+          const hasPin = !!getRolePin(role);
+          const isEditing = editingRole === role;
+          return (
+            <div key={role} className="rounded-lg border p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${ROLE_COLORS[role]}`}>
+                    {ROLE_LABELS[role]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{hasPin ? "● ● ● ●" : "未设置"}</span>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => isEditing ? setEditingRole(null) : startEdit(role)}>
+                    {isEditing ? "取消" : hasPin ? "修改" : "设置"}
+                  </Button>
+                  {hasPin && !isEditing && (
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => {
+                      setRolePin(role, null);
+                      toast.success(`${ROLE_LABELS[role]} PIN 已清除`);
+                      forceUpdate(n => n + 1);
+                    }}>清除</Button>
+                  )}
+                </div>
+              </div>
+              {isEditing && (
+                <div className="space-y-2 pt-1">
+                  <div className="relative">
+                    <Input
+                      type={showPin ? "text" : "password"}
+                      inputMode="numeric"
+                      maxLength={8}
+                      value={newPin}
+                      onChange={(e) => setNewPin(e.target.value)}
+                      placeholder="新 PIN（留空则清除）"
+                      className="pr-9 text-sm"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      onClick={() => setShowPin(v => !v)}
+                    >
+                      {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  {newPin && (
+                    <Input
+                      type={showPin ? "text" : "password"}
+                      inputMode="numeric"
+                      maxLength={8}
+                      value={confirmPin}
+                      onChange={(e) => setConfirmPin(e.target.value)}
+                      placeholder="确认 PIN"
+                      className="text-sm"
+                      onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                    />
+                  )}
+                  <Button size="sm" className="h-7 text-xs" onClick={handleSave}>保存</Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export function SettingsPage({ connected }: SettingsPageProps) {
@@ -511,6 +797,12 @@ export function SettingsPage({ connected }: SettingsPageProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* LAN sync */}
+      <LanSyncCard />
+
+      {/* Role PIN management */}
+      <RolePinCard />
 
       {/* Error Log Panel */}
       <Card>

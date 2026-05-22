@@ -15,6 +15,7 @@ interface OrderItem {
   qty: number;
   unit_price: number;
   note: string | null;
+  refunded: boolean;
 }
 
 interface TicketWithItems {

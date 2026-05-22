@@ -24,6 +24,7 @@ interface OrderItem {
   qty: number;
   unit_price: number;
   note: string | null;
+  refunded: boolean;
 }
 
 interface OrderItemModifier {
@@ -76,6 +77,7 @@ interface OrdersPageProps {
   onMarkReady: (id: number) => void;
   onUpdatePayment: (id: number, payment_status: string, payment_method: string | null, amount_paid: number) => void;
   onPrintReceipt?: (id: number) => void;
+  onRefundOrderItem?: (orderId: number, itemId: number) => Promise<number>;
   onLoadMore: () => void;
   hasMore: boolean;
   searchQuery?: string;
@@ -98,6 +100,7 @@ export function OrdersPage({
   onMarkReady,
   onUpdatePayment,
   onPrintReceipt,
+  onRefundOrderItem,
   onLoadMore,
   hasMore,
 }: OrdersPageProps) {
@@ -410,31 +413,53 @@ export function OrdersPage({
                   <ScrollArea className="max-h-[50vh]">
                   <div className="space-y-3 pr-2">
                     {selectedOrder.items.map((item) => (
-                      <div key={item.id} className="p-2 bg-muted rounded space-y-1">
+                      <div key={item.id} className={`p-2 rounded space-y-1 ${item.refunded ? "bg-muted/50 opacity-60" : "bg-muted"}`}>
                         <div className="flex justify-between text-sm">
-                          <span className="font-medium">
+                          <span className={`font-medium flex items-center gap-1.5 ${item.refunded ? "line-through text-muted-foreground" : ""}`}>
                             {menuItems[item.menu_item_id] || `商品 #${item.menu_item_id}`} x{item.qty}
+                            {item.refunded && <Badge variant="destructive" className="text-[10px] h-4 px-1">已退</Badge>}
                           </span>
-                          <span>¥{(item.qty * item.unit_price).toFixed(2)}</span>
+                          <span className={item.refunded ? "line-through text-muted-foreground" : ""}>¥{(item.qty * item.unit_price).toFixed(2)}</span>
                         </div>
                         {item.note && <div className="text-xs text-amber-500 ml-2">備註: {item.note}</div>}
                         <div className="flex items-center gap-1 mt-1">
-                          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => {
-                            setModifierOrderItemId(item.id);
-                            setModifierType("add");
-                            setModifierMaterialId("");
-                            setModifierQty("1");
-                            setModifierPriceDelta("0");
-                            setModifierDialogOpen(true);
-                          }}><PlusCircle className="h-3 w-3 mr-1" />加料</Button>
-                          <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => {
-                            setModifierOrderItemId(item.id);
-                            setModifierType("remove");
-                            setModifierMaterialId("");
-                            setModifierQty("1");
-                            setModifierPriceDelta("0");
-                            setModifierDialogOpen(true);
-                          }}><MinusCircle className="h-3 w-3 mr-1" />去料</Button>
+                          {!item.refunded && (
+                            <>
+                              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => {
+                                setModifierOrderItemId(item.id);
+                                setModifierType("add");
+                                setModifierMaterialId("");
+                                setModifierQty("1");
+                                setModifierPriceDelta("0");
+                                setModifierDialogOpen(true);
+                              }}><PlusCircle className="h-3 w-3 mr-1" />加料</Button>
+                              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs" onClick={() => {
+                                setModifierOrderItemId(item.id);
+                                setModifierType("remove");
+                                setModifierMaterialId("");
+                                setModifierQty("1");
+                                setModifierPriceDelta("0");
+                                setModifierDialogOpen(true);
+                              }}><MinusCircle className="h-3 w-3 mr-1" />去料</Button>
+                            </>
+                          )}
+                          {!item.refunded && onRefundOrderItem && selectedOrder.order.payment_status === "paid" && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                              onClick={async () => {
+                                try {
+                                  const amt = await onRefundOrderItem(selectedOrder.order.id, item.id);
+                                  toast.success(`已退款 ¥${amt.toFixed(2)}`);
+                                } catch (e) {
+                                  toast.error(String(e));
+                                }
+                              }}
+                            >
+                              <X className="h-3 w-3 mr-1" />退单
+                            </Button>
+                          )}
                           {itemModifiers[item.id] && itemModifiers[item.id].length > 0 && (
                             <div className="flex flex-wrap gap-1 ml-2">
                               {itemModifiers[item.id].map((mod) => (

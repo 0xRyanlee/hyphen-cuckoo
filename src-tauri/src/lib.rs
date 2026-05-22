@@ -2,6 +2,7 @@ mod database;
 mod commands;
 mod printer;
 mod updater_check;
+mod sync_server;
 
 use commands::AppState;
 use database::Database;
@@ -70,7 +71,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(AppState { db })
+        .manage(AppState {
+        db,
+        db_path,
+        sync_server: std::sync::Mutex::new(None),
+    })
         .invoke_handler(tauri::generate_handler![
             // 健康檢查
             commands::health_check,
@@ -142,6 +147,7 @@ pub fn run() {
             commands::mark_order_ready,
             commands::update_order_payment,
             commands::record_order_refund,
+            commands::refund_order_item,
             commands::get_sales_by_hour,
             commands::get_sales_by_weekday,
             commands::batch_cancel_orders,
@@ -278,6 +284,19 @@ pub fn run() {
             commands::mark_all_notifications_read,
             commands::delete_notification,
             commands::check_and_create_alerts,
+            // 会员积分
+            commands::get_customers,
+            commands::create_customer,
+            commands::update_customer,
+            commands::delete_customer,
+            commands::get_loyalty_txns,
+            commands::add_loyalty_points,
+            // 局域网同步
+            commands::start_sync_server,
+            commands::stop_sync_server,
+            commands::get_sync_server_status,
+            commands::get_local_ips,
+            commands::fetch_sync_orders,
             // 打印調試
             commands::debug_print_kitchen_ticket,
             commands::debug_print_batch_label,

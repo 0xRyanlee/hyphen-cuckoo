@@ -93,6 +93,7 @@ export interface OrderItem {
   qty: number;
   unit_price: number;
   note: string | null;
+  refunded: boolean;
 }
 export interface OrderItemModifier {
   id: number;
@@ -346,4 +347,20 @@ export interface PrintTicketType {
   show_supplier: boolean;
   created_at: string;
   updated_at: string;
+}
+export interface Customer {
+  id: number;
+  name: string;
+  phone: string | null;
+  points: number;
+  total_spent: number;
+  created_at: string;
+}
+export interface LoyaltyTxn {
+  id: number;
+  customer_id: number;
+  order_id: number | null;
+  delta: number;
+  reason: string;
+  created_at: string;
 }

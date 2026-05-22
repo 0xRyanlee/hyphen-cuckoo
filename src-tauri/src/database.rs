@@ -317,22 +317,14 @@ pub struct Order {
     pub updated_at: String,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Customer {
     pub id: i64,
-    pub name: Option<String>,
+    pub name: String,
     pub phone: Option<String>,
-    pub wechat_openid: Option<String>,
-    pub membership_no: Option<String>,
     pub points: i64,
-    pub balance: f64,
-    pub birthday: Option<String>,
-    pub gender: Option<String>,
-    pub note: Option<String>,
-    pub is_active: bool,
+    pub total_spent: f64,
     pub created_at: String,
-    pub updated_at: String,
 }
 
 #[allow(dead_code)]
@@ -360,6 +352,7 @@ pub struct OrderItem {
     pub qty: f64,
     pub unit_price: f64,
     pub note: Option<String>,
+    pub refunded: bool,
 }
 
 // ==================== KDS 類型 ====================
@@ -464,6 +457,16 @@ pub struct Notification {
     pub ref_id: Option<i64>,
     pub is_read: bool,
     pub read_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoyaltyTxn {
+    pub id: i64,
+    pub customer_id: i64,
+    pub order_id: Option<i64>,
+    pub delta: i64,
+    pub reason: String,
     pub created_at: String,
 }
 
@@ -1431,6 +1434,17 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS loyalty_txns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+                delta INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_loyalty_txns_customer ON loyalty_txns(customer_id);
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_categories_name ON menu_categories(name);
             "
         )?;
@@ -1642,6 +1656,18 @@ impl Database {
             .exists([])?;
         if !has_is_favorite {
             conn.execute_batch("ALTER TABLE menu_items ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")?;
+        }
+        let has_total_spent: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('customers') WHERE name='total_spent'")?
+            .exists([])?;
+        if !has_total_spent {
+            conn.execute_batch("ALTER TABLE customers ADD COLUMN total_spent REAL NOT NULL DEFAULT 0.0")?;
+        }
+        let has_item_refunded: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('order_items') WHERE name='refunded'")?
+            .exists([])?;
+        if !has_item_refunded {
+            conn.execute_batch("ALTER TABLE order_items ADD COLUMN refunded INTEGER NOT NULL DEFAULT 0")?;
         }
         Ok(())
     }
@@ -3601,7 +3627,7 @@ impl Database {
         )?;
         
         let mut stmt = conn.prepare(
-            "SELECT id, order_id, menu_item_id, spec_code, qty, unit_price, note FROM order_items WHERE order_id = ?1"
+            "SELECT id, order_id, menu_item_id, spec_code, qty, unit_price, note, COALESCE(refunded,0) FROM order_items WHERE order_id = ?1"
         )?;
         let items = stmt.query_map(params![order_id], |row| {
             Ok(OrderItem {
@@ -3612,6 +3638,7 @@ impl Database {
                 qty: row.get(4)?,
                 unit_price: row.get(5)?,
                 note: row.get(6)?,
+                refunded: row.get::<_, i64>(7)? != 0,
             })
         })?.collect::<Result<Vec<_>>>()?;
         
@@ -4308,6 +4335,36 @@ impl Database {
             params![refund_amount, order_id],
         )?;
         Ok(())
+    }
+
+    pub fn refund_order_item(&self, order_id: i64, item_id: i64) -> Result<f64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<f64> = (|| {
+            // Verify item belongs to this order and is not already refunded
+            let (qty, unit_price, already_refunded): (f64, f64, i64) = conn.query_row(
+                "SELECT qty, unit_price, COALESCE(refunded,0) FROM order_items WHERE id = ?1 AND order_id = ?2",
+                params![item_id, order_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
+            if already_refunded != 0 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            let item_amount = qty * unit_price;
+            conn.execute(
+                "UPDATE order_items SET refunded = 1 WHERE id = ?1",
+                params![item_id],
+            )?;
+            conn.execute(
+                "UPDATE orders SET refund_amount = COALESCE(refund_amount,0) + ?1, updated_at = datetime('now') WHERE id = ?2",
+                params![item_amount, order_id],
+            )?;
+            Ok(item_amount)
+        })();
+        match result {
+            Ok(amt) => { conn.execute_batch("COMMIT")?; Ok(amt) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
     pub fn get_sales_by_hour(&self, start_date: &str, end_date: &str) -> Result<Vec<(i32, i64, f64)>> {
@@ -5174,61 +5231,80 @@ impl Database {
         Ok(())
     }
 
-    // ==================== 会员系统 ====================
+    // ==================== 顾客积分系统 ====================
 
-    #[allow(dead_code)]
-    pub fn get_customers(&self) -> Result<Vec<Customer>> {
+    pub fn get_customers(&self, search: Option<&str>) -> Result<Vec<Customer>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, phone, wechat_openid, membership_no, points, balance, birthday, gender, note, is_active, created_at, updated_at FROM customers WHERE is_active = 1 ORDER BY created_at DESC")?;
-        let customers = stmt.query_map([], |row| {
-            Ok(Customer {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                phone: row.get(2)?,
-                wechat_openid: row.get(3)?,
-                membership_no: row.get(4)?,
-                points: row.get(5)?,
-                balance: row.get(6)?,
-                birthday: row.get(7)?,
-                gender: row.get(8)?,
-                note: row.get(9)?,
-                is_active: row.get::<_, i32>(10)? != 0,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
-            })
-        })?.collect::<Result<Vec<_>>>()?;
-        Ok(customers)
+        let mut stmt = if let Some(q) = search {
+            let pat = format!("%{}%", q);
+            let mut s = conn.prepare(
+                "SELECT id, COALESCE(name,''), phone, points, COALESCE(total_spent,0.0), created_at FROM customers WHERE is_active = 1 AND (name LIKE ?1 OR phone LIKE ?1) ORDER BY name"
+            )?;
+            let rows = s.query_map(params![pat], |row| Ok(Customer { id: row.get(0)?, name: row.get(1)?, phone: row.get(2)?, points: row.get(3)?, total_spent: row.get(4)?, created_at: row.get(5)? }))?.collect::<Result<Vec<_>>>()?;
+            return Ok(rows);
+        } else {
+            conn.prepare("SELECT id, COALESCE(name,''), phone, points, COALESCE(total_spent,0.0), created_at FROM customers WHERE is_active = 1 ORDER BY name")?
+        };
+        let rows = stmt.query_map([], |row| Ok(Customer { id: row.get(0)?, name: row.get(1)?, phone: row.get(2)?, points: row.get(3)?, total_spent: row.get(4)?, created_at: row.get(5)? }))?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
     }
 
-    #[allow(dead_code)]
-    pub fn create_customer(&self, name: Option<&str>, phone: Option<&str>, wechat_openid: Option<&str>) -> Result<i64> {
+    pub fn create_customer(&self, name: &str, phone: Option<&str>) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
-        let membership_no = format!("M{}", chrono::Local::now().format("%Y%m%d%H%M%S"));
         conn.execute(
-            "INSERT INTO customers (name, phone, wechat_openid, membership_no) VALUES (?1, ?2, ?3, ?4)",
-            params![name, phone, wechat_openid, membership_no],
+            "INSERT INTO customers (name, phone) VALUES (?1, ?2)",
+            params![name, phone],
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    #[allow(dead_code)]
-    pub fn update_customer_points(&self, customer_id: i64, points_delta: i64) -> Result<()> {
+    pub fn update_customer(&self, id: i64, name: Option<&str>, phone: Option<Option<&str>>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE customers SET points = points + ?1, updated_at = datetime('now') WHERE id = ?2",
-            params![points_delta, customer_id],
-        )?;
+        if let Some(n) = name {
+            conn.execute("UPDATE customers SET name = ?1 WHERE id = ?2", params![n, id])?;
+        }
+        if let Some(p) = phone {
+            conn.execute("UPDATE customers SET phone = ?1 WHERE id = ?2", params![p, id])?;
+        }
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub fn update_customer_balance(&self, customer_id: i64, balance_delta: f64) -> Result<()> {
+    pub fn delete_customer(&self, id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE customers SET balance = balance + ?1, updated_at = datetime('now') WHERE id = ?2",
-            params![balance_delta, customer_id],
-        )?;
+        conn.execute("UPDATE customers SET is_active = 0 WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn get_loyalty_txns(&self, customer_id: i64) -> Result<Vec<LoyaltyTxn>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, customer_id, order_id, delta, reason, created_at FROM loyalty_txns WHERE customer_id = ?1 ORDER BY created_at DESC LIMIT 100"
+        )?;
+        let rows = stmt.query_map(params![customer_id], |row| {
+            Ok(LoyaltyTxn { id: row.get(0)?, customer_id: row.get(1)?, order_id: row.get(2)?, delta: row.get(3)?, reason: row.get(4)?, created_at: row.get(5)? })
+        })?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn add_loyalty_points(&self, customer_id: i64, order_id: Option<i64>, delta: i64, reason: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<i64> = (|| {
+            conn.execute(
+                "UPDATE customers SET points = points + ?1, total_spent = total_spent + CASE WHEN ?1 > 0 THEN CAST(?1 AS REAL) ELSE 0 END WHERE id = ?2",
+                params![delta, customer_id],
+            )?;
+            conn.execute(
+                "INSERT INTO loyalty_txns (customer_id, order_id, delta, reason) VALUES (?1, ?2, ?3, ?4)",
+                params![customer_id, order_id, delta, reason],
+            )?;
+            let balance: i64 = conn.query_row("SELECT points FROM customers WHERE id = ?1", params![customer_id], |r| r.get(0))?;
+            Ok(balance)
+        })();
+        match result {
+            Ok(bal) => { conn.execute_batch("COMMIT")?; Ok(bal) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
     // ==================== 优惠券系统 ====================

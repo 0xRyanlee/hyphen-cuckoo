@@ -21,7 +21,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, User, LogOut, CreditCard, Truck, ClipboardList, Factory, FileBox, BarChart3, Printer, Monitor, Layers, SlidersHorizontal, Receipt } from "lucide-react";
+import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Truck, ClipboardList, Factory, FileBox, BarChart3, Printer, Monitor, Layers, SlidersHorizontal, Receipt, Users, ShieldCheck } from "lucide-react";
+import { type Role, ROLE_LABELS, ROLE_COLORS, checkAccess } from "@/lib/roles";
 
 const navGroups = [
   {
@@ -30,6 +31,7 @@ const navGroups = [
       { id: "pos", label: "POS 点餐", icon: CreditCard },
       { id: "orders", label: "订单", icon: ShoppingCart },
       { id: "kds", label: "KDS 厨房", icon: Monitor },
+      { id: "customers", label: "顾客管理", icon: Users },
     ],
   },
   {
@@ -70,9 +72,11 @@ interface AppSidebarProps {
   connected: boolean;
   errorCount?: number;
   notificationCount?: number;
+  currentRole?: Role;
+  onOpenRoleSwitch?: () => void;
 }
 
-export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificationCount = 0 }: AppSidebarProps) {
+export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificationCount = 0, currentRole = "owner", onOpenRoleSwitch }: AppSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
@@ -93,45 +97,49 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
       </SidebarHeader>
 
       <SidebarContent>
-        {navGroups.map((group) => (
-          <SidebarGroup key={group.label}>
-            {!isCollapsed && (
-              <SidebarGroupLabel className="text-xs text-muted-foreground">
-                {group.label}
-              </SidebarGroupLabel>
-            )}
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => {
-                  const showErrorBadge = item.id === "settings" && errorCount > 0;
-                  const showNotificationBadge = item.id === "dashboard" && notificationCount > 0;
-                  return (
-                    <SidebarMenuItem key={item.id}>
-                      <SidebarMenuButton
-                        onClick={() => onTabChange(item.id)}
-                        isActive={activeTab === item.id}
-                        tooltip={item.label}
-                      >
-                        {item.icon && <item.icon className="h-4 w-4" />}
-                        <span className="flex-1">{item.label}</span>
-                        {showErrorBadge && (
-                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
-                            {errorCount > 99 ? "99+" : errorCount}
-                          </span>
-                        )}
-                        {showNotificationBadge && (
-                          <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
-                            {notificationCount > 99 ? "99+" : notificationCount}
-                          </span>
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        {navGroups.map((group) => {
+          const visibleItems = group.items.filter(item => checkAccess(currentRole, item.id));
+          if (visibleItems.length === 0) return null;
+          return (
+            <SidebarGroup key={group.label}>
+              {!isCollapsed && (
+                <SidebarGroupLabel className="text-xs text-muted-foreground">
+                  {group.label}
+                </SidebarGroupLabel>
+              )}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleItems.map((item) => {
+                    const showErrorBadge = item.id === "settings" && errorCount > 0;
+                    const showNotificationBadge = item.id === "dashboard" && notificationCount > 0;
+                    return (
+                      <SidebarMenuItem key={item.id}>
+                        <SidebarMenuButton
+                          onClick={() => onTabChange(item.id)}
+                          isActive={activeTab === item.id}
+                          tooltip={item.label}
+                        >
+                          {item.icon && <item.icon className="h-4 w-4" />}
+                          <span className="flex-1">{item.label}</span>
+                          {showErrorBadge && (
+                            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
+                              {errorCount > 99 ? "99+" : errorCount}
+                            </span>
+                          )}
+                          {showNotificationBadge && (
+                            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
+                              {notificationCount > 99 ? "99+" : notificationCount}
+                            </span>
+                          )}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-border p-4">
@@ -140,13 +148,15 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
             <div className="flex items-center gap-3 cursor-pointer hover:bg-accent rounded-lg p-2 -mx-2 transition-colors">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
-                  A
+                  {ROLE_LABELS[currentRole].charAt(0)}
                 </AvatarFallback>
               </Avatar>
               {!isCollapsed && (
                 <div className="flex flex-1 flex-col gap-0.5 leading-none min-w-0">
-                  <span className="text-sm font-medium truncate">管理员</span>
-                  <span className="text-xs text-muted-foreground truncate">admin@cuckoo.com</span>
+                  <span className="text-sm font-medium truncate">{ROLE_LABELS[currentRole]}</span>
+                  <span className={`text-[10px] font-semibold rounded px-1 py-0.5 w-fit ${ROLE_COLORS[currentRole]}`}>
+                    {currentRole === "owner" ? "完整权限" : "受限模式"}
+                  </span>
                 </div>
               )}
               {!isCollapsed && <MoreHorizontal className="ml-auto h-4 w-4 text-muted-foreground" />}
@@ -157,11 +167,11 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
             align="end"
             side={isCollapsed ? "right" : "top"}
           >
-            <DropdownMenuLabel>我的账户</DropdownMenuLabel>
+            <DropdownMenuLabel>当前角色：{ROLE_LABELS[currentRole]}</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <User className="mr-2 h-4 w-4" />
-              个人设置
+            <DropdownMenuItem onClick={onOpenRoleSwitch}>
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              切换角色
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive">

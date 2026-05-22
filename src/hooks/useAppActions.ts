@@ -722,6 +722,42 @@ export function useAppActions({
     catch { /* telemetry is best-effort; do not pollute the user-visible error log */ }
   };
 
+  const handleRefundOrderItem = async (orderId: number, itemId: number): Promise<number> => {
+    const refundedAmount = await invoke<number>("refund_order_item", { orderId, itemId });
+    await loadData();
+    return refundedAmount;
+  };
+
+  const handleCreateCustomer = async (name: string, phone: string | null) => {
+    try {
+      await invoke("create_customer", { name, phone });
+      toast.success("顾客已添加");
+      await loadData();
+    } catch (e) { toast.error(formatError(e)); }
+  };
+
+  const handleUpdateCustomer = async (id: number, name: string | null, phone: string | null, clearPhone: boolean) => {
+    try {
+      await invoke("update_customer", { id, name, phone, clearPhone });
+      toast.success("顾客信息已更新");
+      await loadData();
+    } catch (e) { toast.error(formatError(e)); }
+  };
+
+  const handleDeleteCustomer = async (id: number) => {
+    try {
+      await invoke("delete_customer", { id });
+      toast.success("顾客已删除");
+      await loadData();
+    } catch (e) { toast.error(formatError(e)); }
+  };
+
+  const handleAddLoyaltyPoints = async (customerId: number, orderId: number | null, delta: number, reason: string): Promise<number> => {
+    const newPoints = await invoke<number>("add_loyalty_points", { customerId, orderId, delta, reason });
+    await loadData();
+    return newPoints;
+  };
+
   return {
     // 材料
     handleCreateMaterial, handleUpdateMaterial, handleDeleteMaterial, handleRemoveMaterialTag,
@@ -759,5 +795,9 @@ export function useAppActions({
     handleAddModifier, handleDeleteModifier, handleLoadModifiers,
     // 遙測
     handleReportTelemetry,
+    // 单品退单
+    handleRefundOrderItem,
+    // 顾客
+    handleCreateCustomer, handleUpdateCustomer, handleDeleteCustomer, handleAddLoyaltyPoints,
   };
 }
