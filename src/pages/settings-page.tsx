@@ -28,13 +28,13 @@ interface SettingsPageProps {
 // ── Category display config ──────────────────────────────────────────────────
 
 const CATEGORY_CONFIG: Record<ErrorCategory, { label: string; className: string }> = {
-  db:         { label: "数据库",   className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
-  not_found:  { label: "查无数据", className: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300" },
-  validation: { label: "参数错误", className: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300" },
-  ipc:        { label: "IPC 连线", className: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
-  print:      { label: "打印机",   className: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400" },
-  render:     { label: "界面崩溃", className: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" },
-  runtime:    { label: "JS 运行期", className: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300" },
+  db:         { label: "数据库",   className: "bg-muted text-muted-foreground" },
+  not_found:  { label: "查无数据", className: "bg-muted text-muted-foreground" },
+  validation: { label: "参数错误", className: "bg-muted text-muted-foreground" },
+  ipc:        { label: "IPC 连线", className: "bg-muted text-muted-foreground" },
+  print:      { label: "打印机",   className: "bg-muted text-muted-foreground" },
+  render:     { label: "界面崩溃", className: "bg-destructive/10 text-destructive" },
+  runtime:    { label: "JS 运行期", className: "bg-muted text-muted-foreground" },
   logic:      { label: "业务逻辑", className: "bg-muted text-muted-foreground" },
 };
 

@@ -188,11 +188,11 @@ export function InventoryPage({
 
   const getTxnTypeBadge = (type: string) => {
     switch (type) {
-      case "reserve": return <Badge className="bg-blue-600">预扣</Badge>;
-      case "consume": return <Badge className="bg-emerald-600">实扣</Badge>;
-      case "release": return <Badge variant="secondary">回补</Badge>;
-      case "purchase_in": return <Badge className="bg-purple-600">入库</Badge>;
-      case "adjustment": return <Badge className="bg-amber-600">调整</Badge>;
+      case "reserve": return <Badge variant="secondary">预扣</Badge>;
+      case "consume": return <Badge variant="secondary">实扣</Badge>;
+      case "release": return <Badge variant="outline">回补</Badge>;
+      case "purchase_in": return <Badge>入库</Badge>;
+      case "adjustment": return <Badge variant="outline">调整</Badge>;
       case "wastage": return <Badge variant="destructive">损耗</Badge>;
       default: return <Badge variant="outline">{type}</Badge>;
     }

@@ -16,13 +16,14 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Truck, ClipboardList, Factory, FileBox, BarChart3, Printer, Monitor, Layers, SlidersHorizontal, Receipt, Users, ShieldCheck } from "lucide-react";
-import { type Role, ROLE_LABELS, ROLE_COLORS, checkAccess } from "@/lib/roles";
+import { type Role, ROLE_LABELS, checkAccess } from "@/lib/roles";
 
 const navGroups = [
   {
@@ -82,7 +83,7 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border">
-      <SidebarHeader className="h-14 border-b border-border px-4 pl-12 md:pl-4">
+      <SidebarHeader className="h-14 border-b border-border px-4">
         <div className="flex items-center gap-3">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <span className="text-xs font-bold">C</span>
@@ -154,7 +155,7 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
               {!isCollapsed && (
                 <div className="flex flex-1 flex-col gap-0.5 leading-none min-w-0">
                   <span className="text-sm font-medium truncate">{ROLE_LABELS[currentRole]}</span>
-                  <span className={`text-[10px] font-semibold rounded px-1 py-0.5 w-fit ${ROLE_COLORS[currentRole]}`}>
+                  <span className="text-xs text-muted-foreground">
                     {currentRole === "owner" ? "完整权限" : "受限模式"}
                   </span>
                 </div>
@@ -167,17 +168,19 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
             align="end"
             side={isCollapsed ? "right" : "top"}
           >
-            <DropdownMenuLabel>当前角色：{ROLE_LABELS[currentRole]}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onOpenRoleSwitch}>
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              切换角色
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
-              <LogOut className="mr-2 h-4 w-4" />
-              退出登录
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>当前角色：{ROLE_LABELS[currentRole]}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onOpenRoleSwitch}>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                切换角色
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                退出登录
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>

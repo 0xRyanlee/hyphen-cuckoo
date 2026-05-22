@@ -172,12 +172,12 @@ export function SuppliersPage({
                     <TableCell className="text-muted-foreground">{p.supplier_name}</TableCell>
                     <TableCell>
                       {p.channel === "local" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
                           <Store className="h-3 w-3" />
                           本地
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-800">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
                           <Globe className="h-3 w-3" />
                           网络
                         </span>

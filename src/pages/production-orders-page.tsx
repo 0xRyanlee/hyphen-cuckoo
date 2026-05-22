@@ -84,8 +84,8 @@ export function ProductionOrdersPage({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft": return <Badge variant="outline">草稿</Badge>;
-      case "in_progress": return <Badge className="bg-blue-600">生产中</Badge>;
-      case "completed": return <Badge className="bg-emerald-600">已完成</Badge>;
+      case "in_progress": return <Badge>生产中</Badge>;
+      case "completed": return <Badge variant="secondary">已完成</Badge>;
       case "cancelled": return <Badge variant="destructive">已取消</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
@@ -133,10 +133,10 @@ export function ProductionOrdersPage({
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewOrder(order.id)}><Eye className="h-4 w-4" /></Button>
                           {order.status === "draft" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => onStartOrder(order.id)}><Play className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => onStartOrder(order.id)}><Play className="h-4 w-4" /></Button>
                           )}
                           {order.status === "in_progress" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => { setCompleteId(order.id); setCompleteActualQty(order.planned_qty.toString()); }}><CheckCircle className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => { setCompleteId(order.id); setCompleteActualQty(order.planned_qty.toString()); }}><CheckCircle className="h-4 w-4" /></Button>
                           )}
                           {order.status === "draft" && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDeleteOrder(order.id)}><Trash2 className="h-4 w-4" /></Button>

@@ -122,20 +122,20 @@ export function KDSPage({
   };
 
   const getStatusColor = (status: string, overtimed: boolean) => {
-    if (overtimed) return "border-red-500/70 bg-red-500/5";
+    if (overtimed) return "border-destructive/70 bg-destructive/5";
     switch (status) {
-      case "pending": return "border-amber-500/50 bg-amber-500/5";
-      case "started": return "border-blue-500/50 bg-blue-500/5";
-      case "finished": return "border-emerald-500/50 bg-emerald-500/5";
+      case "pending": return "border-border";
+      case "started": return "border-primary/40 bg-primary/5";
+      case "finished": return "border-border bg-muted/30";
       default: return "";
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "pending": return <Badge variant="outline" className="border-amber-500 text-amber-500">待制作</Badge>;
-      case "started": return <Badge className="bg-blue-600">制作中</Badge>;
-      case "finished": return <Badge className="bg-emerald-600">已完成</Badge>;
+      case "pending": return <Badge variant="outline">待制作</Badge>;
+      case "started": return <Badge>制作中</Badge>;
+      case "finished": return <Badge variant="secondary">已完成</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
   };
@@ -216,7 +216,7 @@ export function KDSPage({
                             <div className="text-xs text-muted-foreground mt-0.5">規格: {item.spec_code}</div>
                           )}
                           {item.note && (
-                            <div className="flex items-center gap-1 mt-1 text-xs text-amber-500">
+                            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                               <MessageSquare className="h-3 w-3" />
                               <span>{item.note}</span>
                             </div>
@@ -232,7 +232,7 @@ export function KDSPage({
                       </Button>
                     )}
                     {ticket.status === "started" && (
-                      <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => onFinishTicket(ticket.id)}>
+                      <Button size="sm" className="flex-1" onClick={() => onFinishTicket(ticket.id)}>
                         <Check className="mr-2 h-3 w-3" />完成出餐
                       </Button>
                     )}

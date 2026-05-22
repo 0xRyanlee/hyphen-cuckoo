@@ -29,18 +29,6 @@ function getTypeLabel(value: string): string {
   return EXPENSE_TYPES.find((t) => t.value === value)?.label || value;
 }
 
-function getTypeColor(value: string): string {
-  switch (value) {
-    case "water": return "bg-blue-100 text-blue-800";
-    case "electric": return "bg-yellow-100 text-yellow-800";
-    case "gas": return "bg-orange-100 text-orange-800";
-    case "internet": return "bg-purple-100 text-purple-800";
-    case "labor": return "bg-green-100 text-green-800";
-    case "rent": return "bg-pink-100 text-pink-800";
-    case "repair": return "bg-red-100 text-red-800";
-    default: return "bg-gray-100 text-gray-800";
-  }
-}
 
 interface ExpensesPageProps {
   expenses: Expense[];
@@ -366,7 +354,7 @@ export function ExpensesPage({
                     <TableRow key={e.id}>
                       <TableCell className="text-muted-foreground text-sm">{e.expense_date}</TableCell>
                       <TableCell>
-                        <Badge className={getTypeColor(e.expense_type)}>{getTypeLabel(e.expense_type)}</Badge>
+                        <Badge variant="secondary">{getTypeLabel(e.expense_type)}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">¥{e.amount.toFixed(2)}</TableCell>
                       <TableCell className="text-muted-foreground text-xs">{e.note || "-"}</TableCell>

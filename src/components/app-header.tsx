@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect } from "react";
@@ -163,14 +163,16 @@ export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing =
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80 p-0">
-            <div className="flex items-center justify-between px-3 py-2 border-b">
-              <DropdownMenuLabel className="p-0 m-0">消息中心</DropdownMenuLabel>
-              {unreadCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground hover:text-foreground" onClick={handleMarkAllRead}>
-                  全部已读
-                </Button>
-              )}
-            </div>
+            <DropdownMenuGroup>
+              <div className="flex items-center justify-between px-3 py-2 border-b">
+                <DropdownMenuLabel className="p-0 m-0">消息中心</DropdownMenuLabel>
+                {unreadCount > 0 && (
+                  <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground hover:text-foreground" onClick={handleMarkAllRead}>
+                    全部已读
+                  </Button>
+                )}
+              </div>
+            </DropdownMenuGroup>
             <ScrollArea className="h-[320px]">
               {notifications.length === 0 ? (
                 <EmptyState icon={Bell} title="暂无消息" className="py-8" />

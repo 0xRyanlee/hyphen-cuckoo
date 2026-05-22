@@ -197,9 +197,9 @@ export function OrdersPage({
       case "pending":
         return <Badge variant="outline">待提交</Badge>;
       case "submitted":
-        return <Badge className="bg-blue-600">已提交</Badge>;
+        return <Badge>已提交</Badge>;
       case "ready":
-        return <Badge className="bg-emerald-600">已完成</Badge>;
+        return <Badge variant="secondary">已完成</Badge>;
       case "cancelled":
         return <Badge variant="destructive">已取消</Badge>;
       default:
@@ -209,9 +209,9 @@ export function OrdersPage({
 
   const getPaymentBadge = (ps: string) => {
     switch (ps) {
-      case "paid": return <Badge className="bg-emerald-600 text-xs">已收款</Badge>;
-      case "partial": return <Badge className="bg-amber-500 text-xs">部分收款</Badge>;
-      default: return <Badge variant="secondary" className="text-xs">未收款</Badge>;
+      case "paid": return <Badge variant="secondary" className="text-xs">已收款</Badge>;
+      case "partial": return <Badge variant="outline" className="text-xs">部分收款</Badge>;
+      default: return <Badge variant="outline" className="text-xs">未收款</Badge>;
     }
   };
 
@@ -345,22 +345,22 @@ export function OrdersPage({
                             <Eye className="h-4 w-4" />
                           </Button>
                           {order.status === "pending" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => onSubmitOrder(order.id)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => onSubmitOrder(order.id)}>
                               <Send className="h-4 w-4" />
                             </Button>
                           )}
                           {order.status === "submitted" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" title="標記出餐" onClick={() => onMarkReady(order.id)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="標記出餐" onClick={() => onMarkReady(order.id)}>
                               <CheckCircle className="h-4 w-4" />
                             </Button>
                           )}
                           {(order.status === "submitted" || order.status === "ready") && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => { setPaymentTargetOrder(order); setPaymentStatus(order.payment_status === "paid" ? "paid" : "paid"); setPaymentMethod(order.payment_method || "cash"); setPaymentAmountPaid(order.amount_total.toFixed(2)); setPaymentDialogOpen(true); }}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => { setPaymentTargetOrder(order); setPaymentStatus(order.payment_status === "paid" ? "paid" : "paid"); setPaymentMethod(order.payment_method || "cash"); setPaymentAmountPaid(order.amount_total.toFixed(2)); setPaymentDialogOpen(true); }}>
                               <CreditCard className="h-4 w-4" />
                             </Button>
                           )}
                           {order.payment_status === "paid" && onPrintReceipt && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" title="打印收据" onClick={() => onPrintReceipt(order.id)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="打印收据" onClick={() => onPrintReceipt(order.id)}>
                               <Printer className="h-4 w-4" />
                             </Button>
                           )}
@@ -409,7 +409,7 @@ export function OrdersPage({
                 {selectedOrder.order.amount_paid > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">已收金额</span>
-                    <span className="text-emerald-600 font-medium">¥{selectedOrder.order.amount_paid.toFixed(2)}</span>
+                    <span className="font-medium">¥{selectedOrder.order.amount_paid.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
@@ -424,7 +424,7 @@ export function OrdersPage({
                   <>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">食材成本</span>
-                      <span className="font-medium text-amber-600">¥{orderCost.toFixed(2)}</span>
+                      <span className="font-medium text-muted-foreground">¥{orderCost.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">毛利</span>
@@ -459,7 +459,7 @@ export function OrdersPage({
                           </span>
                           <span className={item.refunded ? "line-through text-muted-foreground" : ""}>¥{(item.qty * item.unit_price).toFixed(2)}</span>
                         </div>
-                        {item.note && <div className="text-xs text-amber-500 ml-2">備註: {item.note}</div>}
+                        {item.note && <div className="text-xs text-muted-foreground ml-2">備註: {item.note}</div>}
                         <div className="flex items-center gap-1 mt-1">
                           {!item.refunded && (
                             <>
@@ -529,7 +529,7 @@ export function OrdersPage({
             </p>
             {cancelTargetOrder && cancelTargetOrder.payment_status !== 'unpaid' && (
               <>
-                <div className={`rounded-md p-3 text-sm ${cancelTargetOrder.payment_status === 'paid' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
+                <div className={`rounded-md p-3 text-sm ${cancelTargetOrder.payment_status === 'paid' ? 'bg-destructive/10 text-destructive' : 'bg-muted text-foreground'}`}>
                   ⚠ 此订单{cancelTargetOrder.payment_status === 'paid' ? '已收款' : '已部分收款'} ¥{cancelTargetOrder.amount_paid.toFixed(2)}，取消后请手动处理退款。
                 </div>
                 <div className="space-y-1">
@@ -562,7 +562,7 @@ export function OrdersPage({
                 </Button>
               </div>
               {cancelIsServed && (
-                <p className="text-xs text-amber-500">已出餐订单将扣除已用食材成本</p>
+                <p className="text-xs text-muted-foreground">已出餐订单将扣除已用食材成本</p>
               )}
             </div>
             <div className="space-y-1">
