@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { appLogger } from "@/lib/logger";
 import type {
   Unit, MaterialCategory, TagItem, Material, Recipe, RecipeWithItems,

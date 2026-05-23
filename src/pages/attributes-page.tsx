@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tag, HelpCircle, Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 
 interface AttributeTemplate {
   id: number;

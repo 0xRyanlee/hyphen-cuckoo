@@ -34,6 +34,8 @@ interface MenuItem {
   sales_price: number;
   is_available: boolean;
   is_favorite: boolean;
+  image_path: string | null;
+  description: string | null;
   recipe_id: number | null;
   category_id: number | null;
   created_at: string;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash2,
          ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2, ShieldCheck, Eye, EyeOff,
-         Radio, ServerCrash, Link2 } from "lucide-react";
+         Radio, ServerCrash, Link2, Smartphone } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePinStatuses, saveRolePin } from "@/lib/roles";
 import { toast } from "sonner";
@@ -348,6 +348,103 @@ const SYNC_CLIENT_URL_KEY = "cuckoo_sync_client_url";
 const SYNC_CLIENT_ACTIVE_KEY = "cuckoo_sync_client_active";
 const SYNC_SHARED_SECRET_KEY = "cuckoo_sync_shared_secret";
 const SYNC_PROTOCOL_VERSION = "2";
+
+interface WebServerStatus {
+  running: boolean;
+  port: number | null;
+  url: string | null;
+}
+
+function WebServerCard() {
+  const [status, setStatus] = useState<WebServerStatus>({ running: false, port: null, url: null });
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => invoke<WebServerStatus>("get_web_server_status").then(setStatus).catch(() => {});
+
+  useEffect(() => { refresh(); }, []);
+
+  const handleStop = async () => {
+    setBusy(true);
+    try {
+      await invoke("stop_web_server");
+      toast.success("Web 服務已停止");
+      await refresh();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    setBusy(true);
+    try {
+      await invoke("restart_web_server");
+      toast.success("Web 服務已重啟");
+      await refresh();
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Smartphone className="h-4 w-4" />
+          自助點單 Web 服務
+        </CardTitle>
+        <CardDescription>iPad / 手機掃碼自助點單入口，與主機在同一區域網路即可存取</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${status.running ? "bg-emerald-500" : "bg-muted-foreground"}`} />
+            <span className="text-sm text-muted-foreground">
+              {status.running ? `埠號 ${status.port} · 已啟動` : "未啟動"}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleRestart} disabled={busy}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              重啟
+            </Button>
+            {status.running && (
+              <Button size="sm" variant="destructive" onClick={handleStop} disabled={busy}>
+                停止
+              </Button>
+            )}
+          </div>
+        </div>
+        {status.running && status.url && (
+          <>
+            <div className="flex items-center gap-2 rounded-lg bg-muted p-2.5">
+              <span className="text-xs font-mono flex-1 text-emerald-600 dark:text-emerald-400 break-all">
+                {status.url}
+              </span>
+              <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => {
+                navigator.clipboard.writeText(status.url!);
+                toast.success("已複製");
+              }}>
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              客戶掃碼點單 URL 格式：<span className="font-mono">{status.url}/#/table/桌號</span>
+            </p>
+          </>
+        )}
+        {!status.running && (
+          <p className="text-xs text-muted-foreground">
+            點選「重啟」重新在 9001 埠啟動，或重新啟動應用程式。
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function LanSyncCard() {
   const [serverRunning, setServerRunning] = useState(false);
@@ -867,6 +964,9 @@ export function SettingsPage({ connected }: SettingsPageProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Self-order web server */}
+      <WebServerCard />
 
       {/* LAN sync */}
       <LanSyncCard />

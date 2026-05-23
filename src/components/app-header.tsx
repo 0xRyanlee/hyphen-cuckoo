@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 
 interface Notification {
   id: number;

@@ -80,9 +80,59 @@ export interface MenuItem {
   sales_price: number;
   is_available: boolean;
   is_favorite: boolean;
+  image_path: string | null;
+  description: string | null;
   recipe_id: number | null;
   category_id: number | null;
   created_at: string;
+}
+
+export interface RestaurantTable {
+  id: number;
+  table_no: string;
+  label: string | null;
+  is_active: boolean;
+  sort_no: number;
+  created_at: string;
+}
+
+export interface PublicMenuItemSpec {
+  id: number;
+  spec_code: string;
+  spec_name: string;
+  price_delta: number;
+}
+
+export interface PublicMenuItem {
+  id: number;
+  name: string;
+  description: string | null;
+  image_path: string | null;
+  sales_price: number;
+  specs: PublicMenuItemSpec[];
+}
+
+export interface PublicMenuCategory {
+  id: number;
+  name: string;
+  items: PublicMenuItem[];
+}
+
+export interface TableOrderItem {
+  name: string;
+  spec_code: string | null;
+  qty: number;
+  unit_price: number;
+  note: string | null;
+}
+
+export interface TableOrderSummary {
+  id: number;
+  order_no: string;
+  status: string;
+  amount_total: number;
+  created_at: string;
+  items: TableOrderItem[];
 }
 export interface MenuCategory { id: number; name: string; sort_no: number; is_active: boolean; }
 export interface OrderItem {

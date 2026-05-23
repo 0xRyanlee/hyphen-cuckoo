@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import DOMPurify from "dompurify";
 import { Printer, Copy, ExternalLink, Plus, Pencil, Trash2, Wifi, Search, XCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";

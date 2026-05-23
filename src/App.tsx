@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { appLogger } from "@/lib/logger";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
@@ -27,6 +27,8 @@ import { PrintSettingsPage } from "@/pages/print-settings-page";
 import { PrintTemplatesPage } from "@/pages/print-templates-page";
 import { ExpensesPage } from "@/pages/expenses-page";
 import { CustomersPage } from "@/pages/customers-page";
+import { SelfOrderPage } from "@/pages/self-order-page";
+import { TablesPage } from "@/pages/tables-page";
 import { Toaster } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
@@ -475,6 +477,11 @@ function App() {
     );
   }
 
+  // Self-order consumer page — no sidebar, no auth needed
+  if (location.pathname.startsWith("/table/")) {
+    return <Routes><Route path="/table/:tableNo" element={<SelfOrderPage />} /></Routes>;
+  }
+
   return (
     <TooltipProvider>
       <SidebarProvider>
@@ -505,6 +512,7 @@ function App() {
                 <Route path="/kds" element={<KDSPage allTickets={kdsTickets} stations={stations} menuItemNames={Object.fromEntries(menuItems.map((m) => [m.id, m.name]))} onStartTicket={handleStartTicketWithSync} onFinishTicket={handleFinishTicketWithSync} onReprintTicket={handleReprintTicket} onRefresh={handleRefreshKds} />} />
                 <Route path="/attributes" element={<AttributesPage attributeTemplates={attributeTemplates} onRefresh={loadData} />} />
                 <Route path="/settings" element={<SettingsPage connected={connected} />} />
+                <Route path="/tables" element={<TablesPage />} />
                 <Route path="/material-states" element={<MaterialStatesPage materialStates={materialStates} materials={materials} units={units} onCreateState={handleCreateMaterialState} onUpdateState={handleUpdateMaterialState} onDeleteState={handleDeleteMaterialState} searchQuery={searchQuery} />} />
                 <Route path="/purchase-orders" element={<PurchaseOrdersPage orders={purchaseOrders} materials={materials} units={units} suppliers={suppliers} onCreateOrder={handleCreatePurchaseOrder} onAddItem={handleAddPurchaseOrderItem} onViewOrder={handleViewPurchaseOrder} onDeleteOrder={handleDeletePurchaseOrder} onReceiveOrder={handleReceivePurchaseOrder} onReceiveItems={handleReceivePurchaseOrderItems} selectedOrder={selectedPurchaseOrder} searchQuery={searchQuery} />} />
                 <Route path="/production-orders" element={<ProductionOrdersPage orders={productionOrders} recipes={recipes} onCreateOrder={handleCreateProductionOrder} onStartOrder={handleStartProductionOrder} onCompleteOrder={handleCompleteProductionOrder} onViewOrder={handleViewProductionOrder} onDeleteOrder={handleDeleteProductionOrder} selectedOrder={selectedProductionOrder} searchQuery={searchQuery} />} />

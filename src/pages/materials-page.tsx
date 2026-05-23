@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Package, Pencil, Trash2, Save, X } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { useNavigate } from "react-router-dom";
 
 interface Unit { id: number; code: string; name: string; }

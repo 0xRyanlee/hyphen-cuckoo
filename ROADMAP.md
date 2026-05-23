@@ -54,15 +54,97 @@
 
 ---
 
-## 🚧 v2.1.0 — 流程闭环（规划中）
+## ✅ v2.1.0 — 流程闭环（已完成）
 
 | 优先级 | 功能 | 说明 |
 |--------|------|------|
-| P0 | KDS → POS 出餐同步 | 局域网同步双向化：KDS 完成工单写回主机订单状态 |
-| P0 | 同步可信性加固 | 共享密钥、协议版本校验、错误可观测性 |
-| P1 | 报表 CSV 导出 | 订单/库存/支出表格可导出 `.csv` |
-| P2 | 批量菜品操作 | 批量上下架、批量调价 |
-| P2 | 日常支出图表 | 支出页新增按月趋势图 |
+| P0 | KDS → POS 出餐同步 | ✅ `sync_server.rs` POST /api/tickets/:id/finish 写回订单状态 ready + 扣库存 |
+| P0 | 同步可信性加固 | ✅ 共享密钥 + 协议版本校验已在 `validate_request()` 实现 |
+| P1 | 报表 CSV 导出 | ✅ 报表/订单/库存/支出页均有导出按钮 |
+| P2 | 批量菜品操作 | ✅ 批量上下架、批量调价已在菜单页实现 |
+| P2 | 日常支出图表 | ✅ 支出页已有按月趋势 BarChart |
+
+---
+
+## ✅ v2.2.0 — 多端接入與桌位自助（已完成 2026-05-23）
+
+> **背景**：现有客户（呼和浩特、台北）需要 iPad/手机作为 POS 终端，桌位二维码自助点单是下一阶段差异化功能。  
+> **支付原则**：Cuckoo 不介入资金流，店家自行张贴微信/支付宝/街口收款码。
+
+---
+
+### 技术架构
+
+```
+主机 (Mac/Windows) 运行 Cuckoo
+    ├── Tauri 桌面壳（现有，保留不变）
+    └── Axum HTTP Server（新增，绑定 0.0.0.0:9001）
+            ├── GET  /              → 服务 React 静态 dist/
+            ├── POST /api/*         → REST 接口（对应现有 commands.rs）
+            └── GET  /table/:id     → 顾客自助点单轻量页
+
+iPad Safari → 同 WiFi → 输入主机 IP:9001 → 完整 POS 界面
+顾客手机   → 扫桌位 QR Code → 打开 /table/3 → 自助点单
+```
+
+**关键决策**：现有 `sync_server.rs` 是裸 TCP，不适合扩展为通用 HTTP。新增 `web_server.rs`（裸 TCP HTTP，与 sync_server.rs 一致的零依赖风格），与 sync server 并行运行，各用独立端口。
+
+---
+
+### T1 — Rust Axum HTTP Server（后端基础）
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| T1.1 新增 `web_server.rs` | 裸 TCP HTTP，绑定 9001 端口，与现有 sync server 并行启动，app 启动时自动运行 | ✅ 完成 |
+| T1.2 静态文件服务 | 服务 `dist/` 目录，未匹配路由返回 `index.html`（SPA fallback）；dist 路径由 `app.path().resource_dir()` 解析 | ✅ 完成 |
+| T1.3 自助点单 REST API | `GET /api/public_menu`、`POST /api/create_self_order`、`GET /api/table_orders_today` | ✅ 完成 |
+| T1.4 REST API — POS 全功能（第二批） | 菜单列表、创建订单、顾客积分等完整 POS 接口 | ✅ 完成 |
+| T1.5 CORS | `Access-Control-Allow-Origin: *` 已在所有响应头加入 | ✅ 完成 |
+| T1.6 PIN 认证 over HTTP | `POST /api/auth/login` 返回 UUID token；所有非公开路由强制验证 `Authorization: Bearer`；sessions 存内存（重启清空） | ✅ 完成 |
+
+---
+
+### T2 — 前端 Transport 抽象层
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| T2.1 新增 `src/lib/transport.ts` | 检测 `window.__TAURI__`：存在则用 `invoke()`，否则用 `fetch()` 打 REST API | ✅ 完成 |
+| T2.2 重构全部 invoke 调用 | 20 个前端文件全部迁移至 `call as invoke` | ✅ 完成 |
+| T2.3 BASE_URL 推断 | `window.location.origin` 自动作为 base，无需手动配置 | ✅ 完成 |
+| T2.4 Auth token 管理 | `setSession` / `clearSession` API 已就位，等 T1.6 PIN 接口联调 | ✅ 完成 |
+
+---
+
+### T3 — 桌位 QR Code 与自助点单
+
+| 任务 | 说明 | 状态 |
+|------|------|------|
+| T3.1 桌位管理页面 | 后台新增「餐桌 / QR」页面，增删桌号 | ✅ 完成 |
+| T3.2 QR Code 生成与下载 | 每桌 QR Code 展示（`qrcode.react`）、复制链接、下载 PNG | ✅ 完成 |
+| T3.3 自助点单消费者页 | UberEats 风格点单页（`#/table/:tableNo`）：菜单/分类/购物车/历史订单/状态追踪 | ✅ 完成 |
+| T3.4 KDS 标注来源 | `orders.source = 'self_order'` 已写入，KDS 展示已有 table_no；界面区分标记可后续微调 | ✅ 完成 |
+
+---
+
+### T4 — 构建与分发
+
+| 任务 | 说明 |
+|------|------|
+| T4.1 构建脚本 | `tauri.conf.json` `resources: {"../dist/**/*": "dist/"}` — dist 随 bundle 打包；lib.rs 三段路径探测（resource_dir / exe_dir / cwd） | ✅ 完成 |
+| T4.2 主机 IP 显示 | 设置页「自助点单 Web 服务」卡片显示局域网 URL 与复制按钮 | ✅ 完成 |
+| T4.3 端口冲突检测 | 启动时依序尝试 9001→9002→9003，绑定第一个可用端口 | ✅ 完成 |
+
+---
+
+### 开发顺序
+
+```
+T1.1 → T1.2 → T2.1 → T2.2（POS hooks）→ T1.3（POS API）
+→ 验证 iPad 跑通 POS 基本流程
+→ T1.6 + T2.4（PIN 认证）
+→ T3.x（桌位 QR Code 与自助点单）
+→ T1.4（后台管理 API，按需扩展）
+```
 
 ---
 
@@ -72,17 +154,15 @@
 |------|------|--------|
 | 积分兑换（POS 折抵） | 收款时输入兑换积分，折抵金额，写入 `orders.discount` | 中 |
 | 顾客绑单（POS 收款时选顾客） | POS 付款对话框新增顾客选择，自动累点 | 中 |
-| 微信小程序 | 顾客自助点餐、排队取号 | 高 |
+| 多语言 i18n | 简体/繁体切换，面向两岸三地市场 | 中 |
 | 多店铺云端 | 总部-分店架构，云端数据同步 | 极高 |
 | AI 经营助手 | 基于历史数据的销售预测与备货建议 | 高 |
 
 ---
 
-## 🚫 明确不做（v2.x 范围）
+## 🚫 明确不做（v2.1.x 范围）
 
-- 在线支付集成 — 超出本地优先架构
-- 多语言 i18n — 当前仅面向中文用户
-- WebSocket 实时推送 — 4 秒轮询已满足烘焙店场景
+- WebSocket 实时推送 — 4 秒轮询已满足当前场景
 
 ---
 

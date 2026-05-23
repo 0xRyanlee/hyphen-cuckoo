@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import type { UpdateInfo } from "@/components/UpdateDialog";
 
 const STORAGE_KEY = "cuckoo_auto_update";

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import type {
   Unit, MaterialCategory, TagItem, Material, Recipe, RecipeWithItems,
   RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderWithItems, KitchenStation,

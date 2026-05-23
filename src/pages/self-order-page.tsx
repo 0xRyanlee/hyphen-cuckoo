@@ -1,0 +1,500 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams } from "react-router-dom";
+import { call } from "@/lib/transport";
+import type { PublicMenuCategory, PublicMenuItem, PublicMenuItemSpec, TableOrderSummary } from "@/types";
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+interface CartItem {
+  menu_item_id: number;
+  name: string;
+  spec_code: string | null;
+  spec_name: string | null;
+  unit_price: number;
+  qty: number;
+  note: string;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function cartKey(item: CartItem) {
+  return `${item.menu_item_id}__${item.spec_code ?? ""}`;
+}
+
+function priceOf(item: PublicMenuItem, specCode: string | null): number {
+  if (!specCode) return item.sales_price;
+  const spec = item.specs.find((s) => s.spec_code === specCode);
+  return item.sales_price + (spec?.price_delta ?? 0);
+}
+
+function statusLabel(status: string) {
+  switch (status) {
+    case "pending": return { text: "等待確認", cls: "bg-blue-100 text-blue-700" };
+    case "submitted": return { text: "備餐中", cls: "bg-amber-100 text-amber-700" };
+    case "ready": return { text: "完成", cls: "bg-green-100 text-green-700" };
+    case "cancelled": return { text: "已取消", cls: "bg-gray-100 text-gray-500" };
+    default: return { text: status, cls: "bg-gray-100 text-gray-500" };
+  }
+}
+
+function fmt(n: number) {
+  return n % 1 === 0 ? String(n) : n.toFixed(2);
+}
+
+// ── Category color palette (for photo-less items) ──────────────────────────
+
+const CAT_COLORS = [
+  "from-orange-400 to-red-400",
+  "from-blue-400 to-cyan-400",
+  "from-green-400 to-emerald-400",
+  "from-purple-400 to-pink-400",
+  "from-yellow-400 to-amber-400",
+  "from-teal-400 to-green-400",
+];
+
+// ── Sub-components ─────────────────────────────────────────────────────────
+
+function ItemCard({
+  item,
+  catIndex,
+  cartQty,
+  onAdd,
+  onRemove,
+}: {
+  item: PublicMenuItem;
+  catIndex: number;
+  cartQty: number;
+  onAdd: (item: PublicMenuItem, spec: PublicMenuItemSpec | null) => void;
+  onRemove: (item: PublicMenuItem, spec: PublicMenuItemSpec | null) => void;
+}) {
+  const [specOpen, setSpecOpen] = useState(false);
+  const hasSpecs = item.specs.length > 0;
+  const colorClass = CAT_COLORS[catIndex % CAT_COLORS.length];
+
+  function handleAdd() {
+    if (hasSpecs) { setSpecOpen(true); return; }
+    onAdd(item, null);
+  }
+
+  return (
+    <>
+      <div className="flex gap-3 py-3 border-b border-gray-100 last:border-0">
+        {/* Thumbnail */}
+        <div className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden">
+          {item.image_path ? (
+            <img src={item.image_path} alt={item.name} className="w-full h-full object-cover" />
+          ) : (
+            <div className={`w-full h-full bg-gradient-to-br ${colorClass} flex items-center justify-center`}>
+              <span className="text-white text-xl font-bold">{item.name[0]}</span>
+            </div>
+          )}
+        </div>
+        {/* Info */}
+        <div className="flex-1 min-w-0 flex flex-col justify-between">
+          <div>
+            <p className="font-semibold text-gray-900 text-sm leading-tight">{item.name}</p>
+            {item.description && (
+              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.description}</p>
+            )}
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <span className="text-orange-500 font-bold text-base">¥{fmt(item.sales_price)}</span>
+            <div className="flex items-center gap-2">
+              {cartQty > 0 && (
+                <>
+                  <button
+                    onClick={() => onRemove(item, null)}
+                    className="w-7 h-7 rounded-full border-2 border-orange-400 text-orange-400 flex items-center justify-center font-bold text-lg leading-none"
+                  >−</button>
+                  <span className="text-sm font-semibold w-4 text-center">{cartQty}</span>
+                </>
+              )}
+              <button
+                onClick={handleAdd}
+                className="w-7 h-7 rounded-full bg-orange-400 text-white flex items-center justify-center font-bold text-lg leading-none shadow-sm"
+              >+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Spec picker sheet */}
+      {specOpen && (
+        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setSpecOpen(false)}>
+          <div className="w-full bg-white rounded-t-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-base font-bold mb-3">{item.name} — 選規格</p>
+            <div className="space-y-2">
+              {item.specs.map((spec) => (
+                <button
+                  key={spec.spec_code}
+                  onClick={() => { onAdd(item, spec); setSpecOpen(false); }}
+                  className="w-full flex justify-between items-center px-4 py-3 rounded-xl border border-gray-200 hover:border-orange-400 text-sm"
+                >
+                  <span>{spec.spec_name}</span>
+                  <span className="text-orange-500 font-semibold">
+                    ¥{fmt(item.sales_price + spec.price_delta)}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setSpecOpen(false)} className="mt-4 w-full py-3 text-gray-500 text-sm">取消</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function CartSheet({
+  cart,
+  onQtyChange,
+  onNoteChange,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  cart: CartItem[];
+  onQtyChange: (key: string, delta: number) => void;
+  onNoteChange: (key: string, note: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+  submitting: boolean;
+}) {
+  const total = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
+      <div
+        className="w-full bg-white rounded-t-2xl shadow-2xl max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b">
+          <span className="font-bold text-base">購物車</span>
+          <button onClick={onClose} className="text-gray-400 text-2xl leading-none">×</button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-4">
+          {cart.map((item) => {
+            const key = cartKey(item);
+            return (
+              <div key={key}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">{item.name}</p>
+                    {item.spec_name && <p className="text-xs text-gray-500">{item.spec_name}</p>}
+                    <p className="text-orange-500 text-sm font-bold mt-0.5">¥{fmt(item.unit_price)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button onClick={() => onQtyChange(key, -1)}
+                      className="w-7 h-7 rounded-full border-2 border-orange-400 text-orange-400 font-bold text-lg flex items-center justify-center">−</button>
+                    <span className="w-4 text-center text-sm font-semibold">{item.qty}</span>
+                    <button onClick={() => onQtyChange(key, 1)}
+                      className="w-7 h-7 rounded-full bg-orange-400 text-white font-bold text-lg flex items-center justify-center">+</button>
+                  </div>
+                </div>
+                <input
+                  className="mt-1.5 w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-orange-400"
+                  placeholder="備註（去辣、少鹽...）"
+                  value={item.note}
+                  onChange={(e) => onNoteChange(key, e.target.value)}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-5 pb-6 pt-3 border-t">
+          <div className="flex justify-between text-sm mb-3">
+            <span className="text-gray-500">合計</span>
+            <span className="font-bold text-base text-gray-900">¥{fmt(total)}</span>
+          </div>
+          <button
+            onClick={onSubmit}
+            disabled={submitting}
+            className="w-full py-4 rounded-2xl bg-orange-400 text-white font-bold text-base disabled:opacity-50"
+          >
+            {submitting ? "送出中..." : "確認下單"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────────
+
+export function SelfOrderPage() {
+  const { tableNo } = useParams<{ tableNo: string }>();
+  const [menu, setMenu] = useState<PublicMenuCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activecat, setActiveCat] = useState<number | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [successOrderId, setSuccessOrderId] = useState<number | null>(null);
+  const [pastOrders, setPastOrders] = useState<TableOrderSummary[]>([]);
+  const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    call<PublicMenuCategory[]>("get_public_menu").then((data) => {
+      setMenu(data);
+      if (data.length > 0) setActiveCat(data[0].id);
+    }).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const fetchPastOrders = useCallback(() => {
+    if (!tableNo) return;
+    call<TableOrderSummary[]>("get_table_orders_today", { table_no: tableNo })
+      .then(setPastOrders).catch(console.error);
+  }, [tableNo]);
+
+  useEffect(() => {
+    fetchPastOrders();
+    pollRef.current = setInterval(fetchPastOrders, 4000);
+
+    function onVisibility() {
+      if (document.hidden) {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      } else {
+        fetchPastOrders();
+        pollRef.current = setInterval(fetchPastOrders, 4000);
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [fetchPastOrders]);
+
+  function scrollToCategory(catId: number) {
+    setActiveCat(catId);
+    sectionRefs.current[catId]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function addToCart(item: PublicMenuItem, spec: PublicMenuItemSpec | null) {
+    const key = `${item.id}__${spec?.spec_code ?? ""}`;
+    setCart((prev) => {
+      const existing = prev.find((c) => cartKey(c) === key);
+      if (existing) return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty + 1 } : c);
+      return [...prev, {
+        menu_item_id: item.id, name: item.name,
+        spec_code: spec?.spec_code ?? null, spec_name: spec?.spec_name ?? null,
+        unit_price: priceOf(item, spec?.spec_code ?? null), qty: 1, note: "",
+      }];
+    });
+  }
+
+  function removeFromCart(item: PublicMenuItem, spec: PublicMenuItemSpec | null) {
+    const key = `${item.id}__${spec?.spec_code ?? ""}`;
+    setCart((prev) => {
+      const match = prev.find((c) => cartKey(c) === key);
+      if (!match) return prev;
+      if (match.qty <= 1) return prev.filter((c) => cartKey(c) !== key);
+      return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty - 1 } : c);
+    });
+  }
+
+  function changeQty(key: string, delta: number) {
+    setCart((prev) => {
+      const item = prev.find((c) => cartKey(c) === key);
+      if (!item) return prev;
+      if (item.qty + delta <= 0) return prev.filter((c) => cartKey(c) !== key);
+      return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty + delta } : c);
+    });
+  }
+
+  function changeNote(key: string, note: string) {
+    setCart((prev) => prev.map((c) => cartKey(c) === key ? { ...c, note } : c));
+  }
+
+  async function submitOrder() {
+    if (!tableNo || cart.length === 0) return;
+    setSubmitting(true);
+    try {
+      const id = await call<number>("create_self_order", {
+        table_no: tableNo,
+        items: cart.map((c) => ({
+          menu_item_id: c.menu_item_id,
+          spec_code: c.spec_code ?? null,
+          qty: c.qty,
+          note: c.note || null,
+        })),
+      });
+      setSuccessOrderId(id);
+      setCart([]);
+      setCartOpen(false);
+      fetchPastOrders();
+    } catch (e) {
+      alert(`下單失敗：${e instanceof Error ? e.message : "請重試"}`);
+      console.error(e);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const totalQty = cart.reduce((s, c) => s + c.qty, 0);
+  const totalPrice = cart.reduce((s, c) => s + c.unit_price * c.qty, 0);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-400 text-sm">載入中...</div>
+      </div>
+    );
+  }
+
+  if (menu.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-400 text-sm text-center">
+          <p className="text-4xl mb-3">🍽</p>
+          <p>菜單尚未設定，請稍後再試</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 font-sans">
+      {/* Header */}
+      <div className="sticky top-0 z-30 bg-white shadow-sm">
+        <div className="flex items-center justify-between px-4 py-3">
+          <span className="font-bold text-gray-900 text-base">自助點餐</span>
+          {tableNo && (
+            <span className="text-xs font-semibold bg-orange-100 text-orange-600 px-3 py-1 rounded-full">
+              桌 {tableNo}
+            </span>
+          )}
+        </div>
+        {/* Category tabs */}
+        <div className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide">
+          {menu.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => scrollToCategory(cat.id)}
+              className={`flex-shrink-0 text-xs px-4 py-1.5 rounded-full font-medium transition-colors ${
+                activecat === cat.id
+                  ? "bg-orange-400 text-white"
+                  : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Menu sections */}
+      <div ref={scrollRef} className="px-4 pt-3 space-y-4">
+        {menu.map((cat, catIdx) => (
+          <div
+            key={cat.id}
+            ref={(el) => { sectionRefs.current[cat.id] = el; }}
+          >
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 pt-1">
+              {cat.name}
+            </p>
+            <div className="bg-white rounded-2xl px-4 shadow-sm">
+              {cat.items.map((item) => {
+                const qty = cart
+                  .filter((c) => c.menu_item_id === item.id)
+                  .reduce((s, c) => s + c.qty, 0);
+                return (
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    catIndex={catIdx}
+                    cartQty={qty}
+                    onAdd={addToCart}
+                    onRemove={removeFromCart}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {/* Past orders */}
+        {pastOrders.length > 0 && (
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 pt-1">
+              本桌今日訂單
+            </p>
+            <div className="bg-white rounded-2xl px-4 shadow-sm divide-y divide-gray-100">
+              {pastOrders.map((order) => {
+                const badge = statusLabel(order.status);
+                return (
+                  <div key={order.id} className="py-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs text-gray-500">{order.created_at.slice(11, 16)}</span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
+                        {badge.text}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {order.items.map((item, i) => (
+                        <div key={i} className="flex justify-between text-xs text-gray-700">
+                          <span>{item.name}{item.spec_code ? ` · ${item.spec_code}` : ""} ×{item.qty}</span>
+                          <span>¥{fmt(item.unit_price * item.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between text-xs font-bold text-gray-900 mt-1.5 pt-1.5 border-t border-gray-100">
+                      <span>小計</span>
+                      <span>¥{fmt(order.amount_total)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Floating cart bar */}
+      {totalQty > 0 && !cartOpen && (
+        <div className="fixed bottom-6 left-4 right-4 z-40">
+          <button
+            onClick={() => setCartOpen(true)}
+            className="w-full bg-orange-400 text-white rounded-2xl px-5 py-4 flex items-center justify-between shadow-xl"
+          >
+            <span className="bg-orange-600 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
+              {totalQty}
+            </span>
+            <span className="font-bold text-sm">查看購物車</span>
+            <span className="font-bold text-sm">¥{fmt(totalPrice)}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Order success */}
+      {successOrderId && (
+        <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center gap-4 px-8">
+          <div className="text-6xl">✅</div>
+          <p className="text-xl font-bold text-gray-900">訂單已送出！</p>
+          <p className="text-sm text-gray-500 text-center">廚房正在準備中，請稍候</p>
+          <button
+            onClick={() => setSuccessOrderId(null)}
+            className="mt-4 px-8 py-3 bg-orange-400 text-white rounded-2xl font-semibold"
+          >
+            繼續點餐
+          </button>
+        </div>
+      )}
+
+      {/* Cart sheet */}
+      {cartOpen && (
+        <CartSheet
+          cart={cart}
+          onQtyChange={changeQty}
+          onNoteChange={changeNote}
+          onClose={() => setCartOpen(false)}
+          onSubmit={submitOrder}
+          submitting={submitting}
+        />
+      )}
+    </div>
+  );
+}

@@ -3,9 +3,12 @@ mod commands;
 mod printer;
 mod updater_check;
 mod sync_server;
+mod web_server;
 
 use commands::AppState;
 use database::Database;
+use tauri::Manager;
+use std::sync::Arc;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -69,7 +72,7 @@ pub fn run() {
     eprintln!("[Cuckoo] Database path: {:?}", db_path);
     
     let db = match Database::new(db_path.to_str().unwrap()) {
-        Ok(db) => { eprintln!("[Cuckoo] Database created successfully"); db }
+        Ok(db) => { eprintln!("[Cuckoo] Database created successfully"); Arc::new(db) }
         Err(e) => { eprintln!("[Cuckoo] Database error: {}", e); panic!("Failed to create database: {}", e) }
     };
     
@@ -83,12 +86,46 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
-        db,
-        db_path,
-        sync_server: std::sync::Mutex::new(None),
-        role_auth: std::sync::Mutex::new(role_auth),
-        role_auth_path,
-    })
+            db: db.clone(),
+            db_path: db_path.clone(),
+            sync_server: std::sync::Mutex::new(None),
+            web_server: std::sync::Mutex::new(None),
+            role_auth: std::sync::Mutex::new(role_auth),
+            role_auth_path,
+        })
+        .setup(move |app| {
+            // Locate the frontend dist — try several candidate paths so it works
+            // both in `tauri dev` and in the production bundle (T4.1).
+            let resource_dist = app.path().resource_dir().ok().map(|r| r.join("dist"));
+            let exe_dist = std::env::current_exe()
+                .ok()
+                .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+                .map(|p| p.join("dist"));
+            let cwd_dist = std::env::current_dir().ok().map(|d| d.join("dist"));
+
+            let dist_dir = [resource_dist, exe_dist, cwd_dist]
+                .into_iter()
+                .flatten()
+                .find(|p| p.join("index.html").exists());
+
+            if let Some(ref d) = dist_dir {
+                eprintln!("[WebServer] Serving frontend from {:?}", d);
+            } else {
+                eprintln!("[WebServer] No dist/ found — API-only mode");
+            }
+
+            let role_auth_path = app.state::<AppState>().role_auth_path.clone();
+
+            match web_server::start_web_server(db.clone(), dist_dir, role_auth_path, 9001) {
+                Ok(handle) => {
+                    let ip = sync_server::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+                    eprintln!("[WebServer] Started — http://{}:{}", ip, handle.port);
+                    *app.state::<AppState>().web_server.lock().unwrap() = Some(handle);
+                }
+                Err(e) => eprintln!("[WebServer] Failed to start: {}", e),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // 健康檢查
             commands::health_check,
@@ -322,6 +359,19 @@ pub fn run() {
             commands::debug_print_kitchen_ticket,
             commands::debug_print_batch_label,
             commands::debug_print_escpos,
+            // 餐桌管理
+            commands::get_restaurant_tables,
+            commands::create_restaurant_table,
+            commands::update_restaurant_table,
+            commands::delete_restaurant_table,
+            // 自助點單
+            commands::get_public_menu,
+            commands::create_self_order,
+            commands::get_table_orders_today,
+            // Web 伺服器
+            commands::get_web_server_status,
+            commands::stop_web_server,
+            commands::restart_web_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

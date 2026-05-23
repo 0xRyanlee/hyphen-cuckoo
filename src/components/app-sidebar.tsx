@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Truck, ClipboardList, Factory, FileBox, BarChart3, Printer, Monitor, Layers, SlidersHorizontal, Receipt, Users, ShieldCheck } from "lucide-react";
+import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Truck, ClipboardList, Factory, FileBox, BarChart3, Printer, Monitor, Layers, SlidersHorizontal, Receipt, Users, ShieldCheck, LayoutGrid } from "lucide-react";
 import { type Role, ROLE_LABELS, checkAccess } from "@/lib/roles";
 
 const navGroups = [
@@ -32,6 +32,7 @@ const navGroups = [
       { id: "pos", label: "POS 点餐", icon: CreditCard },
       { id: "orders", label: "订单", icon: ShoppingCart },
       { id: "kds", label: "KDS 厨房", icon: Monitor },
+      { id: "tables", label: "餐桌 / QR", icon: LayoutGrid },
       { id: "customers", label: "顾客管理", icon: Users },
     ],
   },

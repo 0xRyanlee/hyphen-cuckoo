@@ -1,14 +1,21 @@
 use tauri::{State, Manager};
-use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, LoyaltyTxn, Coupon, RecipeComponentType, OrderComponentType};
+use std::sync::Arc;
+use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, LoyaltyTxn, Coupon, RecipeComponentType, OrderComponentType, RestaurantTable, PublicMenuCategory, SelfOrderItemInput, TableOrderSummary};
 use crate::printer::{self, EscPosBuilder, LanPrinter, scan_lan_printers as LAN_SCAN};
 use serde::{Deserialize, Serialize};
+use argon2::{
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
+use rand_core::OsRng;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 pub struct AppState {
-    pub db: Database,
+    pub db: Arc<Database>,
     pub db_path: std::path::PathBuf,
     pub sync_server: std::sync::Mutex<Option<crate::sync_server::SyncServerHandle>>,
+    pub web_server: std::sync::Mutex<Option<crate::web_server::WebServerHandle>>,
     pub role_auth: std::sync::Mutex<RoleAuthStore>,
     pub role_auth_path: std::path::PathBuf,
 }
@@ -80,11 +87,32 @@ pub struct RolePinStatus {
     pub has_pin: bool,
 }
 
-fn hash_pin(pin: &str) -> String {
+fn sha256_hex(pin: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(pin.as_bytes());
-    let digest = hasher.finalize();
-    digest.iter().map(|byte| format!("{:02x}", byte)).collect()
+    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn hash_pin(pin: &str) -> String {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(pin.as_bytes(), &salt)
+        .expect("argon2 hash failed")
+        .to_string()
+}
+
+/// Verify a PIN against a stored hash.
+/// Supports both the new argon2id format (`$argon2id$...`) and
+/// the legacy SHA-256 hex format (for hashes stored before the upgrade).
+/// On next PIN change, the stored hash is automatically re-hashed with argon2.
+pub fn verify_pin(pin: &str, stored_hash: &str) -> bool {
+    if stored_hash.starts_with("$argon2") {
+        PasswordHash::new(stored_hash)
+            .map(|h| Argon2::default().verify_password(pin.as_bytes(), &h).is_ok())
+            .unwrap_or(false)
+    } else {
+        sha256_hex(pin) == stored_hash
+    }
 }
 
 pub fn load_role_auth_store(path: &std::path::Path) -> RoleAuthStore {
@@ -227,7 +255,7 @@ pub fn switch_role(state: State<AppState>, role: String, pin: Option<String>) ->
     let mut auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
     if let Some(expected_hash) = auth.pin_hashes.get(target.as_str()) {
         let provided = pin.unwrap_or_default();
-        if hash_pin(provided.trim()) != *expected_hash {
+        if !verify_pin(provided.trim(), expected_hash) {
             return Err("PIN 错误".to_string());
         }
     }
@@ -2365,4 +2393,119 @@ pub async fn mutate_sync_ticket(
         .error_for_status()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ==================== 餐桌管理 ====================
+
+#[tauri::command]
+pub fn get_restaurant_tables(state: State<AppState>) -> Result<Vec<RestaurantTable>, String> {
+    state.db.get_restaurant_tables().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_restaurant_table(state: State<AppState>, table_no: String, label: Option<String>, is_active: bool, sort_no: i64) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建餐桌")?;
+    state.db.create_restaurant_table(&table_no, label.as_deref(), is_active, sort_no).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_restaurant_table(state: State<AppState>, id: i64, table_no: String, label: Option<String>, is_active: bool, sort_no: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新餐桌")?;
+    state.db.update_restaurant_table(id, &table_no, label.as_deref(), is_active, sort_no).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_restaurant_table(state: State<AppState>, id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除餐桌")?;
+    state.db.delete_restaurant_table(id).map_err(|e| e.to_string())
+}
+
+// ==================== 自助點單 ====================
+
+#[tauri::command]
+pub fn get_public_menu(state: State<AppState>) -> Result<Vec<PublicMenuCategory>, String> {
+    state.db.get_public_menu().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<SelfOrderItemInput>) -> Result<i64, String> {
+    if table_no.trim().is_empty() {
+        return Err("桌号不能为空".to_string());
+    }
+    if items.is_empty() {
+        return Err("订单不能为空".to_string());
+    }
+    state.db.create_self_order(&table_no, &items).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_table_orders_today(state: State<AppState>, table_no: String) -> Result<Vec<TableOrderSummary>, String> {
+    state.db.get_table_orders_today(&table_no).map_err(|e| e.to_string())
+}
+
+// ==================== Web 伺服器（LAN iPad 存取）====================
+
+#[derive(Serialize)]
+pub struct WebServerStatus {
+    pub running: bool,
+    pub port: Option<u16>,
+    pub url: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_web_server_status(state: State<AppState>) -> WebServerStatus {
+    let guard = state.web_server.lock().unwrap();
+    match &*guard {
+        Some(handle) => {
+            let ip = crate::sync_server::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+            WebServerStatus {
+                running: true,
+                port: Some(handle.port),
+                url: Some(format!("http://{}:{}", ip, handle.port)),
+            }
+        }
+        None => WebServerStatus {
+            running: false,
+            port: None,
+            url: None,
+        },
+    }
+}
+
+#[tauri::command]
+pub fn stop_web_server(state: State<AppState>) -> Result<(), String> {
+    let mut guard = state.web_server.lock().unwrap();
+    if let Some(handle) = guard.take() {
+        handle.stop();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restart_web_server(state: State<AppState>, app: tauri::AppHandle) -> Result<(), String> {
+    {
+        let mut guard = state.web_server.lock().unwrap();
+        if let Some(handle) = guard.take() {
+            handle.stop();
+        }
+    }
+    let resource_dist = app.path().resource_dir().ok().map(|r| r.join("dist"));
+    let exe_dist = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+        .map(|p| p.join("dist"));
+    let cwd_dist = std::env::current_dir().ok().map(|d| d.join("dist"));
+    let dist_dir = [resource_dist, exe_dist, cwd_dist]
+        .into_iter()
+        .flatten()
+        .find(|p| p.join("index.html").exists());
+    let role_auth_path = state.role_auth_path.clone();
+    let db = state.db.clone();
+    match crate::web_server::start_web_server(db, dist_dir, role_auth_path, 9001) {
+        Ok(handle) => {
+            *state.web_server.lock().unwrap() = Some(handle);
+            Ok(())
+        }
+        Err(e) => Err(format!("啟動失敗: {e}")),
+    }
 }

@@ -12,7 +12,7 @@ import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCirc
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
 

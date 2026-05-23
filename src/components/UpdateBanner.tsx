@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { listen } from "@tauri-apps/api/event";
 import { ArrowUpCircle, X, RefreshCw, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";

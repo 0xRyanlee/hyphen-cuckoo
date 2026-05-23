@@ -14,7 +14,7 @@ import { Plus, ChefHat, Trash2, Pencil, Save, X, ChevronRight, ChevronDown, Netw
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
+import { call as invoke } from "@/lib/transport";
 import { useLocation, useNavigate } from "react-router-dom";
 
 interface Recipe {
