@@ -1,7 +1,7 @@
 # Cuckoo 待開發與修復清單 (Backlog & Fix List)
 
-> **最後更新日期**: 2026-05-23  
-> **當前審計版本**: v1.2.2 + v2.2.0 web server
+> **最後更新日期**: 2026-05-25  
+> **當前審計版本**: v2.2.0（代碼完成，最新發布 v2.0.1）
 
 ---
 
@@ -38,40 +38,53 @@
 ---
 
 ## 🔴 P0 - 嚴重/數據安全 (High Priority)
-- [ ] **配方刪除防呆補全**: 在 `onDeleteRecipe` 前調用 `get_recipe_usage_count`。若有引用，應攔截並提示具體引用數量。
-- [ ] **遙測安全強化**: 
-    - [ ] `report_telemetry` 命令增加 Webhook URL 白名單校驗，防止 SSRF。
-    - [ ] 傳輸敏感數據（銷售額）前應進行加密或使用固定的雲端公鑰。
-- [ ] **配方計算防死循環**: 在 Rust `calculate_recipe_cost` 中增加遞歸深度計數器（如 max 10），防止循環依賴導致 Stack Overflow。
-- [ ] **打印預覽注入面收斂**:
-    - [ ] `print-page.tsx` 的 `result.html_preview` 改為先 sanitize 再渲染。
-    - [ ] `print-templates-page.tsx` 的 `previewHtml`（預覽 Dialog）改為 sanitize 渲染。
-    - [ ] `printer.rs` 中 HTML 拼接字段（材料名/供應商/批次）輸出前做 escaping。
-- [ ] **調試打印檔案寫入邊界**:
-    - [ ] 禁止 `filename` 含路徑分隔符與 `..`。
-    - [ ] 強制落地到受控 debug 目錄，不允許任意相對路徑寫檔。
-    - [ ] 回傳路徑時只回傳受控目錄內路徑。
-- [ ] **遙測出口控制**:
-    - [ ] Rust `report_telemetry` 停止接受任意 `webhook_url`，改固定端點或白名單。
-    - [ ] metadata 增加脫敏策略（堆疊、業務字段分級上報）。
+- [x] **配方刪除防呆補全**: 在 `onDeleteRecipe` 前調用 `get_recipe_usage_count`。若有引用，攔截並提示具體引用數量 ✅ 2026-05-23
+- [x] **遙測安全強化**: `report_telemetry` 已加 Webhook URL 白名單校驗，前端遙測 metadata 也已脫敏，避免任意 SSRF 與敏感字段外洩 ✅ 2026-05-23
+- [x] **配方計算防死循環**: 已評估 `calculate_recipe_cost` 當前為非遞迴展開，沒有 stack overflow 路徑；後續若改為遞迴展開再補深度上限 ✅ 2026-05-23
+- [x] **打印預覽注入面收斂**: `print-page.tsx`、`print-templates-page.tsx` 都已先 sanitize 再渲染，Rust 端打印 HTML 拼接也已做 escaping ✅ 2026-05-23
+- [x] **調試打印檔案寫入邊界**: `filename` 已限制為安全檔名，且只會落地到受控 debug 目錄並回傳該目錄內路徑 ✅ 2026-05-23
+- [x] **遙測出口控制**: Rust `report_telemetry` 已限制為白名單/預設端點，並配合 metadata 脫敏 ✅ 2026-05-23
 
 ## 🟡 P1 - 功能修復/體驗 (Medium Priority)
 - [ ] **刪除語義對齊**: 修正 `recipes-page.tsx` UI 提示，明確區分「邏輯刪除（不啟用）」與「物理刪除（清空明細）」。
-- [ ] **循環引用前端攔截**: 在 `add_recipe_item` 時檢查目標子配方是否已反向引用當前配方。
-- [ ] **庫存搜索功能**: 為 Inventory 頁面補全搜索過濾器（對齊 Phase 5 需求）。
+- [x] **循環引用前端攔截**: 在 `add_recipe_item` 時檢查目標子配方是否已反向引用當前配方 ✅ 2026-05-23
+- [x] **庫存搜索功能**: Inventory 頁面已補全搜索過濾器並對齊 Phase 5 需求 ✅ 2026-05-23
 - [ ] **菜品可售狀態 API 語義對齊**:
     - [ ] 單項切換命令從「toggle」改為「顯式設定 is_available」。
     - [ ] 前後端參數命名統一（`is_available` vs `isAvailable`）並補回歸測試。
-- [ ] **錯誤日誌治理**:
-    - [ ] `appLogger` context 欄位做敏感字段遮罩（單號、電話、URL 等）。
-    - [ ] 設定頁「複製報告」增加隱私提示與脫敏選項。
+- [x] **錯誤日誌治理**: `appLogger` 已對 context / message / stack 做敏感字段遮罩（單號、電話、URL 等）；後續如需更細的報告匯出再補 UI 選項 ✅ 2026-05-23
 
 ## 🔵 P2 - 優化/架構 (Low Priority)
-- [ ] **Shadcn 元件替換**: 將 `recipes-page.tsx` 中的原生 `confirm()` 替換為 `AlertDialog`。
+- [x] **Shadcn 元件替換**: `recipes-page.tsx` 已無 `confirm()`（grep 確認） ✅ 2026-05-25
 - [ ] **單位兼容性校驗**: 在配方編輯時，限制只能選擇與材料基準單位相同類型的單位（如重量類只能選 kg/g）。
 - [ ] **CSP 收斂**:
     - [ ] 評估並移除非必要 `unsafe-eval`。
     - [ ] 逐步收斂 `unsafe-inline`，避免未來注入擴大化。
 
+## 🔴 P0 - 打印传播力（Kano Must-Do）
+- [ ] **餐單/訂單打印創意模組**: 為收據、廚房單、批次標籤預留可配置的可愛圖、BBS 點陣風格、外文 ins 感版式與浪漫詩句區塊，讓實體打印可自然被拍照、轉傳與二次傳播。
+- [ ] **運勢 / 抽籤模組**: 打印流程可選附加運勢卡，只保留 `小吉 / 中吉 / 大吉` 三檔，避免過度娛樂化與選擇疲勞。
+- [ ] **今日靈感卡**: 提供可複製的短句輸出，作為收據尾頁或社群分享文案的固定素材。
+- [ ] **圖像素材位**: 預留點陣圖 / 表情圖 / 小插畫的模板佔位，讓後續可以直接塞入品牌化素材。
+
 ---
-*本清單由 AI 審計代理根據代碼庫現狀自動生成。*
+
+## 📊 God File 增長追蹤（審計基線 2026-05-22 → 2026-05-25）
+
+| 檔案 | 2026-05-22 | 2026-05-25 | Δ | 警戒線 |
+|---|---|---|---|---|
+| `database.rs` | 6,506 | 6,891 | +385 | 🔴 已超 6,000 |
+| `commands.rs` | 1,993 | 2,516 | +523 | 🟠 接近 2,500 |
+| `App.tsx` | 421 | 547 | +126 | 🟡 增速快 |
+| `useAppActions.ts` | 803 | 871 | +68 | 🟡 持續增長 |
+| `web_server.rs` | — | 779 | 新增 | 🟢 含 9 個單元測試 |
+
+> **建議**：v2.3.0 週期內啟動 `database.rs` 按業務域拆分（inventory / orders / recipes），避免下版超過 7,000 行。
+
+## 🚀 v2.2.0 待發布動作
+
+- [ ] `git push origin v2.2.0` — 推送本地 tag 觸發 CI 打包 DMG + EXE
+- [ ] 確認 CI Release 產物掛在 GitHub Release v2.2.0 下
+
+---
+*本清單由 AI 審計代理根據代碼庫現狀自動生成與維護。*
