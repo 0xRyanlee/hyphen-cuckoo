@@ -433,6 +433,32 @@ export function RecipesPage({
     setQuickAddRecipeId(null);
   }
 
+  async function handleDeleteRecipeClick(recipe: Recipe) {
+    try {
+      const [usageCount, dependents] = await Promise.all([
+        invoke<number>("get_recipe_usage_count", { recipeId: recipe.id }),
+        invoke<RecipeDependents>("get_recipe_dependents", { recipeId: recipe.id }),
+      ]);
+
+      if (usageCount > 0 || dependents.menu_items.length > 0) {
+        const reasons: string[] = [];
+        if (usageCount > 0) {
+          reasons.push(`${usageCount} 个子配方引用`);
+        }
+        if (dependents.menu_items.length > 0) {
+          reasons.push(`${dependents.menu_items.length} 个菜单商品绑定`);
+        }
+        toast.error(`此配方仍被 ${reasons.join("、")} 引用，无法删除`);
+        setDependsDialog({ recipeId: recipe.id, recipeName: recipe.name });
+        return;
+      }
+    } catch (e) {
+      console.error("检查删除依赖失败", e);
+    }
+
+    setDeleteRecipeConfirm(recipe.id);
+  }
+
   function openEditRecipe(recipe: Recipe) {
     setEditRecipeId(recipe.id);
     setEditRecipeName(recipe.name);
@@ -834,7 +860,7 @@ export function RecipesPage({
                               )}
                               <Button variant="ghost" size="sm" onClick={() => handleSelectRecipe(r)}>查看/编辑</Button>
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" title="查看依赖" onClick={() => setDependsDialog({ recipeId: r.id, recipeName: r.name })}><Network className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteRecipeConfirm(r.id)}><Trash2 className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRecipeClick(r)}><Trash2 className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1347,12 +1373,12 @@ export function RecipesPage({
       <Dialog open={!!deleteItemConfirm} onOpenChange={() => setDeleteItemConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>确认删除</DialogTitle>
+            <DialogTitle>永久删除明细项</DialogTitle>
           </DialogHeader>
-          <p className="py-4 text-sm text-muted-foreground">确定要删除此配方材料项吗？</p>
+          <p className="py-4 text-sm text-muted-foreground">此材料项目将从数据库中<strong>永久移除</strong>，无法复原。确定继续？</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteItemConfirm(null)}>取消</Button>
-            <Button variant="destructive" onClick={() => { if (deleteItemConfirm && activeRecipe?.recipe) { onDeleteRecipeItem(deleteItemConfirm, activeRecipe.recipe.id); } setDeleteItemConfirm(null); }}>删除</Button>
+            <Button variant="destructive" onClick={() => { if (deleteItemConfirm && activeRecipe?.recipe) { onDeleteRecipeItem(deleteItemConfirm, activeRecipe.recipe.id); } setDeleteItemConfirm(null); }}>永久删除</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1360,12 +1386,12 @@ export function RecipesPage({
       <Dialog open={!!deleteRecipeConfirm} onOpenChange={() => setDeleteRecipeConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>确认删除配方</DialogTitle>
+            <DialogTitle>停用配方</DialogTitle>
           </DialogHeader>
-          <p className="py-4 text-sm text-muted-foreground">确定要删除此配方吗？此操作不可撤销，将同时删除所有关联的配方明细。</p>
+          <p className="py-4 text-sm text-muted-foreground">配方将设为「不启用」，从列表中隐藏，但配方明细与历史数据<strong>完整保留</strong>。如需恢复请联系管理员。</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteRecipeConfirm(null)}>取消</Button>
-            <Button variant="destructive" onClick={() => { if (deleteRecipeConfirm) { onDeleteRecipe(deleteRecipeConfirm); } setDeleteRecipeConfirm(null); }}>删除</Button>
+            <Button variant="destructive" onClick={() => { if (deleteRecipeConfirm) { onDeleteRecipe(deleteRecipeConfirm); } setDeleteRecipeConfirm(null); }}>停用</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

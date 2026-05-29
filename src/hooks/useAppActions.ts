@@ -1,5 +1,5 @@
 import { call as invoke } from "@/lib/transport";
-import { appLogger, formatError } from "@/lib/logger";
+import { appLogger, formatError, sanitizeSensitiveValue } from "@/lib/logger";
 import type {
   MaterialCategory, RecipeCostResult, MenuItem, MenuCategory, POSCartItem, MenuItemSpec,
   TicketWithItems, Order, OrderWithItems, OrderItemModifier, Recipe, RecipeWithItems,
@@ -174,7 +174,26 @@ export function useAppActions({
   };
 
   const handleDeleteRecipe = async (id: number) => {
-    try { await invoke("delete_recipe", { id }); toast.success("配方已删除"); setSelectedRecipe(null); setRecipeCost(null); loadRecipes(); }
+    try {
+      const [usageCount, dependents] = await Promise.all([
+        invoke<number>("get_recipe_usage_count", { recipeId: id }),
+        invoke<{ menu_items: Array<{ id: number; name: string }>; parent_recipes: Array<{ id: number; name: string }> }>("get_recipe_dependents", { recipeId: id }),
+      ]);
+
+      if (usageCount > 0 || dependents.menu_items.length > 0) {
+        const reasons: string[] = [];
+        if (usageCount > 0) reasons.push(`${usageCount} 个子配方引用`);
+        if (dependents.menu_items.length > 0) reasons.push(`${dependents.menu_items.length} 个菜单商品绑定`);
+        toast.error(`此配方仍被 ${reasons.join("、")} 引用，无法删除`);
+        return;
+      }
+
+      await invoke("delete_recipe", { id });
+      toast.success("配方已删除");
+      setSelectedRecipe(null);
+      setRecipeCost(null);
+      loadRecipes();
+    }
     catch (e) { logError("delete_recipe", e, "删除配方失败", { id }); }
   };
 
@@ -265,6 +284,13 @@ export function useAppActions({
 
   const handleAddRecipeItem = async (recipe_id: number, item_type: string, ref_id: number, qty: number, unit_id: number, wastage_rate: number) => {
     try {
+      if (item_type === "sub_recipe") {
+        const wouldCreateCycle = await invoke<boolean>("would_create_recipe_cycle", { recipeId: recipe_id, refId: ref_id });
+        if (wouldCreateCycle) {
+          toast.error("添加此子配方会产生循环引用，请先调整配方嵌套关系");
+          return;
+        }
+      }
       await invoke("add_recipe_item", { recipeId: recipe_id, req: { item_type, ref_id, qty, unit_id, wastage_rate } });
       await refreshRecipeSelection(recipe_id);
       toast.success("配方项已添加");
@@ -307,13 +333,13 @@ export function useAppActions({
   };
 
   const handleToggleMenuItem = async (id: number, is_available: boolean) => {
-    try { await invoke("toggle_menu_item_availability", { id, isAvailable: is_available }); loadMenu(); }
-    catch (e) { logError("toggle_menu_item_availability", e, "切换菜品状态失败", { id, is_available }); }
+    try { await invoke("set_menu_item_availability", { id, isAvailable: is_available }); loadMenu(); }
+    catch (e) { logError("set_menu_item_availability", e, "切换菜品状态失败", { id, is_available }); }
   };
 
   const handleBatchToggleMenuItem = async (ids: number[], is_available: boolean) => {
-    try { const count = await invoke<number>("batch_toggle_menu_item_availability", { ids, isAvailable: is_available }); toast.success(`已批量切换 ${count} 个菜品`); loadMenu(); }
-    catch (e) { logError("batch_toggle_menu_item_availability", e, "批量切换失败", { count: ids.length }); }
+    try { const count = await invoke<number>("batch_set_menu_item_availability", { ids, isAvailable: is_available }); toast.success(`已批量切换 ${count} 个菜品`); loadMenu(); }
+    catch (e) { logError("batch_set_menu_item_availability", e, "批量切换失败", { count: ids.length }); }
   };
 
   const handleBatchUpdateMenuItemPrices = async (ids: number[], mode: "set" | "delta" | "percent", value: number) => {
@@ -753,7 +779,14 @@ export function useAppActions({
   };
 
   const handleReportTelemetry = async (payload: { client_id: string; version: string; event_type: string; uptime_hours: number; today_sales: number; today_orders: number; metadata: any }) => {
-    try { await invoke("report_telemetry", { payload }); }
+    try {
+      await invoke("report_telemetry", {
+        payload: {
+          ...payload,
+          metadata: sanitizeSensitiveValue(payload.metadata),
+        },
+      });
+    }
     catch { /* telemetry is best-effort; do not pollute the user-visible error log */ }
   };
 

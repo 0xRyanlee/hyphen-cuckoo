@@ -1,7 +1,7 @@
 # Cuckoo 待開發與修復清單 (Backlog & Fix List)
 
-> **最後更新日期**: 2026-05-25  
-> **當前審計版本**: v2.2.0（代碼完成，最新發布 v2.0.1）
+> **最後更新日期**: 2026-05-30  
+> **當前審計版本**: v2.3.0（代碼完成，待 GitHub Release）
 
 ---
 
@@ -46,26 +46,24 @@
 - [x] **遙測出口控制**: Rust `report_telemetry` 已限制為白名單/預設端點，並配合 metadata 脫敏 ✅ 2026-05-23
 
 ## 🟡 P1 - 功能修復/體驗 (Medium Priority)
-- [ ] **刪除語義對齊**: 修正 `recipes-page.tsx` UI 提示，明確區分「邏輯刪除（不啟用）」與「物理刪除（清空明細）」。
+- [x] **刪除語義對齊**: 配方 Dialog 更正為「停用」（邏輯刪除），明細 Dialog 明示「永久刪除」 ✅ 2026-05-30
 - [x] **循環引用前端攔截**: 在 `add_recipe_item` 時檢查目標子配方是否已反向引用當前配方 ✅ 2026-05-23
 - [x] **庫存搜索功能**: Inventory 頁面已補全搜索過濾器並對齊 Phase 5 需求 ✅ 2026-05-23
-- [ ] **菜品可售狀態 API 語義對齊**:
-    - [ ] 單項切換命令從「toggle」改為「顯式設定 is_available」。
-    - [ ] 前後端參數命名統一（`is_available` vs `isAvailable`）並補回歸測試。
+- [x] **菜品可售狀態 API 語義對齊**: `toggle_menu_item_availability` → `set_menu_item_availability`；補 web server HTTP 端點；3 個回歸測試 ✅ 2026-05-30
 - [x] **錯誤日誌治理**: `appLogger` 已對 context / message / stack 做敏感字段遮罩（單號、電話、URL 等）；後續如需更細的報告匯出再補 UI 選項 ✅ 2026-05-23
 
 ## 🔵 P2 - 優化/架構 (Low Priority)
 - [x] **Shadcn 元件替換**: `recipes-page.tsx` 已無 `confirm()`（grep 確認） ✅ 2026-05-25
-- [ ] **單位兼容性校驗**: 在配方編輯時，限制只能選擇與材料基準單位相同類型的單位（如重量類只能選 kg/g）。
-- [ ] **CSP 收斂**:
-    - [ ] 評估並移除非必要 `unsafe-eval`。
-    - [ ] 逐步收斂 `unsafe-inline`，避免未來注入擴大化。
+- [x] **單位兼容性校驗**: `add_recipe_item` 後端加 unit_type 一致性驗證；前端已有同等過濾 ✅ 2026-05-30
+- [x] **CSP 收斂（已評估 2026-05-30）**:
+    - [x] `unsafe-eval`：已完全不存在於 CSP 與代碼庫 ✅
+    - [ ] `unsafe-inline` for `style-src`：**暫緩，延至 v3.0.x**。移除條件：(1) `chart.tsx` `<style dangerouslySetInnerHTML>` 改為 CSS modules；(2) 9 處 React `style={{}}` 改為 CSS class；(3) 確認 Recharts 無 inline style 依賴。
 
 ## 🔴 P0 - 打印传播力（Kano Must-Do）
-- [ ] **餐單/訂單打印創意模組**: 為收據、廚房單、批次標籤預留可配置的可愛圖、BBS 點陣風格、外文 ins 感版式與浪漫詩句區塊，讓實體打印可自然被拍照、轉傳與二次傳播。
-- [ ] **運勢 / 抽籤模組**: 打印流程可選附加運勢卡，只保留 `小吉 / 中吉 / 大吉` 三檔，避免過度娛樂化與選擇疲勞。
-- [ ] **今日靈感卡**: 提供可複製的短句輸出，作為收據尾頁或社群分享文案的固定素材。
-- [ ] **圖像素材位**: 預留點陣圖 / 表情圖 / 小插畫的模板佔位，讓後續可以直接塞入品牌化素材。
+- [x] **餐單/訂單打印創意模組**: 模板新增 `art`/`fortune`/`quote`/`image_block` element type；編輯器加快速插入按鈕 ✅ 2026-05-30
+- [x] **運勢 / 抽籤模組**: `fortune` element，大吉/中吉/小吉三檔，per_table/per_order/daily 三種種子策略 ✅ 2026-05-30
+- [x] **今日靈感卡**: `quote` element，中/英/日多語系語錄庫，按日輪替 ✅ 2026-05-30
+- [x] **圖像素材位**: `image_block` element 佔位，未來接 ESC/POS GS v 0 點陣圖 ✅ 2026-05-30
 
 ---
 

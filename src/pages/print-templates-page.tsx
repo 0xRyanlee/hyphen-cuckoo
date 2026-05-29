@@ -437,7 +437,29 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
               <div className="space-y-2">
                 <Label>模板內容 (JSON)</Label>
                 <Textarea value={formContent} onChange={(e) => { setFormContent(e.target.value); updateLivePreview(e.target.value, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData); }} rows={12} className="font-mono text-xs" />
-                <p className="text-xs text-muted-foreground">支持元素类型：text, separator, blank_lines, items。使用 {"{{variable}}"} 作为占位符。</p>
+                <p className="text-xs text-muted-foreground">元素類型：text, separator, blank_lines, items, fortune, quote, art, image_block。使用 {"{{variable}}"} 作為佔位符。</p>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <span className="text-xs text-muted-foreground self-center">快速插入：</span>
+                  {[
+                    { label: "運勢", json: '{"type":"fortune","seed_strategy":"per_table"}' },
+                    { label: "語錄", json: '{"type":"quote","language":"multilingual"}' },
+                    { label: "藝術圖塊", json: '{"type":"art","variant":"random"}' },
+                    { label: "圖像佔位", json: '{"type":"image_block"}' },
+                  ].map(({ label, json }) => (
+                    <Button key={label} variant="outline" size="sm" className="h-6 text-xs px-2"
+                      onClick={() => {
+                        try {
+                          const parsed = JSON.parse(formContent || '{"elements":[]}');
+                          parsed.elements = [...(parsed.elements || []), JSON.parse(json)];
+                          const updated = JSON.stringify(parsed, null, 2);
+                          setFormContent(updated);
+                          updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
+                        } catch { /* ignore parse errors */ }
+                      }}>
+                      <Star className="h-3 w-3 mr-1" />{label}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               <Separator />

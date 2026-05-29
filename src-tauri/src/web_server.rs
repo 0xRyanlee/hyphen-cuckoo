@@ -242,6 +242,20 @@ fn dispatch_menu(route: &str, v: &Value, db: &Arc<Database>) -> Option<(&'static
         "/api/get_menu_items" => to_json(db.get_menu_items(v["categoryId"].as_i64())),
         "/api/get_menu_items_for_pos" => to_json(db.get_menu_items_for_pos(v["categoryId"].as_i64())),
         "/api/get_menu_item_specs" => to_json(db.get_menu_item_specs(v["menuItemId"].as_i64().unwrap_or(0))),
+        "/api/set_menu_item_availability" => {
+            let id = v["id"].as_i64().unwrap_or(0);
+            let is_available = v["isAvailable"].as_bool().unwrap_or(false);
+            to_json(db.set_menu_item_availability(id, is_available))
+        }
+        "/api/batch_set_menu_item_availability" => {
+            let ids: Vec<i64> = v["ids"].as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .filter_map(|i| i.as_i64())
+                .collect();
+            let is_available = v["isAvailable"].as_bool().unwrap_or(false);
+            to_json(db.batch_toggle_menu_item_availability(&ids, is_available))
+        }
         _ => return None,
     };
     Some(r)
@@ -751,6 +765,66 @@ mod tests {
         }
         let (status, _) = auth_login(br#"{"role":"cashier","pin":"0000"}"#, &path, &sessions);
         assert_eq!(status, "429 Too Many Requests");
+    }
+
+    // ── dispatch_menu availability endpoints ─────────────────────────────────
+
+    fn make_test_db_with_menu_item() -> (Arc<crate::database::Database>, tempfile::TempDir, i64) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.db").to_str().unwrap().to_string();
+        let db = crate::database::Database::new(&path).unwrap();
+        let cat_id = db.create_menu_category("测试分类", 1).unwrap();
+        let item_id = db.create_menu_item("测试菜品", Some(cat_id), None, 10.0).unwrap();
+        (Arc::new(db), dir, item_id)
+    }
+
+    #[test]
+    fn dispatch_menu_set_availability_false() {
+        let (db, _dir, item_id) = make_test_db_with_menu_item();
+        let v = serde_json::json!({ "id": item_id, "isAvailable": false });
+        let result = dispatch_menu("/api/set_menu_item_availability", &v, &db);
+        assert!(result.is_some());
+        let (status, _) = result.unwrap();
+        assert_eq!(status, "200 OK");
+        // Verify DB was updated
+        let items = db.get_menu_items(None).unwrap();
+        let item = items.iter().find(|i| i.id == item_id).unwrap();
+        assert!(!item.is_available);
+    }
+
+    #[test]
+    fn dispatch_menu_set_availability_true() {
+        let (db, _dir, item_id) = make_test_db_with_menu_item();
+        // Set false first
+        db.set_menu_item_availability(item_id, false).unwrap();
+        let v = serde_json::json!({ "id": item_id, "isAvailable": true });
+        let result = dispatch_menu("/api/set_menu_item_availability", &v, &db);
+        assert!(result.is_some());
+        let (status, _) = result.unwrap();
+        assert_eq!(status, "200 OK");
+        let items = db.get_menu_items(None).unwrap();
+        let item = items.iter().find(|i| i.id == item_id).unwrap();
+        assert!(item.is_available);
+    }
+
+    #[test]
+    fn dispatch_menu_batch_set_availability() {
+        let (db, _dir, item_id) = make_test_db_with_menu_item();
+        let cat_id = db.create_menu_category("分类2", 2).unwrap();
+        let item_id2 = db.create_menu_item("菜品2", Some(cat_id), None, 20.0).unwrap();
+        let v = serde_json::json!({ "ids": [item_id, item_id2], "isAvailable": false });
+        let result = dispatch_menu("/api/batch_set_menu_item_availability", &v, &db);
+        assert!(result.is_some());
+        let (status, body) = result.unwrap();
+        assert_eq!(status, "200 OK");
+        // Response should be count of updated rows (2)
+        let count: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(count, serde_json::json!(2));
+        // Verify the specific items were updated
+        let items = db.get_menu_items(None).unwrap();
+        let target_items: Vec<_> = items.iter().filter(|i| i.id == item_id || i.id == item_id2).collect();
+        assert_eq!(target_items.len(), 2);
+        assert!(target_items.iter().all(|i| !i.is_available));
     }
 
     // ── serve_static path traversal ───────────────────────────────────────────

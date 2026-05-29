@@ -246,8 +246,8 @@ pub fn run() {
             commands::delete_supplier_product,
             commands::get_order_cost,
             commands::update_menu_item,
-            commands::toggle_menu_item_availability,
-            commands::batch_toggle_menu_item_availability,
+            commands::set_menu_item_availability,
+            commands::batch_set_menu_item_availability,
             commands::batch_update_menu_item_prices,
             commands::toggle_menu_item_favorite,
             commands::delete_menu_item,
@@ -314,6 +314,7 @@ pub fn run() {
             commands::get_material_consumption_report,
             // 配方項目更新
             commands::update_recipe_item,
+            commands::would_create_recipe_cycle,
             // 工作站菜單映射
             commands::get_station_menu_items,
             // 打印模板

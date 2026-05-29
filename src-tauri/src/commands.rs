@@ -755,6 +755,11 @@ pub fn get_recipe_usage_count(state: State<AppState>, recipe_id: i64) -> Result<
     Ok(count)
 }
 
+#[tauri::command]
+pub fn would_create_recipe_cycle(state: State<AppState>, recipe_id: i64, ref_id: i64) -> Result<bool, String> {
+    state.db.would_create_recipe_cycle(recipe_id, ref_id).map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize)]
 pub struct RecipeDependents {
     pub menu_items: Vec<DependentRef>,
@@ -1196,13 +1201,13 @@ pub fn update_menu_item(state: State<AppState>, id: i64, name: Option<String>, c
 }
 
 #[tauri::command]
-pub fn toggle_menu_item_availability(state: State<AppState>, id: i64, is_available: bool) -> Result<bool, String> {
+pub fn set_menu_item_availability(state: State<AppState>, id: i64, is_available: bool) -> Result<bool, String> {
     require_roles(&state, &[UserRole::Owner], "更新菜单上下架")?;
     state.db.set_menu_item_availability(id, is_available).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn batch_toggle_menu_item_availability(state: State<AppState>, ids: Vec<i64>, is_available: bool) -> Result<usize, String> {
+pub fn batch_set_menu_item_availability(state: State<AppState>, ids: Vec<i64>, is_available: bool) -> Result<usize, String> {
     require_roles(&state, &[UserRole::Owner], "批量更新菜单上下架")?;
     state.db.batch_toggle_menu_item_availability(&ids, is_available).map_err(|e| e.to_string())
 }

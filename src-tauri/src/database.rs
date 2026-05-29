@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, params};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -410,6 +410,69 @@ pub struct EntityAttribute {
     pub value_text: Option<String>,
     pub calculated: bool,
     pub updated_at: String,
+}
+
+// ==================== 打印創意模組靜態資源 ====================
+
+// (level, text) — 大吉 30% / 中吉 50% / 小吉 20%
+static FORTUNE_TEXTS: &[(&str, &str)] = &[
+    ("大吉", "今日萬事俱備，美食開路，好運隨行。"),
+    ("大吉", "口福即天福，飽食者心寬，心寬者天下大吉。"),
+    ("大吉", "今日食得好菜，出門定遇貴人，萬事如意。"),
+    ("大吉", "此番點單合天意，財運、健康、緣分三喜臨門。"),
+    ("大吉", "今日吉星高照，用餐愉快，好事接連而至。"),
+    ("中吉", "菜香心靜，凡事不急，好事自來。"),
+    ("中吉", "今日宜慢食慢行，細品生活每一味。"),
+    ("中吉", "飯吃七分飽，事做三分穩，中吉福報至。"),
+    ("中吉", "今日偏財運旺，不妨飯後小試，或有驚喜。"),
+    ("中吉", "心情如湯底，需要文火慢煨，今日宜沉澱。"),
+    ("小吉", "小吉已是福，知足者常樂，今日享受當下。"),
+    ("小吉", "凡事稍作等候，如等上菜，值得的都值得等。"),
+    ("小吉", "今日宜靜不宜動，食飽小憩，養精蓄銳。"),
+    ("小吉", "小吉亦是吉，今日腳步可緩，細品身邊美好。"),
+    ("小吉", "平穩是福，今日安步當車，無驚無險皆好事。"),
+];
+
+static QUOTES_ZH: &[&str] = &[
+    "人間有味是清歡 — 蘇軾",
+    "莫笑農家臘酒渾，豐年留客足雞豚 — 陸游",
+    "此刻此味，是最好的時刻",
+    "食之以誠，暖之以心",
+    "舉杯邀明月，對影成三人 — 李白",
+];
+
+static QUOTES_EN: &[&str] = &[
+    "Good food is the foundation of genuine happiness.",
+    "Life is short. Eat the good stuff first.",
+    "You had me at the menu.",
+    "Every meal is a love letter to your body.",
+    "Eat well. Live well. Repeat.",
+];
+
+static QUOTES_JA: &[&str] = &[
+    "食べることは生きること、愛すること",
+    "一碗の温もり、心に満ちる幸せ",
+    "美味しさは言葉を超える",
+];
+
+static ART_BLOCKS: &[&str] = &[
+    "  ╔══════════════════════╗\n  ║  ( ˘◡˘ )♪  用心料理  ║\n  ╚══════════════════════╝",
+    "  ☆ ☆ ☆  LUCKY RECEIPT  ☆ ☆ ☆\n  ／￣＼\n （  °▽°）  感謝光臨！\n  ＼＿／",
+    "  /ᐠ｡ꞈ｡ᐟ\\  感謝惠顧！\n  ♪ 布穀！布穀！ ♪",
+    "  ʕ•ᴥ•ʔ  吃飽了嗎？\n  ☕ ☕ ☕ ☕ ☕ ☕",
+    "  ✿ ✿ ✿  用心烹飪  ✿ ✿ ✿",
+];
+
+fn creative_fortune_seed(strategy: &str, table_no: Option<&str>, order_id: Option<i64>, date_str: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    let mut h = DefaultHasher::new();
+    match strategy {
+        "per_table" => { table_no.unwrap_or("").hash(&mut h); date_str.hash(&mut h); }
+        "per_order" => { order_id.unwrap_or(0).hash(&mut h); }
+        _ => { date_str.hash(&mut h); }
+    }
+    h.finish()
 }
 
 // ==================== 打印機類型 ====================
@@ -2640,6 +2703,26 @@ impl Database {
                 ));
             }
         }
+        if item_type == "material" {
+            let base_unit_type: Option<String> = conn.query_row(
+                "SELECT u.unit_type FROM materials m JOIN units u ON m.base_unit_id = u.id WHERE m.id = ?1",
+                params![ref_id],
+                |row| row.get(0),
+            ).optional()?;
+            let selected_unit_type: Option<String> = conn.query_row(
+                "SELECT unit_type FROM units WHERE id = ?1",
+                params![unit_id],
+                |row| row.get(0),
+            ).optional()?;
+            match (base_unit_type, selected_unit_type) {
+                (Some(base), Some(sel)) if base != sel => {
+                    return Err(rusqlite::Error::InvalidParameterName(
+                        format!("單位類型不兼容：材料基準單位類型為「{}」，所選單位類型為「{}」", base, sel),
+                    ));
+                }
+                _ => {}
+            }
+        }
         conn.execute(
             "INSERT INTO recipe_items (recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![recipe_id, item_type, ref_id, qty, unit_id, wastage_rate, sort_no],
@@ -2677,6 +2760,14 @@ impl Database {
             |row| row.get(0),
         )?;
         Ok(count)
+    }
+
+    pub fn would_create_recipe_cycle(&self, recipe_id: i64, ref_id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        if ref_id == recipe_id {
+            return Ok(true);
+        }
+        Self::recipe_has_ancestor(&conn, ref_id, recipe_id)
     }
 
     pub fn get_recipe_dependents(&self, recipe_id: i64) -> Result<(Vec<(i64, String)>, Vec<(i64, String)>)> {
@@ -5093,6 +5184,61 @@ impl Database {
                                 }
                             }
                         }
+                        "fortune" => {
+                            let strategy = elem.get("seed_strategy").and_then(|s| s.as_str()).unwrap_or("daily");
+                            let date_str = chrono::Local::now().format("%Y-%m-%d").to_string();
+                            let table_no = data.get("table_no").and_then(|t| t.as_str());
+                            let order_id = data.get("order_id").and_then(|o| o.as_i64());
+                            let seed = creative_fortune_seed(strategy, table_no, order_id, &date_str);
+                            let pct = seed % 100;
+                            let level = if pct < 20 { "小吉" } else if pct < 70 { "中吉" } else { "大吉" };
+                            let level_texts: Vec<&str> = FORTUNE_TEXTS.iter()
+                                .filter(|(l, _)| *l == level).map(|(_, t)| *t).collect();
+                            let fortune_text = level_texts.get(((seed / 100) as usize) % level_texts.len().max(1))
+                                .copied().unwrap_or("");
+                            let stars = if pct < 20 { "★" } else if pct < 70 { "★ ★" } else { "★ ★ ★" };
+                            let width = if paper_size == "58mm" { 32 } else { 48 };
+                            let dash = "─".repeat(width);
+                            lines.push(dash.clone());
+                            lines.push(format!("       {} {} {} {}       ", stars, level, level, stars));
+                            lines.push(fortune_text.to_string());
+                            lines.push(dash);
+                        }
+                        "quote" => {
+                            let lang = elem.get("language").and_then(|l| l.as_str()).unwrap_or("multilingual");
+                            let day_seed = chrono::Local::now().format("%Y%m%d").to_string().parse::<u64>().unwrap_or(0);
+                            let quotes: &[&str] = match lang {
+                                "en" => QUOTES_EN,
+                                "ja" => QUOTES_JA,
+                                "zh" => QUOTES_ZH,
+                                _ => match day_seed % 3 { 0 => QUOTES_ZH, 1 => QUOTES_EN, _ => QUOTES_JA },
+                            };
+                            let quote = quotes.get((day_seed as usize) % quotes.len().max(1))
+                                .copied().unwrap_or("");
+                            let width = if paper_size == "58mm" { 32 } else { 48 };
+                            lines.push("─".repeat(width));
+                            lines.push(quote.to_string());
+                            lines.push("─".repeat(width));
+                        }
+                        "art" => {
+                            let variant = elem.get("variant").and_then(|v| v.as_str()).unwrap_or("random");
+                            let idx = if variant == "random" {
+                                let day_seed = chrono::Local::now().format("%Y%m%d").to_string().parse::<usize>().unwrap_or(0);
+                                day_seed % ART_BLOCKS.len().max(1)
+                            } else {
+                                0
+                            };
+                            let block = ART_BLOCKS.get(idx).copied().unwrap_or("");
+                            for line in block.split('\n') {
+                                lines.push(line.to_string());
+                            }
+                        }
+                        "image_block" => {
+                            // Placeholder — future ESC/POS GS v 0 bitmap support
+                            lines.push(String::new());
+                            lines.push("  [自訂圖像]".to_string());
+                            lines.push(String::new());
+                        }
                         _ => {}
                     }
                 }
@@ -5776,8 +5922,8 @@ mod tests {
         if materials.is_empty() { return; }
         let material = &materials[0];
 
-        let units = db.get_units().unwrap();
-        let unit_id = if units.is_empty() { 1 } else { units[0].id };
+        // Use the material's own base unit to satisfy unit type compatibility validation
+        let unit_id = material.material.base_unit_id;
 
         let recipe_id = db.create_recipe("TEST_COST", "測試食譜", "半成品", 1.0, None, None, Some(unit_id)).unwrap();
         db.add_recipe_item(recipe_id, "material", material.material.id, 2.0, unit_id, 0.0, 0).unwrap();
@@ -6299,8 +6445,8 @@ mod tests {
         assert!(!materials.is_empty());
         let material = &materials[0];
 
-        let units = db.get_units().unwrap();
-        let unit_id = if units.is_empty() { 1 } else { units[0].id };
+        // Use the material's own base unit to satisfy unit type compatibility validation
+        let unit_id = material.material.base_unit_id;
 
         let recipe_id = db.create_recipe("TEST001", "測試食譜", "半成品", 1.0, None, None, Some(unit_id)).unwrap();
         let recipes = db.get_recipes(None).unwrap();
@@ -6332,6 +6478,24 @@ mod tests {
         let (menu_items, parent_recipes) = db.get_recipe_dependents(recipe_id).unwrap();
         assert!(menu_items.iter().any(|(id, name)| *id == menu_item_id && name == "依賴測試菜品"));
         assert!(parent_recipes.is_empty());
+    }
+
+    #[test]
+    fn test_recipe_cycle_detection() {
+        let (db, _dir) = test_db();
+        seed_minimal(&db);
+
+        let units = db.get_units().unwrap();
+        let unit_id = units.first().map(|unit| unit.id).unwrap_or(1);
+
+        let parent_recipe_id = db.create_recipe("CYC001", "循環上層", "半成品", 1.0, None, None, Some(unit_id)).unwrap();
+        let child_recipe_id = db.create_recipe("CYC002", "循環下層", "半成品", 1.0, None, None, Some(unit_id)).unwrap();
+
+        db.add_recipe_item(parent_recipe_id, "sub_recipe", child_recipe_id, 1.0, unit_id, 0.0, 0).unwrap();
+
+        assert!(db.would_create_recipe_cycle(child_recipe_id, parent_recipe_id).unwrap());
+        assert!(!db.would_create_recipe_cycle(parent_recipe_id, child_recipe_id).unwrap());
+        assert!(db.add_recipe_item(child_recipe_id, "sub_recipe", parent_recipe_id, 1.0, unit_id, 0.0, 0).is_err());
     }
 
     #[test]

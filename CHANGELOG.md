@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.3.0] — 2026-05-30
+
+### Features
+
+* **打印創意模組**：收據模板新增 `fortune`（運勢抽籤）、`quote`（今日靈感卡）、`art`（ASCII 藝術圖塊）、`image_block`（圖像佔位）四種 element type；模板編輯器加入快速插入按鈕
+* **運勢抽籤**：三級（大吉/中吉/小吉，僅正向），支援 `daily`/`per_table`/`per_order` 三種種子策略，完整文字庫嵌入二進制
+* **今日靈感卡**：支援中/英/日多語系語錄，按日期輪替
+* **菜品可售狀態 API 語義對齊**：`toggle_menu_item_availability` 重命名為 `set_menu_item_availability`，補充 web server HTTP 端點與 3 個回歸測試
+* **配方單位兼容性校驗**：`add_recipe_item` 後端加入 unit_type 一致性驗證（前端已有同等過濾）
+
+### Bug Fixes
+
+* **recipes-page.tsx 刪除語義**：配方「刪除」Dialog 更正為「停用」（邏輯刪除，資料保留），配方明細「刪除」明示永久移除
+* **CSP 審計**：確認 `unsafe-eval` 已完全不存在；`unsafe-inline` for style-src 記錄依賴阻礙並延至 v3.0.x
+
+---
+
 ## [1.4.0](https://github.com/0xRyanlee/Cuckoo/compare/cuckoo-v1.3.1...cuckoo-v1.4.0) (2026-05-15)
 
 
