@@ -26,6 +26,9 @@ export interface LogEntry {
 
 const STORAGE_KEY = "cuckoo_error_log_v2";
 const MAX_ENTRIES = 60;
+const SENSITIVE_KEY_RE = /(phone|tel|mobile|url|webhook|endpoint|token|secret|key|password|pin|sn|ukey|order_no|orderno|client_id|email)/i;
+const URL_RE = /^https?:\/\/\S+/i;
+const LONG_DIGITS_RE = /\b\d{7,}\b/g;
 
 function categorize(msg: string): ErrorCategory {
   const s = msg.toLowerCase();
@@ -52,12 +55,38 @@ function persist(entry: LogEntry): void {
   } catch { /* storage quota or parse error — silently skip */ }
 }
 
+export function sanitizeSensitiveValue(value: unknown, key?: string): unknown {
+  if (value == null) return value;
+  if (typeof value === "string") {
+    if (key && SENSITIVE_KEY_RE.test(key)) return "[REDACTED]";
+    if (URL_RE.test(value)) return "[REDACTED_URL]";
+    return value.replace(LONG_DIGITS_RE, (match) => `${match.slice(0, 2)}***${match.slice(-2)}`);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeSensitiveValue(item));
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => {
+        if (SENSITIVE_KEY_RE.test(entryKey)) {
+          return [entryKey, "[REDACTED]"];
+        }
+        return [entryKey, sanitizeSensitiveValue(entryValue, entryKey)];
+      }),
+    );
+  }
+  return value;
+}
+
 export const appLogger = {
   log(entry: Omit<LogEntry, "id" | "ts">): LogEntry {
     const full: LogEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       ts: new Date().toISOString(),
       ...entry,
+      message: sanitizeSensitiveValue(entry.message) as string,
+      stack: entry.stack ? (sanitizeSensitiveValue(entry.stack) as string) : undefined,
+      context: entry.context ? (sanitizeSensitiveValue(entry.context) as Record<string, unknown>) : undefined,
     };
     persist(full);
     // Notify UI components so they can show badges/alerts without polling
@@ -79,7 +108,7 @@ export const appLogger = {
     return this.log({
       category: categorize(message),
       operation,
-      message,
+      message: sanitizeSensitiveValue(message) as string,
       stack: raw instanceof Error ? raw.stack : undefined,
       context,
     });
