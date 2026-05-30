@@ -44,5 +44,8 @@ jobs:
       - name: frontend type check
         run: npx tsc --noEmit
 
+      - name: build frontend (required for Tauri resource validation)
+        run: npm run build
+
       - name: cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
