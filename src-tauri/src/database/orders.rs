@@ -259,176 +259,6 @@ impl Database {
         }
     }
 
-    pub fn update_menu_item(&self, id: i64, name: Option<&str>, category_id: Option<i64>, recipe_id: Option<i64>, sales_price: Option<f64>) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE menu_items SET name = COALESCE(?1, name), category_id = COALESCE(?2, category_id), recipe_id = ?3, sales_price = COALESCE(?4, sales_price) WHERE id = ?5",
-            params![name, category_id, recipe_id, sales_price, id],
-        )?;
-        Ok(())
-    }
-
-    pub fn set_menu_item_availability(&self, id: i64, is_available: bool) -> Result<bool> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE menu_items SET is_available = ?1 WHERE id = ?2",
-            params![if is_available { 1 } else { 0 }, id],
-        )?;
-        Ok(is_available)
-    }
-
-    pub fn toggle_menu_item_favorite(&self, id: i64) -> Result<bool> {
-        let conn = self.conn.lock().unwrap();
-        let current: i32 = conn.query_row(
-            "SELECT is_favorite FROM menu_items WHERE id = ?1",
-            params![id],
-            |row| row.get(0),
-        )?;
-        let new_val = if current == 0 { 1 } else { 0 };
-        conn.execute("UPDATE menu_items SET is_favorite = ?1 WHERE id = ?2", params![new_val, id])?;
-        Ok(new_val != 0)
-    }
-
-    pub fn batch_toggle_menu_item_availability(&self, ids: &[i64], is_available: bool) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
-        let mut count = 0;
-        for id in ids {
-            let result = conn.execute("UPDATE menu_items SET is_available = ?1 WHERE id = ?2", params![if is_available { 1 } else { 0 }, id]);
-            if result.is_ok() {
-                count += 1;
-            }
-        }
-        Ok(count)
-    }
-
-    pub fn batch_update_menu_item_prices(&self, ids: &[i64], mode: &str, value: f64) -> Result<usize> {
-        let mut conn = self.conn.lock().unwrap();
-        let tx = conn.transaction()?;
-        let mut count = 0;
-
-        for id in ids {
-            let current_price: f64 = tx.query_row(
-                "SELECT sales_price FROM menu_items WHERE id = ?1",
-                params![id],
-                |row| row.get(0),
-            )?;
-
-            let next_price = match mode {
-                "set" => value,
-                "delta" => current_price + value,
-                "percent" => current_price * (1.0 + value / 100.0),
-                _ => return Err(rusqlite::Error::InvalidParameterName("invalid batch price mode".to_string())),
-            };
-
-            let rounded_price = (next_price * 100.0).round() / 100.0;
-            if rounded_price < 0.0 {
-                return Err(rusqlite::Error::InvalidParameterName("negative menu price".to_string()));
-            }
-
-            tx.execute(
-                "UPDATE menu_items SET sales_price = ?1 WHERE id = ?2",
-                params![rounded_price, id],
-            )?;
-            count += 1;
-        }
-
-        tx.commit()?;
-        Ok(count)
-    }
-
-    pub fn delete_menu_item(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM menu_item_specs WHERE menu_item_id = ?1", params![id])?;
-        conn.execute("DELETE FROM station_menu_items WHERE menu_item_id = ?1", params![id])?;
-        let affected = conn.execute("DELETE FROM menu_items WHERE id = ?1", params![id])?;
-        if affected == 0 {
-            return Err(rusqlite::Error::QueryReturnedNoRows);
-        }
-        Ok(())
-    }
-
-    pub fn update_menu_category(&self, id: i64, name: Option<&str>, sort_no: Option<i32>) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        if let Some(n) = name {
-            let code = n.to_uppercase().replace(' ', "_");
-            conn.execute("UPDATE menu_categories SET code = ?1, name = ?2, sort_no = COALESCE(?3, sort_no) WHERE id = ?4", params![code, n, sort_no, id])?;
-        } else if let Some(s) = sort_no {
-            conn.execute("UPDATE menu_categories SET sort_no = ?1 WHERE id = ?2", params![s, id])?;
-        }
-        Ok(())
-    }
-
-    pub fn delete_menu_category(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("UPDATE menu_items SET category_id = NULL WHERE category_id = ?1", params![id])?;
-        conn.execute("UPDATE menu_categories SET is_active = 0 WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    pub fn update_recipe(&self, id: i64, name: Option<&str>, recipe_type: Option<&str>, output_qty: Option<f64>, cost: Option<f64>) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE recipes SET name = COALESCE(?1, name), recipe_type = COALESCE(?2, recipe_type), output_qty = COALESCE(?3, output_qty), cost = ?4 WHERE id = ?5",
-            params![name, recipe_type, output_qty, cost, id],
-        )?;
-        Ok(())
-    }
-
-    pub fn update_recipe_type(&self, id: i64, code: &str, name: &str, description: Option<&str>, sort_no: i32) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE recipe_types
-             SET code = ?1, name = ?2, description = ?3, sort_no = ?4
-             WHERE id = ?5",
-            params![code.trim(), name.trim(), description, sort_no, id],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_recipe_type(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let usage_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM recipes WHERE recipe_type = (SELECT code FROM recipe_types WHERE id = ?1) AND is_active = 1",
-            params![id],
-            |row| row.get(0),
-        )?;
-        if usage_count > 0 {
-            return Err(rusqlite::Error::InvalidParameterName(format!("該配方類型仍被 {} 個配方使用中", usage_count)));
-        }
-        conn.execute("UPDATE recipe_types SET is_active = 0 WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    pub fn delete_recipe(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        let menu_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM menu_items WHERE recipe_id = ?1",
-            params![id], |r| r.get(0),
-        )?;
-        if menu_count > 0 {
-            return Err(rusqlite::Error::InvalidParameterName(
-                format!("此配方被 {} 個菜品使用，請先解除菜品與配方的綁定", menu_count),
-            ));
-        }
-        let sub_count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM recipe_items WHERE item_type = 'sub_recipe' AND ref_id = ?1",
-            params![id], |r| r.get(0),
-        )?;
-        if sub_count > 0 {
-            return Err(rusqlite::Error::InvalidParameterName(
-                format!("此配方被 {} 個其他配方引用為子配方，請先移除引用", sub_count),
-            ));
-        }
-        conn.execute("UPDATE recipes SET is_active = 0 WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
-    pub fn delete_recipe_item(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM recipe_items WHERE id = ?1", params![id])?;
-        Ok(())
-    }
-
     pub fn add_station_menu_item(&self, station_id: i64, menu_item_id: i64) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -935,6 +765,136 @@ impl Database {
             })?.collect::<Result<Vec<_>>>()?,
         };
         Ok(tickets)
+    }
+
+
+    // ── Order fulfillment (moved from purchase.rs) ─────────────────────────
+    pub fn cancel_order_confirmed(&self, order_id: i64, reason: Option<&str>) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            Self::consume_order_inventory(&conn, order_id)?;
+            conn.execute("UPDATE orders SET status = 'cancelled', cancel_reason = ?1, updated_at = datetime('now') WHERE id = ?2", params![reason, order_id])?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(Vec::new()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
+    }
+
+    /// 直接標記訂單出餐（不用 KDS 的場景）：消耗庫存 + 更新狀態為 ready
+    pub fn mark_order_ready(&self, order_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            Self::consume_order_inventory(&conn, order_id)?;
+            conn.execute(
+                "UPDATE orders SET status = 'ready', updated_at = datetime('now') WHERE id = ?1 AND status = 'submitted'",
+                params![order_id],
+            )?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
+    }
+
+    pub fn update_order_payment(&self, order_id: i64, payment_status: &str, payment_method: Option<&str>, amount_paid: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE orders SET payment_status = ?1, payment_method = ?2, amount_paid = ?3, updated_at = datetime('now') WHERE id = ?4",
+            params![payment_status, payment_method, amount_paid, order_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn record_order_refund(&self, order_id: i64, refund_amount: f64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE orders SET refund_amount = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![refund_amount, order_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn refund_order_item(&self, order_id: i64, item_id: i64) -> Result<f64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<f64> = (|| {
+            // Verify item belongs to this order and is not already refunded
+            let (qty, unit_price, already_refunded): (f64, f64, i64) = conn.query_row(
+                "SELECT qty, unit_price, COALESCE(refunded,0) FROM order_items WHERE id = ?1 AND order_id = ?2",
+                params![item_id, order_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?;
+            if already_refunded != 0 {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
+            let item_amount = qty * unit_price;
+            conn.execute(
+                "UPDATE order_items SET refunded = 1 WHERE id = ?1",
+                params![item_id],
+            )?;
+            conn.execute(
+                "UPDATE orders SET refund_amount = COALESCE(refund_amount,0) + ?1, updated_at = datetime('now') WHERE id = ?2",
+                params![item_amount, order_id],
+            )?;
+            Ok(item_amount)
+        })();
+        match result {
+            Ok(amt) => { conn.execute_batch("COMMIT")?; Ok(amt) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
+    }
+
+    pub fn get_sales_by_hour(&self, start_date: &str, end_date: &str) -> Result<Vec<(i32, i64, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT CAST(strftime('%H', created_at, 'localtime') AS INTEGER) AS hr,
+                    COUNT(*) AS cnt, COALESCE(SUM(amount_total), 0)
+             FROM orders
+             WHERE status != 'cancelled'
+               AND date(created_at, 'localtime') BETWEEN ?1 AND ?2
+             GROUP BY hr ORDER BY hr"
+        )?;
+        let rows = stmt.query_map(params![start_date, end_date], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?, row.get::<_, f64>(2)?))
+        })?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_sales_by_weekday(&self, start_date: &str, end_date: &str) -> Result<Vec<(i32, i64, f64)>> {
+        let conn = self.conn.lock().unwrap();
+        // SQLite strftime('%w') returns 0=Sun..6=Sat
+        let mut stmt = conn.prepare(
+            "SELECT CAST(strftime('%w', created_at, 'localtime') AS INTEGER) AS wd,
+                    COUNT(*) AS cnt, COALESCE(SUM(amount_total), 0)
+             FROM orders
+             WHERE status != 'cancelled'
+               AND date(created_at, 'localtime') BETWEEN ?1 AND ?2
+             GROUP BY wd ORDER BY wd"
+        )?;
+        let rows = stmt.query_map(params![start_date, end_date], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, i64>(1)?, row.get::<_, f64>(2)?))
+        })?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_production_order(&self, production_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let status: String = conn.query_row(
+            "SELECT status FROM production_orders WHERE id = ?1", params![production_id], |r| r.get(0),
+        )?;
+        if status != "draft" {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("只能刪除草稿狀態的生産單，當前狀態：{}", status),
+            ));
+        }
+        conn.execute("DELETE FROM production_order_items WHERE production_id = ?1", params![production_id])?;
+        conn.execute("DELETE FROM production_orders WHERE id = ?1", params![production_id])?;
+        Ok(())
     }
 
 

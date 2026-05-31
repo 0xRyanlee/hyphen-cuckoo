@@ -483,4 +483,70 @@ impl Database {
     }
 
 
+    // ── Recipe mutations (moved from orders.rs) ──────────────────────────────
+    pub fn update_recipe(&self, id: i64, name: Option<&str>, recipe_type: Option<&str>, output_qty: Option<f64>, cost: Option<f64>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE recipes SET name = COALESCE(?1, name), recipe_type = COALESCE(?2, recipe_type), output_qty = COALESCE(?3, output_qty), cost = ?4 WHERE id = ?5",
+            params![name, recipe_type, output_qty, cost, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_recipe_type(&self, id: i64, code: &str, name: &str, description: Option<&str>, sort_no: i32) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE recipe_types
+             SET code = ?1, name = ?2, description = ?3, sort_no = ?4
+             WHERE id = ?5",
+            params![code.trim(), name.trim(), description, sort_no, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_recipe_type(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let usage_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM recipes WHERE recipe_type = (SELECT code FROM recipe_types WHERE id = ?1) AND is_active = 1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if usage_count > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(format!("該配方類型仍被 {} 個配方使用中", usage_count)));
+        }
+        conn.execute("UPDATE recipe_types SET is_active = 0 WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn delete_recipe(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let menu_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM menu_items WHERE recipe_id = ?1",
+            params![id], |r| r.get(0),
+        )?;
+        if menu_count > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("此配方被 {} 個菜品使用，請先解除菜品與配方的綁定", menu_count),
+            ));
+        }
+        let sub_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM recipe_items WHERE item_type = 'sub_recipe' AND ref_id = ?1",
+            params![id], |r| r.get(0),
+        )?;
+        if sub_count > 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                format!("此配方被 {} 個其他配方引用為子配方，請先移除引用", sub_count),
+            ));
+        }
+        conn.execute("UPDATE recipes SET is_active = 0 WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn delete_recipe_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM recipe_items WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+
 }

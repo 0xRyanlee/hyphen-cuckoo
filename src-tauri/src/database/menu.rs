@@ -118,4 +118,112 @@ impl Database {
     }
 
 
+    // ── Menu item mutations (moved from orders.rs) ──────────────────────────
+    pub fn update_menu_item(&self, id: i64, name: Option<&str>, category_id: Option<i64>, recipe_id: Option<i64>, sales_price: Option<f64>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE menu_items SET name = COALESCE(?1, name), category_id = COALESCE(?2, category_id), recipe_id = ?3, sales_price = COALESCE(?4, sales_price) WHERE id = ?5",
+            params![name, category_id, recipe_id, sales_price, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_menu_item_availability(&self, id: i64, is_available: bool) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE menu_items SET is_available = ?1 WHERE id = ?2",
+            params![if is_available { 1 } else { 0 }, id],
+        )?;
+        Ok(is_available)
+    }
+
+    pub fn toggle_menu_item_favorite(&self, id: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let current: i32 = conn.query_row(
+            "SELECT is_favorite FROM menu_items WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        let new_val = if current == 0 { 1 } else { 0 };
+        conn.execute("UPDATE menu_items SET is_favorite = ?1 WHERE id = ?2", params![new_val, id])?;
+        Ok(new_val != 0)
+    }
+
+    pub fn batch_toggle_menu_item_availability(&self, ids: &[i64], is_available: bool) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let mut count = 0;
+        for id in ids {
+            let result = conn.execute("UPDATE menu_items SET is_available = ?1 WHERE id = ?2", params![if is_available { 1 } else { 0 }, id]);
+            if result.is_ok() {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    pub fn batch_update_menu_item_prices(&self, ids: &[i64], mode: &str, value: f64) -> Result<usize> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let mut count = 0;
+
+        for id in ids {
+            let current_price: f64 = tx.query_row(
+                "SELECT sales_price FROM menu_items WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )?;
+
+            let next_price = match mode {
+                "set" => value,
+                "delta" => current_price + value,
+                "percent" => current_price * (1.0 + value / 100.0),
+                _ => return Err(rusqlite::Error::InvalidParameterName("invalid batch price mode".to_string())),
+            };
+
+            let rounded_price = (next_price * 100.0).round() / 100.0;
+            if rounded_price < 0.0 {
+                return Err(rusqlite::Error::InvalidParameterName("negative menu price".to_string()));
+            }
+
+            tx.execute(
+                "UPDATE menu_items SET sales_price = ?1 WHERE id = ?2",
+                params![rounded_price, id],
+            )?;
+            count += 1;
+        }
+
+        tx.commit()?;
+        Ok(count)
+    }
+
+    pub fn delete_menu_item(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM menu_item_specs WHERE menu_item_id = ?1", params![id])?;
+        conn.execute("DELETE FROM station_menu_items WHERE menu_item_id = ?1", params![id])?;
+        let affected = conn.execute("DELETE FROM menu_items WHERE id = ?1", params![id])?;
+        if affected == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    pub fn update_menu_category(&self, id: i64, name: Option<&str>, sort_no: Option<i32>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        if let Some(n) = name {
+            let code = n.to_uppercase().replace(' ', "_");
+            conn.execute("UPDATE menu_categories SET code = ?1, name = ?2, sort_no = COALESCE(?3, sort_no) WHERE id = ?4", params![code, n, sort_no, id])?;
+        } else if let Some(s) = sort_no {
+            conn.execute("UPDATE menu_categories SET sort_no = ?1 WHERE id = ?2", params![s, id])?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_menu_category(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE menu_items SET category_id = NULL WHERE category_id = ?1", params![id])?;
+        conn.execute("UPDATE menu_categories SET is_active = 0 WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+
 }

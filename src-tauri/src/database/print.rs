@@ -698,21 +698,29 @@ fn render_discount_coupon(elem: &serde_json::Value, data: &serde_json::Value, pa
     let valid_days = elem["valid_days"].as_u64().unwrap_or(30);
     let label = elem["label"].as_str().unwrap_or("下次消費享折扣");
 
-    // Generate unique code from order_id
     let order_id = data["order_id"].as_i64().unwrap_or(0);
-    let code = format!("{:08X}", order_id.wrapping_mul(0x9E3779B9).wrapping_add(0xDEADBEEF));
+
+    let valid_until = {
+        let today = chrono::Local::now();
+        let days = chrono::Duration::days(valid_days as i64);
+        (today + days).format("%Y-%m-%d").to_string()
+    };
+
+    // Mix order_id with date salt — harder to reverse than plain hash
+    let date_salt = valid_until.chars().filter(|c| c.is_ascii_digit()).take(8)
+        .fold(0u64, |acc, c| acc.wrapping_mul(31).wrapping_add(c as u64));
+    let mixed = (order_id as u64)
+        .wrapping_mul(0x9E3779B97F4A7C15) // Knuth multiplicative hash (64-bit)
+        .wrapping_add(date_salt)
+        .rotate_left(17)
+        ^ 0xA3B4C5D6E7F80901u64;
+    let code = format!("{:012X}", mixed & 0x0000_FFFF_FFFF_FFFF); // 12 hex chars
 
     let discount_str = match discount_type {
         "percent" => format!("{:.0}折", (1.0 - value / 100.0) * 10.0),
         "amount"  => format!("立減 {:.0}元", value),
         "free_item" => "指定免費".to_string(),
         _ => format!("{}", value),
-    };
-
-    let valid_until = {
-        let today = chrono::Local::now();
-        let days = chrono::Duration::days(valid_days as i64);
-        (today + days).format("%Y-%m-%d").to_string()
     };
 
     lines.push(dash.clone());
@@ -819,9 +827,11 @@ fn render_rich_text(elem: &serde_json::Value, paper_size: &str, lines: &mut Vec<
             let pad = if width > text.chars().count() { (width - text.chars().count()) / 2 } else { 0 };
             lines.push(format!("{}**{}**", " ".repeat(pad), text));
         } else if line.starts_with("- ") || line.starts_with("* ") {
-            lines.push(format!("  • {}", &line[2..]));
+            let rest: String = line.chars().skip(2).collect();
+            lines.push(format!("  • {}", rest));
         } else if line.starts_with("> ") {
-            lines.push(format!("  {}", &line[2..]));
+            let rest: String = line.chars().skip(2).collect();
+            lines.push(format!("  {}", rest));
         } else if line.starts_with("```") {
             // Mermaid or code block — ESC/POS just shows placeholder
             lines.push("  [圖表/代碼塊]".to_string());

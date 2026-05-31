@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { call as invoke } from "@/lib/transport";
 import DOMPurify from "dompurify";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -144,6 +144,23 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
   const [elementEditorOpen, setElementEditorOpen] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editingElem, setEditingElem] = useState<PrintElement | null>(null);
+
+  // Derived: parsed elements from formContent JSON (memoized to avoid repeated parsing)
+  const parsedElements = useMemo<PrintElement[]>(() => {
+    try { return JSON.parse(formContent || '{"elements":[]}').elements ?? []; } catch { return []; }
+  }, [formContent]);
+
+  // Stable callback: apply updated element array back to formContent + live preview
+  const applyElements = useCallback((els: PrintElement[]) => {
+    try {
+      const parsed = JSON.parse(formContent || '{"elements":[]}');
+      parsed.elements = els;
+      const updated = JSON.stringify(parsed, null, 2);
+      setFormContent(updated);
+      updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
+    } catch { /* invalid JSON — no-op */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formContent, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData]);
 
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -511,54 +528,37 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                   </Button>
                 </div>
 
-                {/* Visual element card list */}
-                {(() => {
-                  let elements: PrintElement[] = [];
-                  try { elements = JSON.parse(formContent || '{"elements":[]}').elements ?? []; } catch { /* ignore */ }
-
-                  const applyElements = (els: PrintElement[]) => {
-                    try {
-                      const parsed = JSON.parse(formContent || '{"elements":[]}');
-                      parsed.elements = els;
-                      const updated = JSON.stringify(parsed, null, 2);
-                      setFormContent(updated);
-                      updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
-                    } catch { /* ignore */ }
-                  };
-
-                  return (
-                    <div className="space-y-1 min-h-[40px] border rounded-md p-2 bg-muted/20">
-                      {elements.length === 0 && (
-                        <p className="text-xs text-muted-foreground text-center py-3">尚無元素 — 點擊「新增元件」開始</p>
-                      )}
-                      {elements.map((elem, idx) => (
-                        <div key={idx} className="flex items-center gap-1.5 bg-background border rounded px-2 py-1 text-xs group">
-                          <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${getElementBadgeColor(elem.type)}`}>{getElementLabel(elem.type)}</span>
-                          <span className="flex-1 text-muted-foreground truncate">{getElementSummary(elem)}</span>
-                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" size="icon" className="h-5 w-5" disabled={idx === 0}
-                              onClick={() => { const els = [...elements]; [els[idx-1], els[idx]] = [els[idx], els[idx-1]]; applyElements(els); }}>
-                              <ChevronUp className="h-3 w-3" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-5 w-5" disabled={idx === elements.length - 1}
-                              onClick={() => { const els = [...elements]; [els[idx], els[idx+1]] = [els[idx+1], els[idx]]; applyElements(els); }}>
-                              <ChevronDown className="h-3 w-3" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-5 w-5"
-                              onClick={() => { setEditingIdx(idx); setEditingElem({ ...elem }); setElementEditorOpen(true); }}>
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                            <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive"
-                              onClick={() => applyElements(elements.filter((_, i) => i !== idx))}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                {/* Visual element card list — uses memoized parsedElements + stable applyElements */}
+                <div className="space-y-1 min-h-[40px] border rounded-md p-2 bg-muted/20">
+                  {parsedElements.length === 0 && (
+                    <p className="text-xs text-muted-foreground text-center py-3">尚無元素 — 點擊「新增元件」開始</p>
+                  )}
+                  {parsedElements.map((elem, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5 bg-background border rounded px-2 py-1 text-xs group">
+                      <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" aria-hidden />
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${getElementBadgeColor(elem.type)}`}>{getElementLabel(elem.type)}</span>
+                      <span className="flex-1 text-muted-foreground truncate">{getElementSummary(elem)}</span>
+                      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="icon" className="h-5 w-5" disabled={idx === 0} aria-label="上移"
+                          onClick={() => { const els = [...parsedElements]; [els[idx-1], els[idx]] = [els[idx], els[idx-1]]; applyElements(els); }}>
+                          <ChevronUp className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" disabled={idx === parsedElements.length - 1} aria-label="下移"
+                          onClick={() => { const els = [...parsedElements]; [els[idx], els[idx+1]] = [els[idx+1], els[idx]]; applyElements(els); }}>
+                          <ChevronDown className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-5 w-5" aria-label="編輯元件"
+                          onClick={() => { setEditingIdx(idx); setEditingElem({ ...elem }); setElementEditorOpen(true); }}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" aria-label="刪除元件"
+                          onClick={() => applyElements(parsedElements.filter((_, i) => i !== idx))}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
-                  );
-                })()}
+                  ))}
+                </div>
 
                 <details className="mt-1">
                   <summary className="text-xs text-muted-foreground cursor-pointer select-none">進階：直接編輯 JSON</summary>
@@ -614,13 +614,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                   {cat.items.map(it => (
                     <Button key={it.type} variant="outline" size="sm" className="justify-start text-xs h-8 gap-2"
                       onClick={() => {
-                        try {
-                          const parsed = JSON.parse(formContent || '{"elements":[]}');
-                          parsed.elements = [...(parsed.elements || []), { ...it.defaultConfig }];
-                          const updated = JSON.stringify(parsed, null, 2);
-                          setFormContent(updated);
-                          updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
-                        } catch { /* ignore */ }
+                        applyElements([...parsedElements, { ...it.defaultConfig }]);
                         setElementPickerOpen(false);
                       }}>
                       <span className={`px-1 py-0.5 rounded text-[9px] font-medium ${getElementBadgeColor(it.type)}`}>{cat.label[0]}</span>
@@ -738,15 +732,9 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
             <Button variant="outline" onClick={() => { setElementEditorOpen(false); setEditingElem(null); setEditingIdx(null); }}>取消</Button>
             <Button onClick={() => {
               if (editingElem === null || editingIdx === null) return;
-              try {
-                const parsed = JSON.parse(formContent || '{"elements":[]}');
-                const els = [...(parsed.elements || [])];
-                els[editingIdx] = editingElem;
-                parsed.elements = els;
-                const updated = JSON.stringify(parsed, null, 2);
-                setFormContent(updated);
-                updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
-              } catch { /* ignore */ }
+              const els = [...parsedElements];
+              els[editingIdx] = editingElem;
+              applyElements(els);
               setElementEditorOpen(false); setEditingElem(null); setEditingIdx(null);
             }}><Save className="h-3.5 w-3.5 mr-1" />套用</Button>
           </DialogFooter>
