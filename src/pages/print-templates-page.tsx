@@ -11,9 +11,73 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2, Eye, Save, Printer, Star, FileBox } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye, Save, Printer, Star, FileBox, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
+
+// ── Element types for visual card layer ──────────────────────────────────────
+
+type PrintElement = Record<string, unknown> & { type: string };
+
+const ELEMENT_CATEGORIES = [
+  {
+    label: "基本", items: [
+      { type: "text", label: "文字", defaultConfig: { type: "text", content: "文字內容", align: "left", bold: false, size: "normal" } },
+      { type: "separator", label: "分隔線", defaultConfig: { type: "separator" } },
+      { type: "blank_lines", label: "空行", defaultConfig: { type: "blank_lines", count: 1 } },
+      { type: "items", label: "菜品明細", defaultConfig: { type: "items" } },
+    ]
+  },
+  {
+    label: "創意", items: [
+      { type: "fortune", label: "今日運勢", defaultConfig: { type: "fortune", seed_strategy: "per_table" } },
+      { type: "quote", label: "今日語錄", defaultConfig: { type: "quote", language: "multilingual" } },
+      { type: "art", label: "藝術圖塊", defaultConfig: { type: "art", variant: "random" } },
+      { type: "image_block", label: "圖像佔位", defaultConfig: { type: "image_block" } },
+    ]
+  },
+  {
+    label: "行銷", items: [
+      { type: "discount_coupon", label: "折價券", defaultConfig: { type: "discount_coupon", discount_type: "percent", value: 9, condition: "", valid_days: 30, label: "下次消費享折扣" } },
+      { type: "product_spotlight", label: "新品介紹", defaultConfig: { type: "product_spotlight", title: "本週新品", name: "", description: "", price: 0, badge: "NEW" } },
+      { type: "qr_code", label: "QR 碼", defaultConfig: { type: "qr_code", url: "", label: "掃碼加入 VIP 群", size: 5 } },
+      { type: "character_collect", label: "集字兌獎", defaultConfig: { type: "character_collect", game_name: "集字兌獎", characters: ["恭", "喜", "發", "財"], prize: "集齊四字兌換免費飲品", seed_strategy: "per_order", style: "box" } },
+      { type: "rich_text", label: "富文本", defaultConfig: { type: "rich_text", content: "## 今日特惠\n- 項目一\n- 項目二" } },
+    ]
+  },
+];
+
+function getElementLabel(type: string): string {
+  for (const cat of ELEMENT_CATEGORIES) for (const it of cat.items) if (it.type === type) return it.label;
+  return type;
+}
+
+function getElementBadgeColor(type: string): string {
+  const creative = ["fortune", "quote", "art", "image_block"];
+  const marketing = ["discount_coupon", "product_spotlight", "qr_code", "character_collect", "rich_text"];
+  if (creative.includes(type)) return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
+  if (marketing.includes(type)) return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
+  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+}
+
+function getElementSummary(elem: PrintElement): string {
+  switch (elem.type) {
+    case "text": return String(elem.content ?? "").slice(0, 30) || "(空)";
+    case "separator": return "──────";
+    case "blank_lines": return `${elem.count ?? 1} 行空白`;
+    case "items": return "訂單菜品明細";
+    case "fortune": return `運勢 (${elem.seed_strategy ?? "daily"})`;
+    case "quote": return `語錄 (${elem.language ?? "multilingual"})`;
+    case "art": return `ASCII 藝術 (${elem.variant ?? "random"})`;
+    case "image_block": return "圖像佔位";
+    case "discount_coupon": return `${elem.discount_type === "amount" ? `立減${elem.value}元` : `${elem.value}% off`}，${elem.valid_days}天有效`;
+    case "product_spotlight": return String(elem.name || elem.title || "新品介紹");
+    case "qr_code": return String(elem.label || elem.url || "QR Code");
+    case "character_collect": return `${elem.game_name} — ${(elem.characters as string[] | undefined)?.join("") ?? ""}`;
+    case "rich_text": return String(elem.content ?? "").split("\n")[0].replace(/^#+\s*/, "").slice(0, 30);
+    default: return elem.type;
+  }
+}
 
 interface PrintTemplate {
   id: number;
@@ -75,6 +139,11 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
   const [formItemSort, setFormItemSort] = useState("entry");
   const [formModifiersColor, setFormModifiersColor] = useState("red");
   const [formIsActive, setFormIsActive] = useState(true);
+
+  const [elementPickerOpen, setElementPickerOpen] = useState(false);
+  const [elementEditorOpen, setElementEditorOpen] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingElem, setEditingElem] = useState<PrintElement | null>(null);
 
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -435,31 +504,66 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
               <Separator />
               
               <div className="space-y-2">
-                <Label>模板內容 (JSON)</Label>
-                <Textarea value={formContent} onChange={(e) => { setFormContent(e.target.value); updateLivePreview(e.target.value, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData); }} rows={12} className="font-mono text-xs" />
-                <p className="text-xs text-muted-foreground">元素類型：text, separator, blank_lines, items, fortune, quote, art, image_block。使用 {"{{variable}}"} 作為佔位符。</p>
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  <span className="text-xs text-muted-foreground self-center">快速插入：</span>
-                  {[
-                    { label: "運勢", json: '{"type":"fortune","seed_strategy":"per_table"}' },
-                    { label: "語錄", json: '{"type":"quote","language":"multilingual"}' },
-                    { label: "藝術圖塊", json: '{"type":"art","variant":"random"}' },
-                    { label: "圖像佔位", json: '{"type":"image_block"}' },
-                  ].map(({ label, json }) => (
-                    <Button key={label} variant="outline" size="sm" className="h-6 text-xs px-2"
-                      onClick={() => {
-                        try {
-                          const parsed = JSON.parse(formContent || '{"elements":[]}');
-                          parsed.elements = [...(parsed.elements || []), JSON.parse(json)];
-                          const updated = JSON.stringify(parsed, null, 2);
-                          setFormContent(updated);
-                          updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
-                        } catch { /* ignore parse errors */ }
-                      }}>
-                      <Star className="h-3 w-3 mr-1" />{label}
-                    </Button>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <Label>模板元素</Label>
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setElementPickerOpen(true)}>
+                    <Plus className="h-3 w-3" />新增元件
+                  </Button>
                 </div>
+
+                {/* Visual element card list */}
+                {(() => {
+                  let elements: PrintElement[] = [];
+                  try { elements = JSON.parse(formContent || '{"elements":[]}').elements ?? []; } catch { /* ignore */ }
+
+                  const applyElements = (els: PrintElement[]) => {
+                    try {
+                      const parsed = JSON.parse(formContent || '{"elements":[]}');
+                      parsed.elements = els;
+                      const updated = JSON.stringify(parsed, null, 2);
+                      setFormContent(updated);
+                      updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
+                    } catch { /* ignore */ }
+                  };
+
+                  return (
+                    <div className="space-y-1 min-h-[40px] border rounded-md p-2 bg-muted/20">
+                      {elements.length === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-3">尚無元素 — 點擊「新增元件」開始</p>
+                      )}
+                      {elements.map((elem, idx) => (
+                        <div key={idx} className="flex items-center gap-1.5 bg-background border rounded px-2 py-1 text-xs group">
+                          <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${getElementBadgeColor(elem.type)}`}>{getElementLabel(elem.type)}</span>
+                          <span className="flex-1 text-muted-foreground truncate">{getElementSummary(elem)}</span>
+                          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-5 w-5" disabled={idx === 0}
+                              onClick={() => { const els = [...elements]; [els[idx-1], els[idx]] = [els[idx], els[idx-1]]; applyElements(els); }}>
+                              <ChevronUp className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-5 w-5" disabled={idx === elements.length - 1}
+                              onClick={() => { const els = [...elements]; [els[idx], els[idx+1]] = [els[idx+1], els[idx]]; applyElements(els); }}>
+                              <ChevronDown className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-5 w-5"
+                              onClick={() => { setEditingIdx(idx); setEditingElem({ ...elem }); setElementEditorOpen(true); }}>
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive"
+                              onClick={() => applyElements(elements.filter((_, i) => i !== idx))}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                <details className="mt-1">
+                  <summary className="text-xs text-muted-foreground cursor-pointer select-none">進階：直接編輯 JSON</summary>
+                  <Textarea value={formContent} onChange={(e) => { setFormContent(e.target.value); updateLivePreview(e.target.value, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData); }} rows={8} className="font-mono text-xs mt-1" />
+                </details>
               </div>
 
               <Separator />
@@ -494,6 +598,157 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>取消</Button>
             <Button onClick={saveTemplate}><Save className="mr-2 h-4 w-4" />保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Element Picker Dialog */}
+      <Dialog open={elementPickerOpen} onOpenChange={setElementPickerOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>選擇元件類型</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            {ELEMENT_CATEGORIES.map(cat => (
+              <div key={cat.label}>
+                <p className="text-xs font-medium text-muted-foreground mb-2">{cat.label}</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {cat.items.map(it => (
+                    <Button key={it.type} variant="outline" size="sm" className="justify-start text-xs h-8 gap-2"
+                      onClick={() => {
+                        try {
+                          const parsed = JSON.parse(formContent || '{"elements":[]}');
+                          parsed.elements = [...(parsed.elements || []), { ...it.defaultConfig }];
+                          const updated = JSON.stringify(parsed, null, 2);
+                          setFormContent(updated);
+                          updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
+                        } catch { /* ignore */ }
+                        setElementPickerOpen(false);
+                      }}>
+                      <span className={`px-1 py-0.5 rounded text-[9px] font-medium ${getElementBadgeColor(it.type)}`}>{cat.label[0]}</span>
+                      {it.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Element Editor Dialog */}
+      <Dialog open={elementEditorOpen} onOpenChange={(o) => { if (!o) { setElementEditorOpen(false); setEditingElem(null); setEditingIdx(null); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>編輯元件 — {editingElem ? getElementLabel(editingElem.type) : ""}</DialogTitle></DialogHeader>
+          {editingElem && (
+            <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
+              {editingElem.type === "text" && (<>
+                <div><Label className="text-xs">文字內容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={3} className="font-mono text-xs mt-1" /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">對齊</Label>
+                    <Select value={String(editingElem.align ?? "left")} onValueChange={v => setEditingElem({ ...editingElem, align: v })}>
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="left">左對齊</SelectItem><SelectItem value="center">置中</SelectItem><SelectItem value="right">右對齊</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div><Label className="text-xs">大小</Label>
+                    <Select value={String(editingElem.size ?? "normal")} onValueChange={v => setEditingElem({ ...editingElem, size: v })}>
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="small">小</SelectItem><SelectItem value="normal">正常</SelectItem><SelectItem value="large">大</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2"><Checkbox id="elem-bold" checked={!!editingElem.bold} onCheckedChange={v => setEditingElem({ ...editingElem, bold: !!v })} /><Label htmlFor="elem-bold" className="text-xs">粗體</Label></div>
+              </>)}
+              {editingElem.type === "blank_lines" && (
+                <div><Label className="text-xs">空行數量</Label><Input type="number" min={1} max={10} value={Number(editingElem.count ?? 1)} onChange={e => setEditingElem({ ...editingElem, count: parseInt(e.target.value) || 1 })} className="h-8 text-xs mt-1 w-24" /></div>
+              )}
+              {editingElem.type === "fortune" && (
+                <div><Label className="text-xs">種子策略</Label>
+                  <Select value={String(editingElem.seed_strategy ?? "daily")} onValueChange={v => setEditingElem({ ...editingElem, seed_strategy: v })}>
+                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="daily">全店同日</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="per_order">每單唯一</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              )}
+              {editingElem.type === "quote" && (
+                <div><Label className="text-xs">語言</Label>
+                  <Select value={String(editingElem.language ?? "multilingual")} onValueChange={v => setEditingElem({ ...editingElem, language: v })}>
+                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="multilingual">多語輪替</SelectItem><SelectItem value="zh">中文</SelectItem><SelectItem value="en">英文</SelectItem><SelectItem value="ja">日文</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              )}
+              {editingElem.type === "discount_coupon" && (<>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">折扣類型</Label>
+                    <Select value={String(editingElem.discount_type ?? "percent")} onValueChange={v => setEditingElem({ ...editingElem, discount_type: v })}>
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="percent">百分比折扣</SelectItem><SelectItem value="amount">固定金額</SelectItem><SelectItem value="free_item">指定免費</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div><Label className="text-xs">折扣值 (%或元)</Label><Input type="number" value={Number(editingElem.value ?? 0)} onChange={e => setEditingElem({ ...editingElem, value: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1" /></div>
+                </div>
+                <div><Label className="text-xs">使用條件</Label><Input value={String(editingElem.condition ?? "")} onChange={e => setEditingElem({ ...editingElem, condition: e.target.value })} className="h-8 text-xs mt-1" placeholder="消費滿100元" /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">有效天數</Label><Input type="number" value={Number(editingElem.valid_days ?? 30)} onChange={e => setEditingElem({ ...editingElem, valid_days: parseInt(e.target.value) || 30 })} className="h-8 text-xs mt-1" /></div>
+                  <div><Label className="text-xs">標題文字</Label><Input value={String(editingElem.label ?? "")} onChange={e => setEditingElem({ ...editingElem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                </div>
+              </>)}
+              {editingElem.type === "product_spotlight" && (<>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">標題</Label><Input value={String(editingElem.title ?? "")} onChange={e => setEditingElem({ ...editingElem, title: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                  <div><Label className="text-xs">徽章</Label><Input value={String(editingElem.badge ?? "NEW")} onChange={e => setEditingElem({ ...editingElem, badge: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                </div>
+                <div><Label className="text-xs">商品名稱</Label><Input value={String(editingElem.name ?? "")} onChange={e => setEditingElem({ ...editingElem, name: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                <div><Label className="text-xs">描述</Label><Textarea value={String(editingElem.description ?? "")} onChange={e => setEditingElem({ ...editingElem, description: e.target.value })} rows={2} className="text-xs mt-1" /></div>
+                <div><Label className="text-xs">定價 (0=不顯示)</Label><Input type="number" value={Number(editingElem.price ?? 0)} onChange={e => setEditingElem({ ...editingElem, price: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1 w-32" /></div>
+              </>)}
+              {editingElem.type === "qr_code" && (<>
+                <div><Label className="text-xs">URL</Label><Input value={String(editingElem.url ?? "")} onChange={e => setEditingElem({ ...editingElem, url: e.target.value })} className="h-8 text-xs mt-1" placeholder="https://..." /></div>
+                <div><Label className="text-xs">說明文字</Label><Input value={String(editingElem.label ?? "")} onChange={e => setEditingElem({ ...editingElem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                <div><Label className="text-xs">尺寸 (1-8)</Label><Input type="number" min={1} max={8} value={Number(editingElem.size ?? 5)} onChange={e => setEditingElem({ ...editingElem, size: parseInt(e.target.value) || 5 })} className="h-8 text-xs mt-1 w-24" /></div>
+              </>)}
+              {editingElem.type === "character_collect" && (<>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><Label className="text-xs">遊戲名稱</Label><Input value={String(editingElem.game_name ?? "")} onChange={e => setEditingElem({ ...editingElem, game_name: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                  <div><Label className="text-xs">樣式</Label>
+                    <Select value={String(editingElem.style ?? "box")} onValueChange={v => setEditingElem({ ...editingElem, style: v })}>
+                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="box">方框</SelectItem><SelectItem value="mahjong">麻將</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div><Label className="text-xs">集字組合 (逗號分隔)</Label><Input value={(editingElem.characters as string[] | undefined)?.join(",") ?? ""} onChange={e => setEditingElem({ ...editingElem, characters: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} className="h-8 text-xs mt-1" placeholder="恭,喜,發,財" /></div>
+                <div><Label className="text-xs">兌獎說明</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                <div><Label className="text-xs">種子策略</Label>
+                  <Select value={String(editingElem.seed_strategy ?? "per_order")} onValueChange={v => setEditingElem({ ...editingElem, seed_strategy: v })}>
+                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="per_order">每單唯一</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="daily">全店同日</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              </>)}
+              {editingElem.type === "rich_text" && (
+                <div><Label className="text-xs">Markdown 內容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={8} className="font-mono text-xs mt-1" placeholder={"## 標題\n- 項目一\n- 項目二\n> 引用文字"} /></div>
+              )}
+              {["separator", "items", "art", "image_block"].includes(editingElem.type) && (
+                <p className="text-sm text-muted-foreground py-2">此元件無需額外配置。</p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setElementEditorOpen(false); setEditingElem(null); setEditingIdx(null); }}>取消</Button>
+            <Button onClick={() => {
+              if (editingElem === null || editingIdx === null) return;
+              try {
+                const parsed = JSON.parse(formContent || '{"elements":[]}');
+                const els = [...(parsed.elements || [])];
+                els[editingIdx] = editingElem;
+                parsed.elements = els;
+                const updated = JSON.stringify(parsed, null, 2);
+                setFormContent(updated);
+                updateLivePreview(updated, formPaperSize, formTheme, formRestaurantName, formTagline, formLogoData);
+              } catch { /* ignore */ }
+              setElementEditorOpen(false); setEditingElem(null); setEditingIdx(null);
+            }}><Save className="h-3.5 w-3.5 mr-1" />套用</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

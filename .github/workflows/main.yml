@@ -49,3 +49,38 @@ jobs:
 
       - name: cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  check-android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install rust stable + android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: setup java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: setup android sdk
+        uses: android-actions/setup-android@v3
+
+      - name: install android ndk
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: install frontend dependencies
+        run: npm install
+
+      - name: build frontend
+        run: npm run build
+
+      - name: cargo check android target
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: |
+          rustup target add aarch64-linux-android
+          cargo check --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android
