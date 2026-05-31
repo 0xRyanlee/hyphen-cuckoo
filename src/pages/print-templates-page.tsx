@@ -50,6 +50,7 @@ export const ELEMENT_CATEGORIES = [
       { type: "solar_term", label: "节气主题", defaultConfig: { type: "solar_term", show_all: false } },
       { type: "chef_message", label: "厨师寄语", defaultConfig: { type: "chef_message", title: "厨师寄语", author: "本店厨师", messages: [] } },
       { type: "riddle", label: "谜语挑战", defaultConfig: { type: "riddle", prize: "下次来店说出答案，赢取小惊喜！" } },
+      { type: "dish_easter_egg", label: "订单彩蛋", defaultConfig: { type: "dish_easter_egg", eggs: [{ keyword: "虾", message: "解锁：海鲜达人称号！下次点虾享95折" }] } },
     ]
   },
 ];
@@ -83,6 +84,7 @@ export function getElementSummary(elem: PrintElement): string {
     case "character_collect": return `${elem.game_name} — ${(elem.characters as string[] | undefined)?.join("") ?? ""}`;
     case "rich_text": return String(elem.content ?? "").split("\n")[0].replace(/^#+\s*/, "").slice(0, 30);
     case "solar_term": return "节气期间自动显示主题文案";
+    case "dish_easter_egg": { const eggs = elem.eggs as { keyword: string; message: string }[] | undefined; return `${eggs?.length ?? 0}个触发条件（菜品关键词）`; }
     case "chef_message": return `${String(elem.title ?? "厨师寄语")} · ${(elem.messages as string[] | undefined)?.length ?? 0}条自定义`;
     case "riddle": return `今日谜语 → ${String(elem.prize ?? "赢取小惊喜")}`;
     default: return elem.type;
@@ -231,7 +233,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
     setLivePreviewHtml("");
     setLivePreviewError("");
     setEditDialogOpen(true);
-    // 開啟時立即觸發預覽，不等用戶修改
+    // 開啟時立即触发預覽，不等用戶修改
     updateLivePreview(
       tpl.content,
       tpl.paper_size,
@@ -541,7 +543,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 {/* Visual element card list — uses memoized parsedElements + stable applyElements */}
                 <div className="space-y-1 min-h-[40px] border rounded-md p-2 bg-muted/20">
                   {parsedElements.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-3">尚無元素 — 點擊「新增元件」開始</p>
+                    <p className="text-xs text-muted-foreground text-center py-3">尚無元素 — 点击「新增元件」开始</p>
                   )}
                   {parsedElements.map((elem, idx) => (
                     <div key={idx} className="flex items-center gap-1.5 bg-background border rounded px-2 py-1 text-xs group">
@@ -561,7 +563,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                           onClick={() => { setEditingIdx(idx); setEditingElem({ ...elem }); setElementEditorOpen(true); }}>
                           <Pencil className="h-3 w-3" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" aria-label="刪除元件"
+                        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" aria-label="删除元件"
                           onClick={() => applyElements(parsedElements.filter((_, i) => i !== idx))}>
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -615,7 +617,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
       {/* Element Picker Dialog */}
       <Dialog open={elementPickerOpen} onOpenChange={setElementPickerOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>選擇元件類型</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>选择元件類型</DialogTitle></DialogHeader>
           <div className="space-y-4 py-2">
             {ELEMENT_CATEGORIES.map(cat => (
               <div key={cat.label}>
@@ -666,7 +668,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 <div><Label className="text-xs">空行數量</Label><Input type="number" min={1} max={10} value={Number(editingElem.count ?? 1)} onChange={e => setEditingElem({ ...editingElem, count: parseInt(e.target.value) || 1 })} className="h-8 text-xs mt-1 w-24" /></div>
               )}
               {editingElem.type === "fortune" && (
-                <div><Label className="text-xs">種子策略</Label>
+                <div><Label className="text-xs">种子策略</Label>
                   <Select value={String(editingElem.seed_strategy ?? "daily")} onValueChange={v => setEditingElem({ ...editingElem, seed_strategy: v })}>
                     <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="daily">全店同日</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="per_order">每單唯一</SelectItem></SelectContent>
@@ -674,7 +676,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 </div>
               )}
               {editingElem.type === "quote" && (
-                <div><Label className="text-xs">語言</Label>
+                <div><Label className="text-xs">语言</Label>
                   <Select value={String(editingElem.language ?? "multilingual")} onValueChange={v => setEditingElem({ ...editingElem, language: v })}>
                     <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="multilingual">多語輪替</SelectItem><SelectItem value="zh">中文</SelectItem><SelectItem value="en">英文</SelectItem><SelectItem value="ja">日文</SelectItem></SelectContent>
@@ -691,7 +693,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                   </div>
                   <div><Label className="text-xs">折扣值 (%或元)</Label><Input type="number" value={Number(editingElem.value ?? 0)} onChange={e => setEditingElem({ ...editingElem, value: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1" /></div>
                 </div>
-                <div><Label className="text-xs">使用條件</Label><Input value={String(editingElem.condition ?? "")} onChange={e => setEditingElem({ ...editingElem, condition: e.target.value })} className="h-8 text-xs mt-1" placeholder="消費滿100元" /></div>
+                <div><Label className="text-xs">使用条件</Label><Input value={String(editingElem.condition ?? "")} onChange={e => setEditingElem({ ...editingElem, condition: e.target.value })} className="h-8 text-xs mt-1" placeholder="消費滿100元" /></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">有效天數</Label><Input type="number" value={Number(editingElem.valid_days ?? 30)} onChange={e => setEditingElem({ ...editingElem, valid_days: parseInt(e.target.value) || 30 })} className="h-8 text-xs mt-1" /></div>
                   <div><Label className="text-xs">標題文字</Label><Input value={String(editingElem.label ?? "")} onChange={e => setEditingElem({ ...editingElem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
@@ -704,7 +706,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 </div>
                 <div><Label className="text-xs">商品名稱</Label><Input value={String(editingElem.name ?? "")} onChange={e => setEditingElem({ ...editingElem, name: e.target.value })} className="h-8 text-xs mt-1" /></div>
                 <div><Label className="text-xs">描述</Label><Textarea value={String(editingElem.description ?? "")} onChange={e => setEditingElem({ ...editingElem, description: e.target.value })} rows={2} className="text-xs mt-1" /></div>
-                <div><Label className="text-xs">定價 (0=不顯示)</Label><Input type="number" value={Number(editingElem.price ?? 0)} onChange={e => setEditingElem({ ...editingElem, price: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1 w-32" /></div>
+                <div><Label className="text-xs">定價 (0=不显示)</Label><Input type="number" value={Number(editingElem.price ?? 0)} onChange={e => setEditingElem({ ...editingElem, price: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1 w-32" /></div>
               </>)}
               {editingElem.type === "qr_code" && (<>
                 <div><Label className="text-xs">URL</Label><Input value={String(editingElem.url ?? "")} onChange={e => setEditingElem({ ...editingElem, url: e.target.value })} className="h-8 text-xs mt-1" placeholder="https://..." /></div>
@@ -721,9 +723,26 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                     </Select>
                   </div>
                 </div>
-                <div><Label className="text-xs">集字組合 (逗號分隔)</Label><Input value={(editingElem.characters as string[] | undefined)?.join(",") ?? ""} onChange={e => setEditingElem({ ...editingElem, characters: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} className="h-8 text-xs mt-1" placeholder="恭,喜,發,財" /></div>
-                <div><Label className="text-xs">兌獎說明</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                <div><Label className="text-xs">種子策略</Label>
+                <div>
+                  <Label className="text-xs">集字/集章组合（逗号分隔，支持汉字、emoji、符号）</Label>
+                  <Input value={(editingElem.characters as string[] | undefined)?.join(",") ?? ""} onChange={e => setEditingElem({ ...editingElem, characters: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} className="h-8 text-xs mt-1" placeholder="恭,喜,发,财" />
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {[
+                      { label: "🀄 麻将", val: "🀇,🀈,🀉,🀊" },
+                      { label: "🍤 海鲜", val: "🍤,🦐,🦞,🦀" },
+                      { label: "🌸 四季", val: "🌸,☀️,🍂,❄️" },
+                      { label: "福禄寿喜", val: "福,禄,寿,喜" },
+                    ].map(p => (
+                      <button key={p.label} type="button" className="text-[10px] px-1.5 py-0.5 rounded border border-muted-foreground/30 text-muted-foreground hover:bg-muted"
+                        onClick={() => setEditingElem({ ...editingElem, characters: p.val.split(",") })}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">每张小票抽一个，顾客集齐所有才可兑奖</p>
+                </div>
+                <div><Label className="text-xs">兑奖说明</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                <div><Label className="text-xs">种子策略</Label>
                   <Select value={String(editingElem.seed_strategy ?? "per_order")} onValueChange={v => setEditingElem({ ...editingElem, seed_strategy: v })}>
                     <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="per_order">每單唯一</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="daily">全店同日</SelectItem></SelectContent>
@@ -748,6 +767,24 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 <div><Label className="text-xs">自定义谜题（选填，留空用内置库）</Label><Textarea value={String(editingElem.question ?? "")} onChange={e => setEditingElem({ ...editingElem, question: e.target.value || undefined })} rows={2} className="text-xs mt-1" placeholder="输入谜题..." /></div>
                 <div><Label className="text-xs">答案（收据上不显示，仅供核对）</Label><Input value={String(editingElem.answer ?? "")} onChange={e => setEditingElem({ ...editingElem, answer: e.target.value || undefined })} className="h-8 text-xs mt-1" placeholder="谜底..." /></div>
                 <div><Label className="text-xs">兑奖说明（显示在谜题下方）</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" placeholder="下次来店说出答案，赢取小惊喜！" /></div>
+              </>)}
+              {editingElem.type === "dish_easter_egg" && (<>
+                <p className="text-xs text-muted-foreground">当订单中包含指定关键词菜品时，显示隐藏彩蛋消息。每条规则一个关键词。</p>
+                {((editingElem.eggs as { keyword: string; message: string }[] | undefined) ?? []).map((egg, idx) => (
+                  <div key={idx} className="flex gap-1 items-start">
+                    <div className="flex-1 space-y-1">
+                      <Input value={egg.keyword} placeholder="菜品关键词（如：虾）" className="h-7 text-xs"
+                        onChange={e => { const eggs = [...((editingElem.eggs as typeof egg[]) ?? [])]; eggs[idx] = { ...egg, keyword: e.target.value }; setEditingElem({ ...editingElem, eggs }); }} />
+                      <Input value={egg.message} placeholder="彩蛋消息（如：解锁：海鲜达人！享95折）" className="h-7 text-xs"
+                        onChange={e => { const eggs = [...((editingElem.eggs as typeof egg[]) ?? [])]; eggs[idx] = { ...egg, message: e.target.value }; setEditingElem({ ...editingElem, eggs }); }} />
+                    </div>
+                    <button type="button" className="text-xs text-destructive px-1 pt-1" onClick={() => { const eggs = ((editingElem.eggs as typeof egg[]) ?? []).filter((_, i) => i !== idx); setEditingElem({ ...editingElem, eggs }); }}>✕</button>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm" className="w-full h-7 text-xs"
+                  onClick={() => { const eggs = [...((editingElem.eggs as { keyword: string; message: string }[]) ?? []), { keyword: "", message: "" }]; setEditingElem({ ...editingElem, eggs }); }}>
+                  + 添加触发规则
+                </Button>
               </>)}
               {["separator", "items", "art", "image_block"].includes(editingElem.type) && (
                 <p className="text-sm text-muted-foreground py-2">此元件无需额外配置。</p>

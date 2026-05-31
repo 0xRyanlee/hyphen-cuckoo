@@ -469,6 +469,9 @@ impl Database {
                         "riddle" => {
                             render_riddle(elem, paper_size, &mut lines);
                         }
+                        "dish_easter_egg" => {
+                            render_dish_easter_egg(elem, data, paper_size, &mut lines);
+                        }
                         _ => {}
                     }
                 }
@@ -850,6 +853,42 @@ static SOLAR_TERMS: &[(u32, u32, u32, &str, &str, &str)] = &[
     (12, 7, 10, "大雪", "大雪纷飞，严冬正盛。", "今日推荐：暖锅热汤，驱寒暖身。"),
     (12, 21, 24,"冬至", "冬至阳生，一阳来复。", "今日推荐：饺子汤圆，阖家团圆。"),
 ];
+
+fn render_dish_easter_egg(elem: &serde_json::Value, data: &serde_json::Value, paper_size: &str, lines: &mut Vec<String>) {
+    let width = if paper_size == "58mm" { 32 } else { 48 };
+
+    // eggs: [{keyword: "虾", message: "解锁：海鲜老饕称号！下单此组合95折"}]
+    let eggs = match elem["eggs"].as_array() {
+        Some(e) => e,
+        None => return,
+    };
+
+    // Get order item names from data
+    let item_names: Vec<String> = data["items"].as_array()
+        .map(|items| items.iter()
+            .filter_map(|i| i["name"].as_str().map(|s| s.to_string()))
+            .collect())
+        .unwrap_or_default();
+
+    if item_names.is_empty() { return; }
+
+    let all_names = item_names.join(" ");
+    let matched: Vec<(&str, &str)> = eggs.iter().filter_map(|egg| {
+        let kw = egg["keyword"].as_str()?;
+        let msg = egg["message"].as_str()?;
+        if all_names.contains(kw) { Some((kw, msg)) } else { None }
+    }).collect();
+
+    if matched.is_empty() { return; }
+
+    let dash = "─".repeat(width);
+    lines.push(dash.clone());
+    lines.push("  🎉 隐藏彩蛋解锁！".to_string());
+    for (_, msg) in &matched {
+        lines.push(format!("  {}", msg));
+    }
+    lines.push(dash);
+}
 
 fn render_solar_term(elem: &serde_json::Value, paper_size: &str, lines: &mut Vec<String>) {
     let now = chrono::Local::now();

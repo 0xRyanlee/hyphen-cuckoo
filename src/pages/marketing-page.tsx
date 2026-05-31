@@ -341,7 +341,7 @@ export function MarketingPage() {
               <CardHeader>
                 <CardTitle className="text-base">自助點單确认頁彈窗</CardTitle>
                 <CardDescription>
-                  顧客下單後全屏彈出，截圖可見訂單號與時間，集字/運勢一單一次，截圖後廢棄兌獎
+                  顧客下單後全屏彈出，截圖可見订单號與時間，集字/运势一單一次，截圖後廢棄兑奖
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -376,7 +376,7 @@ export function MarketingPage() {
                 <SurfacePanel
                   title="收据行销预览"
                   icon={<Printer className="h-4 w-4 text-gray-500" />}
-                  description="预览組合效果，實際修改請至打印中心"
+                  description="预览組合效果，實際修改请至打印中心"
                   elements={receiptElements}
                   enabled={receiptEnabled}
                   onToggleEnabled={setReceiptEnabled}
@@ -391,11 +391,11 @@ export function MarketingPage() {
           <TabsContent value="guide">
             <div className="space-y-4">
               {[
-                { type: "fortune", title: "今日運勢", desc: "大吉 / 中吉 / 小吉，每單唯一（per_order）或全桌同運（per_table）。心理學正強化，讓顧客以好心情結束用餐。" },
+                { type: "fortune", title: "今日运势", desc: "大吉 / 中吉 / 小吉，每單唯一（per_order）或全桌同運（per_table）。心理學正強化，讓顧客以好心情结束用餐。" },
                 { type: "character_collect", title: "集字兑奖", desc: "每張收据/确认頁抽一個字，顧客截圖保存，集齊指定字組可兑换。截圖即憑據，一單一次，天然防偽。" },
                 { type: "quote", title: "今日语录 / 诗句", desc: "中文古典詩詞、日文俳句、英文 Instagram 感短句輪替，增加收据可拍照性。" },
                 { type: "art", title: "颜文字 / ASCII 藝術", desc: "復古 BBS 點陣感圖塊，( ˘◡˘ )♪ ʕ•ᴥ•ʔ ✿ 等，每天隨機選一組，增加趣味性。" },
-                { type: "discount_coupon", title: "折價券", desc: "動態生成訂單唯一碼（12 hex），印在收据上，下次消費出示。適合做回頭客促銷。" },
+                { type: "discount_coupon", title: "折價券", desc: "動態生成订单唯一碼（12 hex），印在收据上，下次消費出示。適合做回頭客促銷。" },
                 { type: "product_spotlight", title: "新品介绍", desc: "在收据尾部展示本周新品，引導顧客下次嘗試。" },
                 { type: "qr_code", title: "QR 碼", desc: "掃碼加群、加好友、關注公眾號，ESC/POS 原生 QR 指令，無需額外硬件。" },
                 { type: "rich_text", title: "富文本", desc: "Markdown 格式：## 標題、- 清單、> 引用。可做活動說明、集字規則等。" },
