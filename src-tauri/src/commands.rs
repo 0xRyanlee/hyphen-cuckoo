@@ -2450,6 +2450,26 @@ pub fn get_marketing_popup(state: State<AppState>, order_id: i64, table_no: Stri
 }
 
 #[tauri::command]
+pub fn record_marketing_redemption(state: State<AppState>, order_id: i64, component_type: String, note: Option<String>, staff_name: Option<String>) -> Result<i64, String> {
+    state.db.record_marketing_redemption(order_id, &component_type, note.as_deref(), staff_name.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_marketing_redemptions(state: State<AppState>, date: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    state.db.get_marketing_redemptions(date.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_marketing_stats_today(state: State<AppState>) -> Result<serde_json::Value, String> {
+    state.db.get_marketing_stats_today().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn redeem_coupon(state: State<AppState>, order_id: i64, staff_name: Option<String>) -> Result<bool, String> {
+    state.db.redeem_coupon(order_id, staff_name.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn get_table_orders_today(state: State<AppState>, table_no: String) -> Result<Vec<TableOrderSummary>, String> {
     state.db.get_table_orders_today(&table_no).map_err(|e| e.to_string())
 }

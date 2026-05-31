@@ -370,6 +370,10 @@ pub fn run() {
             commands::create_self_order,
             commands::get_table_orders_today,
             commands::get_marketing_popup,
+            commands::record_marketing_redemption,
+            commands::get_marketing_redemptions,
+            commands::get_marketing_stats_today,
+            commands::redeem_coupon,
             // Web 伺服器
             commands::get_web_server_status,
             commands::stop_web_server,

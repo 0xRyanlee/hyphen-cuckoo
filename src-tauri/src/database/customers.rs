@@ -429,4 +429,90 @@ impl Database {
         }
         Ok(result)
     }
+
+    // ── 行销兑奖追踪 ─────────────────────────────────────────────────────────
+
+    pub fn record_coupon_issued(&self, order_id: i64, code: &str, discount_type: &str, discount_value: f64, condition_text: Option<&str>, valid_until: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO issued_coupons (order_id, code, discount_type, discount_value, condition_text, valid_until) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![order_id, code, discount_type, discount_value, condition_text, valid_until],
+        )?;
+        Ok(())
+    }
+
+    pub fn redeem_coupon(&self, order_id: i64, staff_name: Option<&str>) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let already: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM issued_coupons WHERE order_id = ?1 AND redeemed_at IS NOT NULL",
+            rusqlite::params![order_id], |r| r.get(0),
+        ).unwrap_or(0);
+        if already > 0 { return Ok(false); }
+        conn.execute(
+            "UPDATE issued_coupons SET redeemed_at = datetime('now','localtime'), redeemed_by = ?2 WHERE order_id = ?1",
+            rusqlite::params![order_id, staff_name],
+        )?;
+        Ok(true)
+    }
+
+    pub fn record_marketing_redemption(&self, order_id: i64, component_type: &str, note: Option<&str>, staff_name: Option<&str>) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO marketing_redemptions (order_id, component_type, note, staff_name) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![order_id, component_type, note, staff_name],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_marketing_redemptions(&self, date: Option<&str>) -> Result<Vec<serde_json::Value>> {
+        let conn = self.conn.lock().unwrap();
+        let sql = if date.is_some() {
+            "SELECT mr.id, mr.order_id, o.order_no, mr.component_type, mr.note, mr.staff_name, mr.redeemed_at FROM marketing_redemptions mr LEFT JOIN orders o ON mr.order_id = o.id WHERE date(mr.redeemed_at) = ?1 ORDER BY mr.redeemed_at DESC"
+        } else {
+            "SELECT mr.id, mr.order_id, o.order_no, mr.component_type, mr.note, mr.staff_name, mr.redeemed_at FROM marketing_redemptions mr LEFT JOIN orders o ON mr.order_id = o.id ORDER BY mr.redeemed_at DESC LIMIT 100"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows = if let Some(d) = date {
+            stmt.query_map(rusqlite::params![d], |r| Ok(serde_json::json!({
+                "id": r.get::<_,i64>(0)?, "order_id": r.get::<_,i64>(1)?,
+                "order_no": r.get::<_,String>(2).unwrap_or_default(),
+                "component_type": r.get::<_,String>(3)?,
+                "note": r.get::<_,Option<String>>(4)?,
+                "staff_name": r.get::<_,Option<String>>(5)?,
+                "redeemed_at": r.get::<_,String>(6)?,
+            })))?.collect::<Result<Vec<_>>>()?
+        } else {
+            stmt.query_map([], |r| Ok(serde_json::json!({
+                "id": r.get::<_,i64>(0)?, "order_id": r.get::<_,i64>(1)?,
+                "order_no": r.get::<_,String>(2).unwrap_or_default(),
+                "component_type": r.get::<_,String>(3)?,
+                "note": r.get::<_,Option<String>>(4)?,
+                "staff_name": r.get::<_,Option<String>>(5)?,
+                "redeemed_at": r.get::<_,String>(6)?,
+            })))?.collect::<Result<Vec<_>>>()?
+        };
+        Ok(rows)
+    }
+
+    pub fn get_marketing_stats_today(&self) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().unwrap();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let redemptions: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM marketing_redemptions WHERE date(redeemed_at) = ?1",
+            rusqlite::params![today], |r| r.get(0),
+        ).unwrap_or(0);
+        let coupons_issued: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM issued_coupons WHERE date(created_at) = ?1",
+            rusqlite::params![today], |r| r.get(0),
+        ).unwrap_or(0);
+        let coupons_redeemed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM issued_coupons WHERE date(redeemed_at) = ?1",
+            rusqlite::params![today], |r| r.get(0),
+        ).unwrap_or(0);
+        Ok(serde_json::json!({
+            "redemptions_today": redemptions,
+            "coupons_issued_today": coupons_issued,
+            "coupons_redeemed_today": coupons_redeemed,
+        }))
+    }
 }

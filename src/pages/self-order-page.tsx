@@ -38,8 +38,8 @@ function priceOf(item: PublicMenuItem, specCode: string | null): number {
 
 function statusLabel(status: string) {
   switch (status) {
-    case "pending": return { text: "等待確認", cls: "bg-blue-100 text-blue-700" };
-    case "submitted": return { text: "備餐中", cls: "bg-amber-100 text-amber-700" };
+    case "pending": return { text: "等待确认", cls: "bg-blue-100 text-blue-700" };
+    case "submitted": return { text: "备餐中", cls: "bg-amber-100 text-amber-700" };
     case "ready": return { text: "完成", cls: "bg-green-100 text-green-700" };
     case "cancelled": return { text: "已取消", cls: "bg-gray-100 text-gray-500" };
     default: return { text: status, cls: "bg-gray-100 text-gray-500" };
@@ -131,7 +131,7 @@ function ItemCard({
       {specOpen && (
         <div className="fixed inset-0 z-50 flex items-end" onClick={() => setSpecOpen(false)}>
           <div className="w-full bg-white rounded-t-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <p className="text-base font-bold mb-3">{item.name} — 選規格</p>
+            <p className="text-base font-bold mb-3">{item.name} — 选规格</p>
             <div className="space-y-2">
               {item.specs.map((spec) => (
                 <button
@@ -178,7 +178,7 @@ function CartSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b">
-          <span className="font-bold text-base">購物車</span>
+          <span className="font-bold text-base">购物车</span>
           <button onClick={onClose} className="text-gray-400 text-2xl leading-none">×</button>
         </div>
         <div className="overflow-y-auto flex-1 px-5 py-3 space-y-4">
@@ -202,7 +202,7 @@ function CartSheet({
                 </div>
                 <input
                   className="mt-1.5 w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-orange-400"
-                  placeholder="備註（去辣、少鹽...）"
+                  placeholder="备註（去辣、少鹽...）"
                   value={item.note}
                   onChange={(e) => onNoteChange(key, e.target.value)}
                 />
@@ -220,7 +220,7 @@ function CartSheet({
             disabled={submitting}
             className="w-full py-4 rounded-2xl bg-orange-400 text-white font-bold text-base disabled:opacity-50"
           >
-            {submitting ? "送出中..." : "確認下單"}
+            {submitting ? "提交中..." : "确认下单"}
           </button>
         </div>
       </div>
@@ -235,17 +235,17 @@ function CartSheet({
 type MarketingElement = { type: string; [key: string]: unknown };
 
 const FORTUNE_TEXTS: Record<string, { level: string; stars: string; texts: string[] }> = {
-  "大吉": { level: "大 吉", stars: "★ ★ ★", texts: ["今日萬事俱備，美食開路，好運隨行。","口福即天福，飽食者心寬，心寬者天下大吉。","今日吉星高照，用餐愉快，好事接連而至。"] },
-  "中吉": { level: "中 吉", stars: "★ ★",   texts: ["菜香心靜，凡事不急，好事自來。","今日宜慢食慢行，細品生活每一味。","飯吃七分飽，事做三分穩，中吉福報至。"] },
-  "小吉": { level: "小 吉", stars: "★",     texts: ["小吉已是福，知足者常樂，今日享受當下。","凡事稍作等候，如等上菜，值得的都值得等。","平穩是福，今日安步當車，無驚無險皆好事。"] },
+  "大吉": { level: "大 吉", stars: "★ ★ ★", texts: ["今日万事俱备，美食开路，好运随行。","口福即天福，饱食者心宽，心宽者天下大吉。","今日吉星高照，用餐愉快，好事接连而至。"] },
+  "中吉": { level: "中 吉", stars: "★ ★",   texts: ["菜香心静，凡事不急，好事自来。","今日宜慢食慢行，细品生活每一味。","饭吃七分饱，事做三分稳，中吉福报至。"] },
+  "小吉": { level: "小 吉", stars: "★",     texts: ["小吉已是福，知足者常乐，今日享受当下。","凡事稍作等候，如等上菜，值得的都值得等。","平稳是福，今日安步当车，无惊无险皆好事。"] },
 };
-const QUOTES_ZH = ["人間有味是清歡 — 蘇軾","此刻此味，是最好的時刻","食之以誠，暖之以心"];
+const QUOTES_ZH = ["人间有味是清欢 — 苏轼","此刻此味，是最好的时刻","食之以诚，暖之以心"];
 const QUOTES_EN = ["Good food is the foundation of genuine happiness.","Life is short. Eat the good stuff first.","Every meal is a love letter to your body."];
 const QUOTES_JA = ["食べることは生きること、愛すること","一碗の温もり、心に満ちる幸せ"];
 const ART_BLOCKS = [
   "╔══════════════════╗\n║ ( ˘◡˘ )♪ 用心料理 ║\n╚══════════════════╝",
-  "☆ ☆ LUCKY RECEIPT ☆ ☆\n  ／￣＼\n （°▽°）感謝光臨！",
-  "/ᐠ｡ꞈ｡ᐟ\\  感謝惠顧！\n♪ 布穀！布穀！ ♪",
+  "☆ ☆ LUCKY RECEIPT ☆ ☆\n  ／￣＼\n （°▽°）感谢光临！",
+  "/ᐠ｡ꞈ｡ᐟ\\  感谢惠顾！\n♪ 布谷！布谷！ ♪",
   "ʕ•ᴥ•ʔ  吃飽了嗎？",
   "✿ ✿ ✿  用心烹飪  ✿ ✿ ✿",
 ];
@@ -279,7 +279,7 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
           const text = f.texts[(seed >> 2) % f.texts.length];
           return (
             <div key={i} className="w-full rounded-2xl bg-white border-2 border-amber-300 p-5 text-center shadow-sm">
-              <div className="text-xs text-amber-500 mb-1 tracking-widest">今日運勢</div>
+              <div className="text-xs text-amber-500 mb-1 tracking-widest">今日运势</div>
               <div className="text-3xl font-bold text-amber-800 mb-1">{f.stars} {f.level} {f.stars}</div>
               <div className="text-sm text-amber-700 leading-relaxed">{text}</div>
             </div>
@@ -292,7 +292,7 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
           const idx = seed % chars.length;
           return (
             <div key={i} className="w-full rounded-2xl bg-white border-2 border-orange-200 p-5 text-center shadow-sm">
-              <div className="text-xs text-orange-500 mb-2 tracking-widest">{(elem.game_name as string) ?? "集字兌獎"}</div>
+              <div className="text-xs text-orange-500 mb-2 tracking-widest">{(elem.game_name as string) ?? "集字兑奖"}</div>
               <div className="text-4xl font-bold text-orange-700 mb-3">
                 【{chars[idx]}】
               </div>
@@ -316,7 +316,7 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
           const quote = quotes[seed % quotes.length];
           return (
             <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 text-center shadow-sm">
-              <div className="text-xs text-gray-400 mb-1">今日語錄</div>
+              <div className="text-xs text-gray-400 mb-1">今日语录</div>
               <div className="text-sm text-gray-600 italic leading-relaxed">&ldquo;{quote}&rdquo;</div>
             </div>
           );
@@ -445,16 +445,31 @@ export function SelfOrderPage() {
       setCart([]);
       setCartOpen(false);
       fetchPastOrders();
-      // Fetch marketing popup content in background
+      // Fetch marketing popup with 3s timeout; on failure show local fallback
+      const DEFAULT_POPUP_CONTENT = JSON.stringify({ elements: [
+        { type: "fortune", seed_strategy: "per_order" },
+        { type: "character_collect", game_name: "集字兑奖", characters: ["恭","喜","发","财"], prize: "集齐四字兑换免费饮品", seed_strategy: "per_order", style: "box" },
+        { type: "quote", language: "multilingual" },
+      ]});
+      const fallbackPopup: MarketingPopupData = {
+        order_id: result.id, order_no: result.order_no,
+        table_no: tableNo ?? "", created_at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+        amount_total: 0, template_content: DEFAULT_POPUP_CONTENT,
+      };
       try {
-        const popup = await call<MarketingPopupData>("get_marketing_popup", {
-          orderId: result.id,
-          tableNo: tableNo,
-        });
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 3000)
+        );
+        const popup = await Promise.race([
+          call<MarketingPopupData>("get_marketing_popup", { orderId: result.id, tableNo: tableNo }),
+          timeout,
+        ]);
         setMarketingPopup(popup);
-      } catch { /* marketing popup optional — don't block order flow */ }
+      } catch {
+        setMarketingPopup(fallbackPopup);
+      }
     } catch (e) {
-      alert(`下單失敗：${e instanceof Error ? e.message : "請重試"}`);
+      alert(`下单失败：${e instanceof Error ? e.message : "请重试"}`);
       console.error(e);
     } finally {
       setSubmitting(false);
@@ -467,7 +482,7 @@ export function SelfOrderPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-400 text-sm">載入中...</div>
+        <div className="text-gray-400 text-sm">加载中...</div>
       </div>
     );
   }
@@ -477,7 +492,7 @@ export function SelfOrderPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-400 text-sm text-center">
           <p className="text-4xl mb-3">🍽</p>
-          <p>菜單尚未設定，請稍後再試</p>
+          <p>菜单尚未设定，请稍后再试</p>
         </div>
       </div>
     );
@@ -488,7 +503,7 @@ export function SelfOrderPage() {
       {/* Header */}
       <div className="sticky top-0 z-30 bg-white shadow-sm">
         <div className="flex items-center justify-between px-4 py-3">
-          <span className="font-bold text-gray-900 text-base">自助點餐</span>
+          <span className="font-bold text-gray-900 text-base">自助点餐</span>
           {tableNo && (
             <span className="text-xs font-semibold bg-orange-100 text-orange-600 px-3 py-1 rounded-full">
               桌 {tableNo}
@@ -547,7 +562,7 @@ export function SelfOrderPage() {
         {pastOrders.length > 0 && (
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 pt-1">
-              本桌今日訂單
+              本桌今日订单
             </p>
             <div className="bg-white rounded-2xl px-4 shadow-sm divide-y divide-gray-100">
               {pastOrders.map((order) => {
@@ -590,7 +605,7 @@ export function SelfOrderPage() {
             <span className="bg-orange-600 text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
               {totalQty}
             </span>
-            <span className="font-bold text-sm">查看購物車</span>
+            <span className="font-bold text-sm">查看购物车</span>
             <span className="font-bold text-sm">¥{fmt(totalPrice)}</span>
           </button>
         </div>
@@ -603,16 +618,17 @@ export function SelfOrderPage() {
             {/* Header */}
             <div className="text-center">
               <div className="text-5xl mb-2">🎉</div>
-              <p className="text-2xl font-bold text-amber-800">訂單已送出！</p>
-              <p className="text-sm text-amber-600 mt-1">廚房正在準備中，請稍候</p>
+              <p className="text-2xl font-bold text-amber-800">订单已提交！</p>
+              <p className="text-sm text-amber-600 mt-1">厨房正在准备中，请稍候</p>
             </div>
 
             {/* Marketing content card */}
             {marketingPopup ? (
               <MarketingCard popup={marketingPopup} />
             ) : (
-              <div className="w-full rounded-2xl bg-white/80 border border-amber-200 p-6 text-center text-sm text-amber-700 animate-pulse">
-                載入今日驚喜...
+              <div className="w-full rounded-2xl bg-white/80 border border-amber-200 p-5 text-center text-sm text-amber-700">
+                <div className="animate-pulse mb-1">✨</div>
+                <div className="text-xs">加载今日惊喜...</div>
               </div>
             )}
 
@@ -629,8 +645,8 @@ export function SelfOrderPage() {
                 <button
                   className="flex-1 py-3 rounded-2xl border border-amber-300 bg-white/70 text-amber-700 font-semibold text-sm"
                   onClick={() => navigator.share?.({
-                    title: `我的今日運勢 ${successOrder.order_no}`,
-                    text: "來看看我在美食店抽到的今日運勢！",
+                    title: `我的今日运势 ${successOrder.order_no}`,
+                    text: "來看看我在美食店抽到的今日运势！",
                   }).catch(() => {})}
                 >
                   📤 分享
@@ -640,10 +656,10 @@ export function SelfOrderPage() {
                 className="flex-1 py-3 rounded-2xl bg-amber-400 text-white font-semibold text-sm"
                 onClick={() => { setSuccessOrder(null); setMarketingPopup(null); }}
               >
-                繼續點餐
+                继续点餐
               </button>
             </div>
-            <p className="text-xs text-amber-500/70 text-center">截圖保存後即可使用兌獎 · 一單一次</p>
+            <p className="text-xs text-amber-500/70 text-center">截图保存后即可凭图兑奖 · 一单一次</p>
           </div>
         </div>
       )}

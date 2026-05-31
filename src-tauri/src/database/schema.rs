@@ -667,6 +667,29 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS issued_coupons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                discount_type TEXT NOT NULL DEFAULT 'percent',
+                discount_value REAL NOT NULL DEFAULT 0,
+                condition_text TEXT,
+                valid_until TEXT NOT NULL,
+                redeemed_at TEXT,
+                redeemed_by TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                UNIQUE(order_id, code)
+            );
+
+            CREATE TABLE IF NOT EXISTS marketing_redemptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER NOT NULL,
+                component_type TEXT NOT NULL,
+                note TEXT,
+                staff_name TEXT,
+                redeemed_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_categories_name ON menu_categories(name);
             "
         )?;

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Save, Eye, Smartphone, Printer, Sparkles, Zap } from "lucide-react";
+import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSummary, type PrintElement } from "./print-templates-page";
 
@@ -16,7 +17,7 @@ import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSu
 
 const DEFAULT_POPUP_ELEMENTS: PrintElement[] = [
   { type: "fortune", seed_strategy: "per_order" },
-  { type: "character_collect", game_name: "集字兌獎", characters: ["恭", "喜", "發", "財"], prize: "集齊四字兌換免費飲品", seed_strategy: "per_order", style: "box" },
+  { type: "character_collect", game_name: "集字兑奖", characters: ["恭", "喜", "發", "財"], prize: "集齐四字兑换免费饮品", seed_strategy: "per_order", style: "box" },
   { type: "quote", language: "multilingual" },
 ];
 
@@ -74,7 +75,7 @@ function SurfacePanel({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">{enabled ? "啟用" : "停用"}</Label>
+          <Label className="text-xs text-muted-foreground">{enabled ? "启用" : "停用"}</Label>
           <Switch checked={enabled} onCheckedChange={onToggleEnabled} />
         </div>
       </div>
@@ -84,7 +85,7 @@ function SurfacePanel({
           <div className="space-y-1.5">
             {elements.length === 0 && (
               <p className="text-xs text-muted-foreground py-2 text-center border rounded-md">
-                尚無行銷元件 — 點擊下方添加
+                暂无行销元件 — 点击下方添加
               </p>
             )}
             {elements.map((elem, idx) => (
@@ -92,7 +93,7 @@ function SurfacePanel({
             ))}
             <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1 mt-1"
               onClick={() => setPickerOpen(!pickerOpen)}>
-              <Sparkles className="h-3 w-3" />添加行銷元件
+              <Sparkles className="h-3 w-3" />添加行销元件
             </Button>
           </div>
 
@@ -119,7 +120,7 @@ function SurfacePanel({
             <div className="border rounded-lg overflow-hidden">
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-muted/30 border-b">
                 <Eye className="h-3 w-3 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">預覽</span>
+                <span className="text-xs text-muted-foreground">预览</span>
               </div>
               <div className="p-3 max-h-64 overflow-y-auto"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewHtml) }} />
@@ -130,6 +131,36 @@ function SurfacePanel({
     </div>
   );
 }
+
+// ── Types ─────────────────────────────────────────────────────────────────
+
+interface RedemptionRecord {
+  id: number;
+  order_id: number;
+  order_no: string;
+  component_type: string;
+  note: string | null;
+  staff_name: string | null;
+  redeemed_at: string;
+}
+
+interface VerifyResult {
+  order_no: string;
+  popup_html: string;
+  already_redeemed: boolean;
+}
+
+const COMPONENT_LABELS: Record<string, string> = {
+  fortune: "运势卡",
+  character_collect: "集字兑奖",
+  quote: "每日语录",
+  art: "艺术图块",
+  discount_coupon: "折价券",
+  qr_code: "二维码",
+  riddle: "谜语挑战",
+  solar_term: "节气主题",
+  chef_message: "厨师寄语",
+};
 
 // ── Main page ──────────────────────────────────────────────────────────────
 
@@ -142,6 +173,10 @@ export function MarketingPage() {
   const [receiptPreview, setReceiptPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [popupTemplateId, setPopupTemplateId] = useState<number | null>(null);
+  const [redemptions, setRedemptions] = useState<RedemptionRecord[]>([]);
+  const [verifyOrderNo, setVerifyOrderNo] = useState("");
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   // Load existing marketing_popup template on mount
   useEffect(() => {
@@ -186,6 +221,58 @@ export function MarketingPage() {
   useEffect(() => { updatePreview(popupElements, "popup"); }, [popupElements, updatePreview]);
   useEffect(() => { updatePreview(receiptElements, "receipt"); }, [receiptElements, updatePreview]);
 
+  useEffect(() => {
+    invoke<RedemptionRecord[]>("get_marketing_redemptions", {}).then(setRedemptions).catch(console.error);
+  }, []);
+
+  async function handleVerify() {
+    if (!verifyOrderNo.trim()) return;
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      // Find order by order_no
+      const orders = await invoke<{ id: number; order_no: string }[]>("get_orders", { limit: 500, offset: 0 });
+      const order = orders.find((o) => o.order_no === verifyOrderNo.trim() || String(o.id) === verifyOrderNo.trim());
+      if (!order) { toast.error("找不到该订单号，请检查后重试"); return; }
+      const popup = await invoke<{ order_no: string; template_content: string }>("get_marketing_popup", {
+        orderId: order.id, tableNo: "",
+      });
+      const previewResult = await invoke<{ html: string }>("render_template_content_preview", {
+        content: popup.template_content, paperSize: "58mm", theme: "classic",
+        restaurantName: "", tagline: "", logoData: null,
+        data: { order_id: order.id, table_no: "", items: [] },
+      });
+      const redemptions_for_order = redemptions.filter(r => r.order_id === order.id);
+      setVerifyResult({
+        order_no: order.order_no,
+        popup_html: previewResult.html,
+        already_redeemed: redemptions_for_order.length > 0,
+      });
+    } catch (e) {
+      toast.error("查询失败", { description: String(e) });
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function handleRedeem(componentType: string) {
+    if (!verifyResult) return;
+    const order = await invoke<{ id: number; order_no: string }[]>("get_orders", { limit: 500, offset: 0 })
+      .then(os => os.find(o => o.order_no === verifyResult.order_no));
+    if (!order) return;
+    try {
+      await invoke("record_marketing_redemption", {
+        orderId: order.id, componentType, note: null, staffName: null,
+      });
+      const updated = await invoke<RedemptionRecord[]>("get_marketing_redemptions", {});
+      setRedemptions(updated);
+      setVerifyResult(prev => prev ? { ...prev, already_redeemed: true } : null);
+      toast.success(`已标记「${COMPONENT_LABELS[componentType] ?? componentType}」兑奖完成`);
+    } catch (e) {
+      toast.error("记录失败", { description: String(e) });
+    }
+  }
+
   async function savePopupTemplate() {
     setSaving(true);
     try {
@@ -205,7 +292,7 @@ export function MarketingPage() {
           }
         });
       }
-      toast.success("行銷彈窗設定已保存");
+      toast.success("行銷彈窗设定已保存");
     } catch (e) {
       toast.error("保存失敗", { description: String(e) });
     } finally {
@@ -221,11 +308,11 @@ export function MarketingPage() {
             <Zap className="h-5 w-5 text-amber-500" />行銷中心
           </h1>
           <p className="text-sm text-muted-foreground">
-            統一管理收據、廚房單、自助點單確認頁的行銷元件
+            統一管理收据、厨房單、自助點單确认頁的行銷元件
           </p>
         </div>
         <Button onClick={savePopupTemplate} disabled={saving} size="sm">
-          <Save className="h-4 w-4 mr-1" />{saving ? "保存中..." : "保存設定"}
+          <Save className="h-4 w-4 mr-1" />{saving ? "保存中..." : "保存设定"}
         </Button>
       </div>
 
@@ -236,17 +323,23 @@ export function MarketingPage() {
               <Smartphone className="h-3.5 w-3.5" />自助點單彈窗
             </TabsTrigger>
             <TabsTrigger value="receipt" className="gap-1.5">
-              <Printer className="h-3.5 w-3.5" />收據 / 廚房單
+              <Printer className="h-3.5 w-3.5" />收据 / 厨房单
             </TabsTrigger>
             <TabsTrigger value="guide" className="gap-1.5">
-              <Sparkles className="h-3.5 w-3.5" />元件說明
+              <Sparkles className="h-3.5 w-3.5" />元件说明
+            </TabsTrigger>
+            <TabsTrigger value="redeem" className="gap-1.5">
+              <ClipboardCheck className="h-3.5 w-3.5" />兑奖核销
+              {redemptions.length > 0 && (
+                <span className="ml-1 bg-green-100 text-green-700 text-[10px] px-1.5 rounded-full">{redemptions.length}</span>
+              )}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="popup">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">自助點單確認頁彈窗</CardTitle>
+                <CardTitle className="text-base">自助點單确认頁彈窗</CardTitle>
                 <CardDescription>
                   顧客下單後全屏彈出，截圖可見訂單號與時間，集字/運勢一單一次，截圖後廢棄兌獎
                 </CardDescription>
@@ -270,20 +363,20 @@ export function MarketingPage() {
           <TabsContent value="receipt">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">收據 / 廚房單行銷元件</CardTitle>
+                <CardTitle className="text-base">收据 / 厨房单行銷元件</CardTitle>
                 <CardDescription>
-                  在「打印中心」的模板中新增行銷元件；此頁提供快速預覽與常用配置
+                  在「打印中心」的模板中新增行銷元件；此頁提供快速预览與常用配置
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
                   <Sparkles className="h-4 w-4 shrink-0" />
-                  <span>收據行銷元件在「打印中心 → 模板 → 元素列表」中管理。此處僅預覽效果。</span>
+                  <span>收据行銷元件在「打印中心 → 模板 → 元素列表」中管理。此處僅预览效果。</span>
                 </div>
                 <SurfacePanel
-                  title="收據行銷預覽"
+                  title="收据行销预览"
                   icon={<Printer className="h-4 w-4 text-gray-500" />}
-                  description="預覽組合效果，實際修改請至打印中心"
+                  description="预览組合效果，實際修改請至打印中心"
                   elements={receiptElements}
                   enabled={receiptEnabled}
                   onToggleEnabled={setReceiptEnabled}
@@ -299,11 +392,11 @@ export function MarketingPage() {
             <div className="space-y-4">
               {[
                 { type: "fortune", title: "今日運勢", desc: "大吉 / 中吉 / 小吉，每單唯一（per_order）或全桌同運（per_table）。心理學正強化，讓顧客以好心情結束用餐。" },
-                { type: "character_collect", title: "集字兌獎", desc: "每張收據/確認頁抽一個字，顧客截圖保存，集齊指定字組可兌換。截圖即憑據，一單一次，天然防偽。" },
-                { type: "quote", title: "今日語錄 / 詩句", desc: "中文古典詩詞、日文俳句、英文 Instagram 感短句輪替，增加收據可拍照性。" },
-                { type: "art", title: "顏文字 / ASCII 藝術", desc: "復古 BBS 點陣感圖塊，( ˘◡˘ )♪ ʕ•ᴥ•ʔ ✿ 等，每天隨機選一組，增加趣味性。" },
-                { type: "discount_coupon", title: "折價券", desc: "動態生成訂單唯一碼（12 hex），印在收據上，下次消費出示。適合做回頭客促銷。" },
-                { type: "product_spotlight", title: "新品介紹", desc: "在收據尾部展示本週新品，引導顧客下次嘗試。" },
+                { type: "character_collect", title: "集字兑奖", desc: "每張收据/确认頁抽一個字，顧客截圖保存，集齊指定字組可兑换。截圖即憑據，一單一次，天然防偽。" },
+                { type: "quote", title: "今日语录 / 诗句", desc: "中文古典詩詞、日文俳句、英文 Instagram 感短句輪替，增加收据可拍照性。" },
+                { type: "art", title: "颜文字 / ASCII 藝術", desc: "復古 BBS 點陣感圖塊，( ˘◡˘ )♪ ʕ•ᴥ•ʔ ✿ 等，每天隨機選一組，增加趣味性。" },
+                { type: "discount_coupon", title: "折價券", desc: "動態生成訂單唯一碼（12 hex），印在收据上，下次消費出示。適合做回頭客促銷。" },
+                { type: "product_spotlight", title: "新品介绍", desc: "在收据尾部展示本周新品，引導顧客下次嘗試。" },
                 { type: "qr_code", title: "QR 碼", desc: "掃碼加群、加好友、關注公眾號，ESC/POS 原生 QR 指令，無需額外硬件。" },
                 { type: "rich_text", title: "富文本", desc: "Markdown 格式：## 標題、- 清單、> 引用。可做活動說明、集字規則等。" },
               ].map(item => (
@@ -320,6 +413,82 @@ export function MarketingPage() {
                 </Card>
               ))}
             </div>
+          </TabsContent>
+
+          {/* 兑奖核销 Tab */}
+          <TabsContent value="redeem" className="space-y-4">
+            {/* 验码区 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">验证订单行销内容</CardTitle>
+                <CardDescription>
+                  顾客出示截图时，输入订单号或ID，系统重新渲染该单的行销内容供核对
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="输入订单号（如 SO20260601123456）或订单ID"
+                    value={verifyOrderNo}
+                    onChange={e => setVerifyOrderNo(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleVerify()}
+                    className="flex-1"
+                  />
+                  <Button onClick={handleVerify} disabled={verifying || !verifyOrderNo.trim()}>
+                    <Search className="h-4 w-4 mr-1" />{verifying ? "查询中..." : "查询"}
+                  </Button>
+                </div>
+                {verifyResult && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className={`flex items-center justify-between px-4 py-2 text-sm font-medium ${verifyResult.already_redeemed ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-800"}`}>
+                      <span>订单：{verifyResult.order_no}</span>
+                      <span>{verifyResult.already_redeemed ? "✅ 已兑奖" : "⏳ 未兑奖"}</span>
+                    </div>
+                    <div className="p-3 max-h-64 overflow-y-auto"
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(verifyResult.popup_html ?? "") }} />
+                    {!verifyResult.already_redeemed && (
+                      <div className="px-4 pb-4 pt-2 border-t bg-muted/20">
+                        <p className="text-xs text-muted-foreground mb-2">与顾客截图核对无误后，选择要标记为已兑奖的组件：</p>
+                        <div className="flex flex-wrap gap-2">
+                          {["character_collect", "fortune", "discount_coupon", "riddle"].map(ct => (
+                            <Button key={ct} variant="outline" size="sm" className="text-xs"
+                              onClick={() => handleRedeem(ct)}>
+                              标记「{COMPONENT_LABELS[ct] ?? ct}」已兑奖
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 兑奖记录 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">兑奖记录</CardTitle>
+                <CardDescription>最近 100 条兑奖记录</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {redemptions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">暂无兑奖记录</p>
+                ) : (
+                  <div className="space-y-1">
+                    {redemptions.map(r => (
+                      <div key={r.id} className="flex items-center gap-3 text-xs border rounded px-3 py-2">
+                        <span className="font-mono text-muted-foreground shrink-0">{r.order_no || `#${r.order_id}`}</span>
+                        <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded shrink-0">
+                          {COMPONENT_LABELS[r.component_type] ?? r.component_type}
+                        </span>
+                        <span className="flex-1 text-muted-foreground truncate">{r.note ?? ""}</span>
+                        <span className="text-muted-foreground shrink-0">{r.redeemed_at.slice(0, 16)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
