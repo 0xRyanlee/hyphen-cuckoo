@@ -29,6 +29,7 @@ import { ExpensesPage } from "@/pages/expenses-page";
 import { CustomersPage } from "@/pages/customers-page";
 import { SelfOrderPage } from "@/pages/self-order-page";
 import { TablesPage } from "@/pages/tables-page";
+import { MarketingPage } from "@/pages/marketing-page";
 import { Toaster } from "@/components/ui/toaster";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
@@ -520,6 +521,7 @@ function App() {
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/expenses" element={<ExpensesPage expenses={expenses} onCreateExpense={handleCreateExpense} onUpdateExpense={handleUpdateExpense} onDeleteExpense={handleDeleteExpense} />} />
                 <Route path="/customers" element={<CustomersPage customers={customers} onCreateCustomer={handleCreateCustomer} onUpdateCustomer={handleUpdateCustomer} onDeleteCustomer={handleDeleteCustomer} onAddLoyaltyPoints={handleAddLoyaltyPoints} />} />
+                <Route path="/marketing" element={<MarketingPage />} />
                 <Route path="/print" element={<PrintPage />} />
                 <Route path="/print-templates" element={<PrintTemplatesPage />} />
                 <Route path="/print-settings" element={<PrintSettingsPage />} />

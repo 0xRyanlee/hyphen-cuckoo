@@ -17,9 +17,9 @@ import { toast } from "sonner";
 
 // ── Element types for visual card layer ──────────────────────────────────────
 
-type PrintElement = Record<string, unknown> & { type: string };
+export type PrintElement = Record<string, unknown> & { type: string };
 
-const ELEMENT_CATEGORIES = [
+export const ELEMENT_CATEGORIES = [
   {
     label: "基本", items: [
       { type: "text", label: "文字", defaultConfig: { type: "text", content: "文字內容", align: "left", bold: false, size: "normal" } },
@@ -47,12 +47,12 @@ const ELEMENT_CATEGORIES = [
   },
 ];
 
-function getElementLabel(type: string): string {
+export function getElementLabel(type: string): string {
   for (const cat of ELEMENT_CATEGORIES) for (const it of cat.items) if (it.type === type) return it.label;
   return type;
 }
 
-function getElementBadgeColor(type: string): string {
+export function getElementBadgeColor(type: string): string {
   const creative = ["fortune", "quote", "art", "image_block"];
   const marketing = ["discount_coupon", "product_spotlight", "qr_code", "character_collect", "rich_text"];
   if (creative.includes(type)) return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
@@ -60,7 +60,7 @@ function getElementBadgeColor(type: string): string {
   return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
 }
 
-function getElementSummary(elem: PrintElement): string {
+export function getElementSummary(elem: PrintElement): string {
   switch (elem.type) {
     case "text": return String(elem.content ?? "").slice(0, 30) || "(空)";
     case "separator": return "──────";

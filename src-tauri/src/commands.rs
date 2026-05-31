@@ -2433,14 +2433,20 @@ pub fn get_public_menu(state: State<AppState>) -> Result<Vec<PublicMenuCategory>
 }
 
 #[tauri::command]
-pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<SelfOrderItemInput>) -> Result<i64, String> {
+pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<SelfOrderItemInput>) -> Result<serde_json::Value, String> {
     if table_no.trim().is_empty() {
         return Err("桌号不能为空".to_string());
     }
     if items.is_empty() {
         return Err("订单不能为空".to_string());
     }
-    state.db.create_self_order(&table_no, &items).map_err(|e| e.to_string())
+    let (order_id, order_no) = state.db.create_self_order(&table_no, &items).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "id": order_id, "order_no": order_no }))
+}
+
+#[tauri::command]
+pub fn get_marketing_popup(state: State<AppState>, order_id: i64, table_no: String) -> Result<serde_json::Value, String> {
+    state.db.get_marketing_popup_content(order_id, &table_no).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

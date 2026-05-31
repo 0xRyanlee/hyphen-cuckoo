@@ -200,7 +200,7 @@ fn dispatch_api(
         }
 
         "/api/create_self_order" => match api_create_self_order_direct(db, body) {
-            Ok(id) => ("200 OK", format!(r#"{{"id":{}}}"#, id)),
+            Ok((id, order_no)) => ("200 OK", format!(r#"{{"id":{},"order_no":"{}"}}"#, id, order_no)),
             Err(e) => ("400 Bad Request", json_err(&e)),
         },
 
@@ -209,6 +209,15 @@ fn dispatch_api(
             match api_get_table_orders_today_direct(db, &table_no) {
                 Ok(data) => ("200 OK", data),
                 Err(e) => ("400 Bad Request", json_err(&e)),
+            }
+        }
+
+        "/api/get_marketing_popup" => {
+            let order_id = v["orderId"].as_i64().unwrap_or(0);
+            let table_no = v["tableNo"].as_str().unwrap_or("").to_string();
+            match db.get_marketing_popup_content(order_id, &table_no) {
+                Ok(data) => ("200 OK", data.to_string()),
+                Err(e) => ("500 Internal Server Error", json_err(&e.to_string())),
             }
         }
 
@@ -596,7 +605,7 @@ fn api_get_public_menu_direct(db: &Arc<Database>) -> Result<String, String> {
         .and_then(|v| serde_json::to_string(&v).map_err(|e| e.to_string()))
 }
 
-fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8]) -> Result<i64, String> {
+fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8]) -> Result<(i64, String), String> {
     let v: Value =
         serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
     let table_no = v["table_no"].as_str().unwrap_or("").to_string();

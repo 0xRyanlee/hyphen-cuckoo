@@ -58,6 +58,12 @@ const navGroups = [
     ],
   },
   {
+    label: "行銷",
+    items: [
+      { id: "marketing", label: "行銷中心", icon: Monitor },
+    ],
+  },
+  {
     label: "设置",
     items: [
       { id: "attributes", label: "属性模板", icon: SlidersHorizontal },

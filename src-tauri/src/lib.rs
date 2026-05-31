@@ -369,6 +369,7 @@ pub fn run() {
             commands::get_public_menu,
             commands::create_self_order,
             commands::get_table_orders_today,
+            commands::get_marketing_popup,
             // Web 伺服器
             commands::get_web_server_status,
             commands::stop_web_server,

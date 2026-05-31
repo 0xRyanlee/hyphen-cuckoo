@@ -5,6 +5,15 @@ import type { PublicMenuCategory, PublicMenuItem, PublicMenuItemSpec, TableOrder
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+interface MarketingPopupData {
+  order_id: number;
+  order_no: string;
+  table_no: string;
+  created_at: string;
+  amount_total: number;
+  template_content: string;  // JSON elements[]
+}
+
 interface CartItem {
   menu_item_id: number;
   name: string;
@@ -221,6 +230,115 @@ function CartSheet({
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 
+// ── MarketingCard: renders the marketing popup elements ───────────────────
+
+type MarketingElement = { type: string; [key: string]: unknown };
+
+const FORTUNE_TEXTS: Record<string, { level: string; stars: string; texts: string[] }> = {
+  "大吉": { level: "大 吉", stars: "★ ★ ★", texts: ["今日萬事俱備，美食開路，好運隨行。","口福即天福，飽食者心寬，心寬者天下大吉。","今日吉星高照，用餐愉快，好事接連而至。"] },
+  "中吉": { level: "中 吉", stars: "★ ★",   texts: ["菜香心靜，凡事不急，好事自來。","今日宜慢食慢行，細品生活每一味。","飯吃七分飽，事做三分穩，中吉福報至。"] },
+  "小吉": { level: "小 吉", stars: "★",     texts: ["小吉已是福，知足者常樂，今日享受當下。","凡事稍作等候，如等上菜，值得的都值得等。","平穩是福，今日安步當車，無驚無險皆好事。"] },
+};
+const QUOTES_ZH = ["人間有味是清歡 — 蘇軾","此刻此味，是最好的時刻","食之以誠，暖之以心"];
+const QUOTES_EN = ["Good food is the foundation of genuine happiness.","Life is short. Eat the good stuff first.","Every meal is a love letter to your body."];
+const QUOTES_JA = ["食べることは生きること、愛すること","一碗の温もり、心に満ちる幸せ"];
+const ART_BLOCKS = [
+  "╔══════════════════╗\n║ ( ˘◡˘ )♪ 用心料理 ║\n╚══════════════════╝",
+  "☆ ☆ LUCKY RECEIPT ☆ ☆\n  ／￣＼\n （°▽°）感謝光臨！",
+  "/ᐠ｡ꞈ｡ᐟ\\  感謝惠顧！\n♪ 布穀！布穀！ ♪",
+  "ʕ•ᴥ•ʔ  吃飽了嗎？",
+  "✿ ✿ ✿  用心烹飪  ✿ ✿ ✿",
+];
+
+function djb2(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function getSeed(strategy: string, orderId: number, tableNo: string): number {
+  const date = new Date().toISOString().slice(0, 10);
+  if (strategy === "per_order") return djb2(`${orderId}`);
+  if (strategy === "per_table") return djb2(`${tableNo}${date}`);
+  return djb2(date);
+}
+
+function MarketingCard({ popup }: { popup: MarketingPopupData }) {
+  let elements: MarketingElement[] = [];
+  try { elements = JSON.parse(popup.template_content).elements ?? []; } catch { /* ignore */ }
+
+  return (
+    <div className="w-full space-y-3">
+      {elements.map((elem, i) => {
+        const seed = getSeed((elem.seed_strategy as string) ?? "per_order", popup.order_id, popup.table_no);
+
+        if (elem.type === "fortune") {
+          const pct = seed % 100;
+          const key = pct < 20 ? "小吉" : pct < 70 ? "中吉" : "大吉";
+          const f = FORTUNE_TEXTS[key];
+          const text = f.texts[(seed >> 2) % f.texts.length];
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border-2 border-amber-300 p-5 text-center shadow-sm">
+              <div className="text-xs text-amber-500 mb-1 tracking-widest">今日運勢</div>
+              <div className="text-3xl font-bold text-amber-800 mb-1">{f.stars} {f.level} {f.stars}</div>
+              <div className="text-sm text-amber-700 leading-relaxed">{text}</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "character_collect") {
+          const chars = (elem.characters as string[] | undefined) ?? ["恭","喜","發","財"];
+          const prize = (elem.prize as string) ?? "集齊兌換免費飲品";
+          const idx = seed % chars.length;
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border-2 border-orange-200 p-5 text-center shadow-sm">
+              <div className="text-xs text-orange-500 mb-2 tracking-widest">{(elem.game_name as string) ?? "集字兌獎"}</div>
+              <div className="text-4xl font-bold text-orange-700 mb-3">
+                【{chars[idx]}】
+              </div>
+              <div className="flex justify-center gap-2 text-lg mb-2">
+                {chars.map((ch, ci) => (
+                  <span key={ci} className={ci === idx ? "text-orange-600 font-bold border-b-2 border-orange-400" : "text-gray-300"}>
+                    {ci === idx ? ch : "□"}
+                  </span>
+                ))}
+              </div>
+              <div className="text-xs text-orange-600">{prize}</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "quote") {
+          const lang = (elem.language as string) ?? "multilingual";
+          const pool = lang === "en" ? QUOTES_EN : lang === "ja" ? QUOTES_JA :
+            lang === "zh" ? QUOTES_ZH : [QUOTES_ZH, QUOTES_EN, QUOTES_JA][seed % 3];
+          const quotes = Array.isArray(pool) ? pool : QUOTES_ZH;
+          const quote = quotes[seed % quotes.length];
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 text-center shadow-sm">
+              <div className="text-xs text-gray-400 mb-1">今日語錄</div>
+              <div className="text-sm text-gray-600 italic leading-relaxed">&ldquo;{quote}&rdquo;</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "art") {
+          const block = ART_BLOCKS[seed % ART_BLOCKS.length];
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 text-center shadow-sm">
+              <pre className="text-xs text-gray-600 font-mono whitespace-pre leading-relaxed inline-block text-left">{block}</pre>
+            </div>
+          );
+        }
+
+        return null;
+      })}
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────
+
 export function SelfOrderPage() {
   const { tableNo } = useParams<{ tableNo: string }>();
   const [menu, setMenu] = useState<PublicMenuCategory[]>([]);
@@ -229,7 +347,8 @@ export function SelfOrderPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [successOrderId, setSuccessOrderId] = useState<number | null>(null);
+  const [successOrder, setSuccessOrder] = useState<{ id: number; order_no: string } | null>(null);
+  const [marketingPopup, setMarketingPopup] = useState<MarketingPopupData | null>(null);
   const [pastOrders, setPastOrders] = useState<TableOrderSummary[]>([]);
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -313,7 +432,7 @@ export function SelfOrderPage() {
     if (!tableNo || cart.length === 0) return;
     setSubmitting(true);
     try {
-      const id = await call<number>("create_self_order", {
+      const result = await call<{ id: number; order_no: string }>("create_self_order", {
         table_no: tableNo,
         items: cart.map((c) => ({
           menu_item_id: c.menu_item_id,
@@ -322,10 +441,18 @@ export function SelfOrderPage() {
           note: c.note || null,
         })),
       });
-      setSuccessOrderId(id);
+      setSuccessOrder(result);
       setCart([]);
       setCartOpen(false);
       fetchPastOrders();
+      // Fetch marketing popup content in background
+      try {
+        const popup = await call<MarketingPopupData>("get_marketing_popup", {
+          orderId: result.id,
+          tableNo: tableNo,
+        });
+        setMarketingPopup(popup);
+      } catch { /* marketing popup optional — don't block order flow */ }
     } catch (e) {
       alert(`下單失敗：${e instanceof Error ? e.message : "請重試"}`);
       console.error(e);
@@ -469,18 +596,55 @@ export function SelfOrderPage() {
         </div>
       )}
 
-      {/* Order success */}
-      {successOrderId && (
-        <div className="fixed inset-0 z-50 bg-white flex flex-col items-center justify-center gap-4 px-8">
-          <div className="text-6xl">✅</div>
-          <p className="text-xl font-bold text-gray-900">訂單已送出！</p>
-          <p className="text-sm text-gray-500 text-center">廚房正在準備中，請稍候</p>
-          <button
-            onClick={() => setSuccessOrderId(null)}
-            className="mt-4 px-8 py-3 bg-orange-400 text-white rounded-2xl font-semibold"
-          >
-            繼續點餐
-          </button>
+      {/* Order success + marketing popup */}
+      {successOrder && (
+        <div className="fixed inset-0 z-50 bg-gradient-to-b from-amber-50 to-orange-50 flex flex-col overflow-y-auto">
+          <div className="flex-1 flex flex-col items-center justify-start pt-8 px-6 pb-6 gap-4 max-w-sm mx-auto w-full">
+            {/* Header */}
+            <div className="text-center">
+              <div className="text-5xl mb-2">🎉</div>
+              <p className="text-2xl font-bold text-amber-800">訂單已送出！</p>
+              <p className="text-sm text-amber-600 mt-1">廚房正在準備中，請稍候</p>
+            </div>
+
+            {/* Marketing content card */}
+            {marketingPopup ? (
+              <MarketingCard popup={marketingPopup} />
+            ) : (
+              <div className="w-full rounded-2xl bg-white/80 border border-amber-200 p-6 text-center text-sm text-amber-700 animate-pulse">
+                載入今日驚喜...
+              </div>
+            )}
+
+            {/* Order info strip — screenshot-friendly */}
+            <div className="w-full rounded-xl bg-white/60 border border-amber-200 px-4 py-3 text-xs text-amber-800 flex justify-between items-center">
+              <span className="font-mono font-bold">{successOrder.order_no}</span>
+              <span>桌 {tableNo}</span>
+              <span>今日有效</span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 w-full pt-2">
+              {typeof navigator !== "undefined" && "share" in navigator && (
+                <button
+                  className="flex-1 py-3 rounded-2xl border border-amber-300 bg-white/70 text-amber-700 font-semibold text-sm"
+                  onClick={() => navigator.share?.({
+                    title: `我的今日運勢 ${successOrder.order_no}`,
+                    text: "來看看我在美食店抽到的今日運勢！",
+                  }).catch(() => {})}
+                >
+                  📤 分享
+                </button>
+              )}
+              <button
+                className="flex-1 py-3 rounded-2xl bg-amber-400 text-white font-semibold text-sm"
+                onClick={() => { setSuccessOrder(null); setMarketingPopup(null); }}
+              >
+                繼續點餐
+              </button>
+            </div>
+            <p className="text-xs text-amber-500/70 text-center">截圖保存後即可使用兌獎 · 一單一次</p>
+          </div>
         </div>
       )}
 

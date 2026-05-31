@@ -310,7 +310,7 @@ impl Database {
         Ok(result)
     }
 
-    pub fn create_self_order(&self, table_no: &str, items: &[SelfOrderItemInput]) -> Result<i64> {
+    pub fn create_self_order(&self, table_no: &str, items: &[SelfOrderItemInput]) -> Result<(i64, String)> {
         let conn = self.conn.lock().unwrap();
         let order_no: String = conn.query_row(
             "SELECT 'SO' || strftime('%Y%m%d%H%M%S', 'now', 'localtime') || substr(lower(hex(randomblob(2))),1,4)",
@@ -355,7 +355,39 @@ impl Database {
                 params![order_id],
             )?;
         }
-        Ok(order_id)
+        Ok((order_id, order_no))
+    }
+
+    pub fn get_marketing_popup_content(&self, order_id: i64, table_no: &str) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().unwrap();
+        // Fetch order_no and created_at for display
+        let (order_no, created_at, amount_total): (String, String, f64) = conn.query_row(
+            "SELECT order_no, strftime('%H:%M', created_at, 'localtime'), COALESCE(amount_total, 0) FROM orders WHERE id = ?1",
+            rusqlite::params![order_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).unwrap_or_else(|_| (format!("#{}", order_id), "".to_string(), 0.0));
+
+        // Get marketing popup template (type = marketing_popup), create default if absent
+        let content_json = conn.query_row(
+            "SELECT content FROM print_templates WHERE template_type = 'marketing_popup' AND is_active = 1 LIMIT 1",
+            [],
+            |r| r.get::<_, String>(0),
+        ).unwrap_or_else(|_| {
+            r#"{"elements":[
+                {"type":"fortune","seed_strategy":"per_order"},
+                {"type":"character_collect","game_name":"集字兌獎","characters":["恭","喜","發","財"],"prize":"集齊四字兌換免費飲品","seed_strategy":"per_order","style":"box"},
+                {"type":"quote","language":"multilingual"}
+            ]}"#.to_string()
+        });
+
+        Ok(serde_json::json!({
+            "order_id": order_id,
+            "order_no": order_no,
+            "table_no": table_no,
+            "created_at": created_at,
+            "amount_total": amount_total,
+            "template_content": content_json,
+        }))
     }
 
     pub fn get_table_orders_today(&self, table_no: &str) -> Result<Vec<TableOrderSummary>> {
