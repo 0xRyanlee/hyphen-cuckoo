@@ -28,13 +28,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: setup android sdk
-        uses: android-actions/setup-android@v3
-
-      - name: install android ndk
+      - name: setup android ndk
         run: |
-          sdkmanager "ndk;27.2.12479018"
-          echo "NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          ANDROID_SDK=/usr/local/lib/android/sdk
+          echo "ANDROID_HOME=$ANDROID_SDK" >> $GITHUB_ENV
+          $ANDROID_SDK/cmdline-tools/latest/bin/sdkmanager "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_SDK/ndk/27.2.12479018" >> $GITHUB_ENV
 
       - name: install rust stable + android targets
         uses: dtolnay/rust-toolchain@stable
@@ -47,26 +46,21 @@ jobs:
       - name: build frontend
         run: npm run build
 
-      - name: setup android keystore
-        if: ${{ secrets.ANDROID_KEY_STORE != '' }}
-        run: |
-          echo "${{ secrets.ANDROID_KEY_STORE }}" | base64 -d > /tmp/keystore.jks
-          echo "storeFile=/tmp/keystore.jks" >> src-tauri/gen/android/keystore.properties
-          echo "storePassword=${{ secrets.ANDROID_KEY_STORE_PASSWORD }}" >> src-tauri/gen/android/keystore.properties
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> src-tauri/gen/android/keystore.properties
-          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> src-tauri/gen/android/keystore.properties
+      - name: init tauri android project
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: npx tauri android init
 
       - name: build android apk
         env:
-          NDK_HOME: ${{ env.NDK_HOME }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
         run: npx tauri android build --apk
 
       - name: upload apk to release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
