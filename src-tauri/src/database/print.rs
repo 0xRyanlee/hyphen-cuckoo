@@ -2,7 +2,7 @@ use rusqlite::{params, Result};
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use super::*;
-use chrono;
+use chrono::{self, Datelike, Timelike, Weekday};
 
 // ==================== 打印創意模組靜態資源 ====================
 
@@ -460,6 +460,15 @@ impl Database {
                         "rich_text" => {
                             render_rich_text(elem, paper_size, &mut lines);
                         }
+                        "solar_term" => {
+                            render_solar_term(elem, paper_size, &mut lines);
+                        }
+                        "chef_message" => {
+                            render_chef_message(elem, paper_size, &mut lines);
+                        }
+                        "riddle" => {
+                            render_riddle(elem, paper_size, &mut lines);
+                        }
                         _ => {}
                     }
                 }
@@ -809,6 +818,155 @@ fn render_character_collect(elem: &serde_json::Value, data: &serde_json::Value, 
         lines.push(format!("  → {}", prize));
     }
     lines.push("─".repeat(width));
+}
+
+// ── S2 新组件静态资源 ────────────────────────────────────────────────────────
+
+// 24节气：(月, 日范围起, 名称, 主题文案, 推荐语)
+// 月份从1开始，日期区间取节气前后约7天
+static SOLAR_TERMS: &[(u32, u32, u32, &str, &str, &str)] = &[
+    (1, 5, 8,   "小寒", "小寒已至，寒气渐深。", "今日推荐：暖心热汤，驱寒养胃。"),
+    (1, 19, 22, "大寒", "大寒岁末，寒意最浓。", "今日推荐：滋补靓汤，暖身御寒。"),
+    (2, 3, 6,   "立春", "立春一至，万象更新。", "今日推荐：时令鲜蔬，迎接新春。"),
+    (2, 18, 21, "雨水", "雨水滋润，春意渐浓。", "今日推荐：清淡食材，滋养脾胃。"),
+    (3, 5, 8,   "惊蛰", "惊蛰春雷，万物复苏。", "今日推荐：春笋鲜菜，清肠排毒。"),
+    (3, 20, 23, "春分", "春分昼夜，阴阳调和。", "今日推荐：营养均衡，顺应时令。"),
+    (4, 4, 7,   "清明", "清明时节，慎终追远。", "今日推荐：青团糍粑，清淡养生。"),
+    (4, 19, 22, "谷雨", "谷雨茶香，春末将至。", "今日推荐：新茶配点心，清雅怡人。"),
+    (5, 5, 8,   "立夏", "立夏已到，暑气渐升。", "今日推荐：清凉饮品，消暑解渴。"),
+    (5, 20, 23, "小满", "小满时节，麦粒初熟。", "今日推荐：杂粮主食，健脾养胃。"),
+    (6, 5, 8,   "芒种", "芒种忙碌，夏日渐盛。", "今日推荐：冷饮冰品，清凉解暑。"),
+    (6, 21, 24, "夏至", "夏至阳极，昼长夜短。", "今日推荐：冰饮甜品，清热解暑。"),
+    (7, 7, 10,  "小暑", "小暑伏天，暑热渐盛。", "今日推荐：清凉食材，防暑降温。"),
+    (7, 22, 25, "大暑", "大暑酷热，一年最热。", "今日推荐：绿豆冰饮，消暑开胃。"),
+    (8, 7, 10,  "立秋", "立秋一至，暑退秋来。", "今日推荐：秋梨润肺，养阴生津。"),
+    (8, 22, 25, "处暑", "处暑暑退，秋意渐起。", "今日推荐：滋阴润燥，应对秋燥。"),
+    (9, 7, 10,  "白露", "白露秋深，露水初凝。", "今日推荐：润肺食材，养生防燥。"),
+    (9, 22, 25, "秋分", "秋分昼夜，天高气爽。", "今日推荐：时令海鲜，鲜美当季。"),
+    (10, 8, 11, "寒露", "寒露秋深，晨露渐寒。", "今日推荐：温热食物，驱散寒意。"),
+    (10, 23, 26,"霜降", "霜降秋末，万物收藏。", "今日推荐：滋补食材，为冬储能。"),
+    (11, 7, 10, "立冬", "立冬已至，寒冬将临。", "今日推荐：炖汤暖锅，抵御寒冬。"),
+    (11, 22, 25,"小雪", "小雪初降，寒意渐深。", "今日推荐：热腾火锅，暖胃暖心。"),
+    (12, 7, 10, "大雪", "大雪纷飞，严冬正盛。", "今日推荐：暖锅热汤，驱寒暖身。"),
+    (12, 21, 24,"冬至", "冬至阳生，一阳来复。", "今日推荐：饺子汤圆，阖家团圆。"),
+];
+
+fn render_solar_term(elem: &serde_json::Value, paper_size: &str, lines: &mut Vec<String>) {
+    let now = chrono::Local::now();
+    let month = now.month();
+    let day = now.day();
+    let width = if paper_size == "58mm" { 32 } else { 48 };
+
+    let term = SOLAR_TERMS.iter().find(|(m, d_start, d_end, ..)| {
+        *m == month && day >= *d_start && day <= *d_end
+    });
+
+    let show_all = elem["show_all"].as_bool().unwrap_or(false);
+
+    if let Some((_, _, _, name, theme, recommend)) = term {
+        let dash = "─".repeat(width);
+        lines.push(dash.clone());
+        lines.push(format!("  ✦ 节气 · {} ✦", name));
+        lines.push(theme.to_string());
+        lines.push(recommend.to_string());
+        lines.push(dash);
+    } else if show_all {
+        // 不在任何节气期间，显示当前月份的节气提示
+        let upcoming = SOLAR_TERMS.iter().find(|(m, ..)| *m == month || *m == month % 12 + 1);
+        if let Some((_, _, _, name, _, _)) = upcoming {
+            let dash = "─".repeat(width);
+            lines.push(dash.clone());
+            lines.push(format!("  下一个节气：{}", name));
+            lines.push(dash);
+        }
+    }
+    // 不在节气期间且 show_all=false 时，静默跳过（不输出任何内容）
+}
+
+// 内置谜语库（20条）+ 店家可在 config 中添加
+static BUILTIN_RIDDLES: &[(&str, &str)] = &[
+    ("身穿白大褂，不是医生帮，你吃它肉，它喝你汤。", "豆腐"),
+    ("生在山上，卖到山下，一到家里，就受刀斧。", "柴火"),
+    ("麻屋子，红帐子，里面睡个白胖子。", "花生"),
+    ("远看似座山，近看似朵花，吃饭要用它，洗碗也用它。", "猪"),
+    ("金箱子，银箱子，打开是个宝贝子。", "鸡蛋"),
+    ("身穿绿衣裳，肚里水汪汪，生的子儿多，个个黑脸膛。", "西瓜"),
+    ("头戴红帽子，身穿白袍子，走路摆架子，说话伸脖子。", "鹅"),
+    ("有眼看不见，有嘴说不出，一生辛苦做，人人都感谢。", "针"),
+    ("一个老头走山坡，走一步，退两步。", "蜗牛"),
+    ("一条长虫子，有嘴没眼睛，天天流眼泪，心里不伤心。", "蜡烛"),
+    ("千根线，万根线，落到水里看不见。", "雨"),
+    ("一棵大树开白花，花谢结果不离家，打开来一看，里边全是宝。", "棉花"),
+    ("白白胖胖圆溜溜，冬天躲在地里头，不怕寒冷不怕霜，春来破土往上蹿。", "萝卜"),
+    ("生得白嫩嫩，裹着绿衣裳，长大离娘去，漂洋过了海。", "蒜"),
+    ("一个铜锣响，一个铜锣哑，两个铜锣合在一起打。", "蛤蜊"),
+    ("千锤百炼出深山，烈火焚身若等闲，粉身碎骨全不怕，要留清白在人间。", "石灰"),
+    ("开门似个山，关门似弦弓，上面毛茸茸，下面红彤彤。", "嘴"),
+    ("远看山有色，近听水无声，春去花还在，人来鸟不惊。", "画"),
+    ("你走它也走，你停它也停，你进房间里，它站门外等。", "鞋"),
+    ("有时落在山腰，有时挂在树梢，有时像圆盘，有时像镰刀。", "月亮"),
+];
+
+fn render_riddle(elem: &serde_json::Value, paper_size: &str, lines: &mut Vec<String>) {
+    let width = if paper_size == "58mm" { 32 } else { 48 };
+    let prize = elem["prize"].as_str().unwrap_or("下次来店说出答案，赢取小惊喜！");
+
+    // 自定义谜语优先，没有则从内置库随机选
+    let (question, _answer) = if let (Some(q), Some(a)) = (elem["question"].as_str(), elem["answer"].as_str()) {
+        (q, a)
+    } else {
+        let seed = creative_fortune_seed("daily", None, None, &chrono::Local::now().format("%Y-%m-%d").to_string());
+        BUILTIN_RIDDLES[(seed as usize) % BUILTIN_RIDDLES.len()]
+    };
+
+    let dash = "─".repeat(width);
+    lines.push(dash.clone());
+    lines.push("  🤔 今日谜语".to_string());
+    // 换行显示谜面（超过 width-4 字符时自动断行）
+    let max_chars = (width - 4).max(10);
+    let mut q = question;
+    while !q.is_empty() {
+        let take: usize = q.char_indices().nth(max_chars).map(|(i, _)| i).unwrap_or(q.len());
+        lines.push(format!("  {}", &q[..take]));
+        q = &q[take..];
+    }
+    lines.push(format!("  → {}", prize));
+    lines.push("  答案下次来告诉我们！".to_string());
+    lines.push(dash);
+}
+
+fn render_chef_message(elem: &serde_json::Value, paper_size: &str, lines: &mut Vec<String>) {
+    let width = if paper_size == "58mm" { 32 } else { 48 };
+
+    // messages 是数组，按星期循环（周一=0）
+    let messages = elem["messages"].as_array();
+    let default_msgs = ["今天的食材格外新鲜，用心为您烹饪。",
+                        "感谢光临，愿每一口都让您满意。",
+                        "好食材，慢火候，是我们对美食的承诺。",
+                        "今日特别推荐，请向店员询问。",
+                        "周末快乐！今天让我们为您做最好的一道菜。",
+                        "感恩有您，是您让这里变得温暖。",
+                        "新的一周，新的心情，祝您用餐愉快！"];
+
+    let msg = if let Some(msgs) = messages {
+        let weekday = chrono::Local::now().weekday().num_days_from_monday() as usize;
+        msgs.get(weekday % msgs.len())
+            .and_then(|v| v.as_str())
+            .unwrap_or(default_msgs[weekday % default_msgs.len()])
+    } else {
+        let weekday = chrono::Local::now().weekday().num_days_from_monday() as usize;
+        default_msgs[weekday % default_msgs.len()]
+    };
+
+    let title = elem["title"].as_str().unwrap_or("厨师寄语");
+    let author = elem["author"].as_str().unwrap_or("本店厨师");
+
+    let dash = "─".repeat(width);
+    lines.push(dash.clone());
+    lines.push(format!("  👨‍🍳 {}", title));
+    lines.push(format!("  {}", msg));
+    lines.push(format!("  — {}", author));
+    lines.push(dash);
 }
 
 fn render_rich_text(elem: &serde_json::Value, paper_size: &str, lines: &mut Vec<String>) {

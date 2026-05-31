@@ -22,27 +22,34 @@ export type PrintElement = Record<string, unknown> & { type: string };
 export const ELEMENT_CATEGORIES = [
   {
     label: "基本", items: [
-      { type: "text", label: "文字", defaultConfig: { type: "text", content: "文字內容", align: "left", bold: false, size: "normal" } },
-      { type: "separator", label: "分隔線", defaultConfig: { type: "separator" } },
+      { type: "text", label: "文字", defaultConfig: { type: "text", content: "文字内容", align: "left", bold: false, size: "normal" } },
+      { type: "separator", label: "分隔线", defaultConfig: { type: "separator" } },
       { type: "blank_lines", label: "空行", defaultConfig: { type: "blank_lines", count: 1 } },
-      { type: "items", label: "菜品明細", defaultConfig: { type: "items" } },
+      { type: "items", label: "菜品明细", defaultConfig: { type: "items" } },
     ]
   },
   {
-    label: "創意", items: [
-      { type: "fortune", label: "今日運勢", defaultConfig: { type: "fortune", seed_strategy: "per_table" } },
-      { type: "quote", label: "今日語錄", defaultConfig: { type: "quote", language: "multilingual" } },
-      { type: "art", label: "藝術圖塊", defaultConfig: { type: "art", variant: "random" } },
-      { type: "image_block", label: "圖像佔位", defaultConfig: { type: "image_block" } },
+    label: "创意", items: [
+      { type: "fortune", label: "今日运势", defaultConfig: { type: "fortune", seed_strategy: "per_table" } },
+      { type: "quote", label: "今日语录", defaultConfig: { type: "quote", language: "multilingual" } },
+      { type: "art", label: "艺术图块", defaultConfig: { type: "art", variant: "random" } },
+      { type: "image_block", label: "图像占位", defaultConfig: { type: "image_block" } },
     ]
   },
   {
-    label: "行銷", items: [
-      { type: "discount_coupon", label: "折價券", defaultConfig: { type: "discount_coupon", discount_type: "percent", value: 9, condition: "", valid_days: 30, label: "下次消費享折扣" } },
-      { type: "product_spotlight", label: "新品介紹", defaultConfig: { type: "product_spotlight", title: "本週新品", name: "", description: "", price: 0, badge: "NEW" } },
-      { type: "qr_code", label: "QR 碼", defaultConfig: { type: "qr_code", url: "", label: "掃碼加入 VIP 群", size: 5 } },
-      { type: "character_collect", label: "集字兌獎", defaultConfig: { type: "character_collect", game_name: "集字兌獎", characters: ["恭", "喜", "發", "財"], prize: "集齊四字兌換免費飲品", seed_strategy: "per_order", style: "box" } },
-      { type: "rich_text", label: "富文本", defaultConfig: { type: "rich_text", content: "## 今日特惠\n- 項目一\n- 項目二" } },
+    label: "行销", items: [
+      { type: "discount_coupon", label: "折价券", defaultConfig: { type: "discount_coupon", discount_type: "percent", value: 9, condition: "", valid_days: 30, label: "下次消费享折扣" } },
+      { type: "product_spotlight", label: "新品介绍", defaultConfig: { type: "product_spotlight", title: "本周新品", name: "", description: "", price: 0, badge: "NEW" } },
+      { type: "qr_code", label: "QR码", defaultConfig: { type: "qr_code", url: "", label: "扫码加入VIP群", size: 5 } },
+      { type: "character_collect", label: "集字兑奖", defaultConfig: { type: "character_collect", game_name: "集字兑奖", characters: ["恭", "喜", "发", "财"], prize: "集齐四字兑换免费饮品", seed_strategy: "per_order", style: "box" } },
+      { type: "rich_text", label: "富文本", defaultConfig: { type: "rich_text", content: "## 今日特惠\n- 项目一\n- 项目二" } },
+    ]
+  },
+  {
+    label: "情境", items: [
+      { type: "solar_term", label: "节气主题", defaultConfig: { type: "solar_term", show_all: false } },
+      { type: "chef_message", label: "厨师寄语", defaultConfig: { type: "chef_message", title: "厨师寄语", author: "本店厨师", messages: [] } },
+      { type: "riddle", label: "谜语挑战", defaultConfig: { type: "riddle", prize: "下次来店说出答案，赢取小惊喜！" } },
     ]
   },
 ];
@@ -65,16 +72,19 @@ export function getElementSummary(elem: PrintElement): string {
     case "text": return String(elem.content ?? "").slice(0, 30) || "(空)";
     case "separator": return "──────";
     case "blank_lines": return `${elem.count ?? 1} 行空白`;
-    case "items": return "訂單菜品明細";
-    case "fortune": return `運勢 (${elem.seed_strategy ?? "daily"})`;
-    case "quote": return `語錄 (${elem.language ?? "multilingual"})`;
-    case "art": return `ASCII 藝術 (${elem.variant ?? "random"})`;
-    case "image_block": return "圖像佔位";
+    case "items": return "订单菜品明细";
+    case "fortune": return `运势 (${elem.seed_strategy ?? "daily"})`;
+    case "quote": return `语录 (${elem.language ?? "multilingual"})`;
+    case "art": return `ASCII 艺术 (${elem.variant ?? "random"})`;
+    case "image_block": return "图像占位";
     case "discount_coupon": return `${elem.discount_type === "amount" ? `立減${elem.value}元` : `${elem.value}% off`}，${elem.valid_days}天有效`;
-    case "product_spotlight": return String(elem.name || elem.title || "新品介紹");
+    case "product_spotlight": return String(elem.name || elem.title || "新品介绍");
     case "qr_code": return String(elem.label || elem.url || "QR Code");
     case "character_collect": return `${elem.game_name} — ${(elem.characters as string[] | undefined)?.join("") ?? ""}`;
     case "rich_text": return String(elem.content ?? "").split("\n")[0].replace(/^#+\s*/, "").slice(0, 30);
+    case "solar_term": return "节气期间自动显示主题文案";
+    case "chef_message": return `${String(elem.title ?? "厨师寄语")} · ${(elem.messages as string[] | undefined)?.length ?? 0}条自定义`;
+    case "riddle": return `今日谜语 → ${String(elem.prize ?? "赢取小惊喜")}`;
     default: return elem.type;
   }
 }
@@ -635,7 +645,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
           {editingElem && (
             <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
               {editingElem.type === "text" && (<>
-                <div><Label className="text-xs">文字內容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={3} className="font-mono text-xs mt-1" /></div>
+                <div><Label className="text-xs">文字内容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={3} className="font-mono text-xs mt-1" /></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><Label className="text-xs">對齊</Label>
                     <Select value={String(editingElem.align ?? "left")} onValueChange={v => setEditingElem({ ...editingElem, align: v })}>
@@ -721,10 +731,26 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 </div>
               </>)}
               {editingElem.type === "rich_text" && (
-                <div><Label className="text-xs">Markdown 內容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={8} className="font-mono text-xs mt-1" placeholder={"## 標題\n- 項目一\n- 項目二\n> 引用文字"} /></div>
+                <div><Label className="text-xs">Markdown内容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={8} className="font-mono text-xs mt-1" placeholder={"## 标题\n- 项目一\n- 项目二\n> 引用文字"} /></div>
               )}
+              {editingElem.type === "solar_term" && (<>
+                <p className="text-xs text-muted-foreground">节气期间（前后约7天）自动显示对应主题文案，不在节气期间时不显示。</p>
+                <div className="flex items-center gap-2"><input type="checkbox" checked={!!editingElem.show_all} onChange={e => setEditingElem({ ...editingElem, show_all: e.target.checked })} id="solar-show-all" /><Label htmlFor="solar-show-all" className="text-xs">不在节气期间时也显示"下一个节气"提示</Label></div>
+              </>)}
+              {editingElem.type === "chef_message" && (<>
+                <div><Label className="text-xs">标题</Label><Input value={String(editingElem.title ?? "厨师寄语")} onChange={e => setEditingElem({ ...editingElem, title: e.target.value })} className="h-8 text-xs mt-1" /></div>
+                <div><Label className="text-xs">署名（显示在消息末尾）</Label><Input value={String(editingElem.author ?? "本店厨师")} onChange={e => setEditingElem({ ...editingElem, author: e.target.value })} className="h-8 text-xs mt-1" placeholder="例：张师傅" /></div>
+                <div><Label className="text-xs">每日消息（每行一条，留空使用内置默认，按星期循环最多7条）</Label>
+                  <Textarea value={(editingElem.messages as string[] | undefined)?.join("\n") ?? ""} onChange={e => setEditingElem({ ...editingElem, messages: e.target.value.split("\n").map(s => s.trim()).filter(Boolean) })} rows={7} className="text-xs mt-1" placeholder={"周一：今天的食材格外新鲜...\n周二：感谢光临，用心烹饪...\n（最多7条，按星期轮播）"} /></div>
+              </>)}
+              {editingElem.type === "riddle" && (<>
+                <p className="text-xs text-muted-foreground">留空使用内置谜语库（每日随机），或自定义谜题和答案。</p>
+                <div><Label className="text-xs">自定义谜题（选填，留空用内置库）</Label><Textarea value={String(editingElem.question ?? "")} onChange={e => setEditingElem({ ...editingElem, question: e.target.value || undefined })} rows={2} className="text-xs mt-1" placeholder="输入谜题..." /></div>
+                <div><Label className="text-xs">答案（收据上不显示，仅供核对）</Label><Input value={String(editingElem.answer ?? "")} onChange={e => setEditingElem({ ...editingElem, answer: e.target.value || undefined })} className="h-8 text-xs mt-1" placeholder="谜底..." /></div>
+                <div><Label className="text-xs">兑奖说明（显示在谜题下方）</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" placeholder="下次来店说出答案，赢取小惊喜！" /></div>
+              </>)}
               {["separator", "items", "art", "image_block"].includes(editingElem.type) && (
-                <p className="text-sm text-muted-foreground py-2">此元件無需額外配置。</p>
+                <p className="text-sm text-muted-foreground py-2">此元件无需额外配置。</p>
               )}
             </div>
           )}

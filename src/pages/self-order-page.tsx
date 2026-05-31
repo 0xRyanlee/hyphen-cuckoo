@@ -331,6 +331,53 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
           );
         }
 
+        if (elem.type === "solar_term") {
+          // Show solar term theme if we have one for today — simplistic frontend version
+          const now = new Date();
+          const m = now.getMonth() + 1, d = now.getDate();
+          const terms: [number, number, number, string, string][] = [
+            [1, 5, 8, "小寒", "小寒已至，寒气渐深，暖身御寒。"],
+            [1, 19, 22, "大寒", "大寒岁末，滋补靓汤，暖身御寒。"],
+            [2, 3, 6, "立春", "立春一至，万象更新，时令鲜蔬。"],
+            [6, 21, 24, "夏至", "夏至阳极，冰饮甜品，清热解暑。"],
+            [7, 22, 25, "大暑", "大暑酷热，绿豆冰饮，消暑开胃。"],
+            [12, 21, 24, "冬至", "冬至阳生，饺子汤圆，阖家团圆。"],
+          ];
+          const term = terms.find(([tm, ds, de]) => tm === m && d >= ds && d <= de);
+          if (!term) return null;
+          return (
+            <div key={i} className="w-full rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 p-4 text-center shadow-sm">
+              <div className="text-xs text-green-600 mb-1">✦ 节气</div>
+              <div className="text-2xl font-bold text-green-800 mb-1">{term[3]}</div>
+              <div className="text-sm text-green-700">{term[4]}</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "chef_message") {
+          const msgs = (elem.messages as string[] | undefined) ?? [];
+          const defaultMsgs = ["今天的食材格外新鲜，用心为您烹饪。","感谢光临，愿每一口都让您满意。","好食材，慢火候，是我们的承诺。"];
+          const weekday = new Date().getDay();
+          const msg = msgs.length > 0 ? msgs[weekday % msgs.length] : defaultMsgs[weekday % defaultMsgs.length];
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 shadow-sm">
+              <div className="text-xs text-gray-400 mb-1">👨‍🍳 {String(elem.title ?? "厨师寄语")}</div>
+              <div className="text-sm text-gray-700 leading-relaxed">{msg}</div>
+              <div className="text-xs text-gray-400 mt-1 text-right">— {String(elem.author ?? "本店厨师")}</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "riddle") {
+          return (
+            <div key={i} className="w-full rounded-2xl bg-amber-50 border border-amber-200 p-4 shadow-sm">
+              <div className="text-xs text-amber-600 mb-2">🤔 今日谜语</div>
+              <div className="text-sm text-amber-800 font-medium">谜题已印在收据上，回店说出答案即可兑奖！</div>
+              <div className="text-xs text-amber-600 mt-1">{String(elem.prize ?? "下次来店说出答案，赢取小惊喜！")}</div>
+            </div>
+          );
+        }
+
         return null;
       })}
     </div>
