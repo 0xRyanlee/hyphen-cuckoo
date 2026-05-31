@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Package, ChefHat, ShoppingCart, TrendingUp, AlertTriangle, BarChart3, Calendar, Trophy, Clock } from "lucide-react";
+import { Package, ChefHat, ShoppingCart, TrendingUp, AlertTriangle, BarChart3, Calendar, Trophy, Clock, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, PieChart, Pie, Cell } from "recharts";
 
@@ -43,6 +43,7 @@ loading = false,
 }: DashboardProps) {
   const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "all">("today");
   const [todayTopItems, setTodayTopItems] = useState<[string, number, number, number][]>([]);
+  const [marketingStats, setMarketingStats] = useState<{ redemptions_today: number; coupons_issued_today: number; coupons_redeemed_today: number } | null>(null);
   const LOW_STOCK_THRESHOLD = 10;
   const lowStockItems = inventorySummary.filter((s) => s.available_qty < LOW_STOCK_THRESHOLD);
 
@@ -57,6 +58,8 @@ loading = false,
     invoke<[string, number, number, number][]>("get_top_selling_items", { startDate: todayStr, endDate: todayStr, limit: 5 })
       .then((items) => setTodayTopItems(items))
       .catch(() => {});
+    invoke<{ redemptions_today: number; coupons_issued_today: number; coupons_redeemed_today: number }>("get_marketing_stats_today")
+      .then(setMarketingStats).catch(() => {});
   }, [todayStr]);
 
   const filteredOrders = orders.filter((o) => {
@@ -407,6 +410,40 @@ loading = false,
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 行销效果日报 */}
+      {marketingStats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-500" />今日行销效果
+            </CardTitle>
+            <CardDescription>兑奖次数与折价券核销</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="rounded-lg border p-3 text-center">
+                <div className="text-2xl font-bold text-amber-600">{marketingStats.redemptions_today}</div>
+                <div className="text-xs text-muted-foreground mt-1">今日兑奖次数</div>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <div className="text-2xl font-bold text-blue-600">{marketingStats.coupons_issued_today}</div>
+                <div className="text-xs text-muted-foreground mt-1">折价券发放</div>
+              </div>
+              <div className="rounded-lg border p-3 text-center">
+                <div className="text-2xl font-bold text-green-600">{marketingStats.coupons_redeemed_today}</div>
+                <div className="text-xs text-muted-foreground mt-1">折价券核销</div>
+              </div>
+            </div>
+            {marketingStats.coupons_issued_today > 0 && (
+              <div className="mt-3 text-xs text-muted-foreground text-center">
+                核销率 {Math.round(marketingStats.coupons_redeemed_today / marketingStats.coupons_issued_today * 100)}%
+                　·　前往<a href="#/marketing" className="text-primary underline ml-1">行销中心</a>查看兑奖记录
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

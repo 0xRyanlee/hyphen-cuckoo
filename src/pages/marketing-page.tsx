@@ -284,7 +284,7 @@ export function MarketingPage() {
       } else {
         await invoke("create_print_template", {
           req: {
-            name: "自助點單行銷彈窗",
+            name: "自助点单行销弹窗",
             template_type: "marketing_popup",
             paper_size: "58mm",
             content,
@@ -308,7 +308,7 @@ export function MarketingPage() {
             <Zap className="h-5 w-5 text-amber-500" />行銷中心
           </h1>
           <p className="text-sm text-muted-foreground">
-            統一管理收据、厨房單、自助點單确认頁的行銷元件
+            統一管理收据、厨房单、自助点单确认页的行销元件
           </p>
         </div>
         <Button onClick={savePopupTemplate} disabled={saving} size="sm">
@@ -320,7 +320,7 @@ export function MarketingPage() {
         <Tabs defaultValue="popup">
           <TabsList className="mb-6">
             <TabsTrigger value="popup" className="gap-1.5">
-              <Smartphone className="h-3.5 w-3.5" />自助點單彈窗
+              <Smartphone className="h-3.5 w-3.5" />自助点单弹窗
             </TabsTrigger>
             <TabsTrigger value="receipt" className="gap-1.5">
               <Printer className="h-3.5 w-3.5" />收据 / 厨房单
@@ -346,7 +346,7 @@ export function MarketingPage() {
               </CardHeader>
               <CardContent>
                 <SurfacePanel
-                  title="自助點單行銷彈窗"
+                  title="自助点单行销弹窗"
                   icon={<Smartphone className="h-4 w-4 text-blue-500" />}
                   description="顧客下單成功後彈出，截圖友善，支援 Web Share API 分享"
                   elements={popupElements}
@@ -391,13 +391,13 @@ export function MarketingPage() {
           <TabsContent value="guide">
             <div className="space-y-4">
               {[
-                { type: "fortune", title: "今日运势", desc: "大吉 / 中吉 / 小吉，每單唯一（per_order）或全桌同運（per_table）。心理學正強化，讓顧客以好心情结束用餐。" },
+                { type: "fortune", title: "今日运势", desc: "大吉 / 中吉 / 小吉，每单唯一（per_order）或全桌同运（per_table）。心理学正强化，让顾客以好心情结束用餐。" },
                 { type: "character_collect", title: "集字兑奖", desc: "每張收据/确认頁抽一個字，顧客截圖保存，集齊指定字組可兑换。截圖即憑據，一單一次，天然防偽。" },
                 { type: "quote", title: "今日语录 / 诗句", desc: "中文古典詩詞、日文俳句、英文 Instagram 感短句輪替，增加收据可拍照性。" },
-                { type: "art", title: "颜文字 / ASCII 藝術", desc: "復古 BBS 點陣感圖塊，( ˘◡˘ )♪ ʕ•ᴥ•ʔ ✿ 等，每天隨機選一組，增加趣味性。" },
+                { type: "art", title: "颜文字 / ASCII 艺术", desc: "复古 BBS 点阵感图块，( ˘◡˘ )♪ ʕ•ᴥ•ʔ ✿ 等，每天随机选一组，增加趣味性。" },
                 { type: "discount_coupon", title: "折價券", desc: "動態生成订单唯一碼（12 hex），印在收据上，下次消費出示。適合做回頭客促銷。" },
-                { type: "product_spotlight", title: "新品介绍", desc: "在收据尾部展示本周新品，引導顧客下次嘗試。" },
-                { type: "qr_code", title: "QR 碼", desc: "掃碼加群、加好友、關注公眾號，ESC/POS 原生 QR 指令，無需額外硬件。" },
+                { type: "product_spotlight", title: "新品介绍", desc: "在收据尾部展示本周新品，引导顾客下次尝试。" },
+                { type: "qr_code", title: "QR 碼", desc: "扫码加群、加好友、关注公众号，ESC/POS 原生 QR 指令，无需额外硬件。" },
                 { type: "rich_text", title: "富文本", desc: "Markdown 格式：## 標題、- 清單、> 引用。可做活動說明、集字規則等。" },
               ].map(item => (
                 <Card key={item.type}>

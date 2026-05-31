@@ -288,7 +288,7 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
 
         if (elem.type === "character_collect") {
           const chars = (elem.characters as string[] | undefined) ?? ["恭","喜","發","財"];
-          const prize = (elem.prize as string) ?? "集齊兌換免費飲品";
+          const prize = (elem.prize as string) ?? "集齐兑换免费饮品";
           const idx = seed % chars.length;
           return (
             <div key={i} className="w-full rounded-2xl bg-white border-2 border-orange-200 p-5 text-center shadow-sm">

@@ -1396,6 +1396,8 @@ mod tests {
         if items.len() < 2 { return; }
 
         for item in &items[..2.min(items.len())] {
+            // 1s sleep ensures unique time-based order_no (order_no = datetime+random, same-second creates UNIQUE conflict)
+            std::thread::sleep(std::time::Duration::from_millis(1100));
             let (order_id, _) = db.create_order("POS", "外賣", None).unwrap();
             let orders = db.get_orders(1000, 0).unwrap();
             let order = orders.iter().find(|o| o.id == order_id).unwrap();
