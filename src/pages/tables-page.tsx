@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Plus, Edit2, Trash2, QrCode, Download, Copy } from "lucide-react";
+import { Plus, Edit2, Trash2, QrCode, Download, Copy, RefreshCw } from "lucide-react";
 import type { RestaurantTable } from "@/types";
 
 interface WebServerStatus {
@@ -34,11 +34,10 @@ function TableQrDialog({ table, baseUrl, onClose }: TableQrDialogProps) {
   const tableUrl = `${baseUrl}/#/table/${encodeURIComponent(table.table_no)}`;
 
   const handleDownload = () => {
-    // The QRCodeCanvas renders into a canvas; grab it by ID
     const canvas = document.getElementById(`qr-canvas-${table.id}`) as HTMLCanvasElement | null;
     if (!canvas) return;
     const link = document.createElement("a");
-    link.download = `QR-桌${table.table_no}.png`;
+    link.download = `二维码-桌${table.table_no}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   };
@@ -48,7 +47,7 @@ function TableQrDialog({ table, baseUrl, onClose }: TableQrDialogProps) {
       <DialogContent className="max-w-xs">
         <DialogHeader>
           <DialogTitle>
-            {table.label ?? `桌 ${table.table_no}`} QR Code
+            {table.label ?? `桌 ${table.table_no}`} 扫码点单
           </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-2">
@@ -71,15 +70,15 @@ function TableQrDialog({ table, baseUrl, onClose }: TableQrDialogProps) {
               size="sm"
               onClick={() => {
                 navigator.clipboard.writeText(tableUrl);
-                toast.success("已複製連結");
+                toast.success("已复制链接");
               }}
             >
               <Copy className="h-3.5 w-3.5 mr-1.5" />
-              複製
+              复制
             </Button>
             <Button className="flex-1" size="sm" onClick={handleDownload}>
               <Download className="h-3.5 w-3.5 mr-1.5" />
-              下載 PNG
+              下载图片
             </Button>
           </div>
         </div>
@@ -103,7 +102,7 @@ function TableFormDialog({ initial, onSave, onClose }: TableFormDialogProps) {
 
   const handleSave = async () => {
     if (!tableNo.trim()) {
-      toast.error("桌號不能為空");
+      toast.error("桌号不能为空");
       return;
     }
     setSaving(true);
@@ -121,11 +120,11 @@ function TableFormDialog({ initial, onSave, onClose }: TableFormDialogProps) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{initial ? "編輯餐桌" : "新增餐桌"}</DialogTitle>
+          <DialogTitle>{initial ? "编辑餐桌" : "添加餐桌"}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>桌號 *</Label>
+            <Label>桌号 *</Label>
             <Input
               placeholder="例：A1、01、VIP"
               value={tableNo}
@@ -133,15 +132,15 @@ function TableFormDialog({ initial, onSave, onClose }: TableFormDialogProps) {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>顯示名稱（選填）</Label>
+            <Label>显示名称（选填）</Label>
             <Input
-              placeholder="例：窗邊桌、包廂"
+              placeholder="例：靠窗桌、包厢"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label>排序號</Label>
+            <Label>排序号</Label>
             <Input
               type="number"
               value={sortNo}
@@ -150,7 +149,7 @@ function TableFormDialog({ initial, onSave, onClose }: TableFormDialogProps) {
             />
           </div>
           <div className="flex items-center justify-between">
-            <Label htmlFor="table-active-switch">啟用</Label>
+            <Label htmlFor="table-active-switch">启用</Label>
             <Switch
               id="table-active-switch"
               checked={isActive}
@@ -163,7 +162,7 @@ function TableFormDialog({ initial, onSave, onClose }: TableFormDialogProps) {
             取消
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            儲存
+            保存
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -214,7 +213,7 @@ export function TablesPage() {
       isActive,
       sortNo,
     });
-    toast.success(`桌號 ${tableNo} 已新增`);
+    toast.success(`桌号 ${tableNo} 已添加`);
     load();
   };
 
@@ -237,10 +236,10 @@ export function TablesPage() {
   };
 
   const handleDelete = async (table: RestaurantTable) => {
-    if (!confirm(`確定刪除桌號 ${table.table_no}？`)) return;
+    if (!confirm(`确定删除桌号 ${table.table_no}？`)) return;
     try {
       await invoke("delete_restaurant_table", { id: table.id });
-      toast.success("已刪除");
+      toast.success("已删除");
       load();
     } catch (e) {
       toast.error(String(e));
@@ -252,12 +251,18 @@ export function TablesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">餐桌管理</h2>
-          <p className="text-sm text-muted-foreground">管理桌號、生成自助點單 QR Code</p>
+          <p className="text-sm text-muted-foreground">管理桌号，生成扫码点单二维码</p>
         </div>
-        <Button onClick={() => setShowAdd(true)} size="sm">
-          <Plus className="h-4 w-4 mr-1.5" />
-          新增餐桌
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={load}>
+            <RefreshCw className="h-4 w-4 mr-1.5" />
+            刷新
+          </Button>
+          <Button onClick={() => setShowAdd(true)} size="sm">
+            <Plus className="h-4 w-4 mr-1.5" />
+            添加餐桌
+          </Button>
+        </div>
       </div>
 
       {/* Web server status banner */}
@@ -265,7 +270,7 @@ export function TablesPage() {
         <Card className="border-amber-300 dark:border-amber-700">
           <CardContent className="py-3">
             <p className="text-sm text-amber-700 dark:text-amber-400">
-              Web 服務尚未啟動 — 重新啟動應用程式後 QR Code 連結才能使用。
+              扫码服务未启动 — 重启应用后二维码链接才能使用。
             </p>
           </CardContent>
         </Card>
@@ -274,11 +279,16 @@ export function TablesPage() {
       {webServerStatus.running && webServerStatus.url && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">自助點單入口</CardTitle>
+            <CardTitle className="text-sm">自助点单入口</CardTitle>
             <CardDescription className="text-xs font-mono break-all">
-              {webServerStatus.url}/#/table/桌號
+              {webServerStatus.url}/#/table/桌号
             </CardDescription>
           </CardHeader>
+          <CardContent className="pb-3">
+            <p className="text-xs text-muted-foreground">
+              顾客用手机扫描各桌二维码，即可在自己的手机上浏览菜单并提交订单。
+            </p>
+          </CardContent>
         </Card>
       )}
 
@@ -286,12 +296,12 @@ export function TablesPage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {loading && (
           <p className="text-sm text-muted-foreground col-span-full py-4 text-center">
-            載入中…
+            加载中…
           </p>
         )}
         {!loading && tables.length === 0 && (
           <p className="text-sm text-muted-foreground col-span-full py-4 text-center">
-            尚未建立任何餐桌。點選右上角「新增餐桌」開始設定。
+            还没有餐桌。点击右上角「添加餐桌」开始设置。
           </p>
         )}
         {tables.map((t) => (
@@ -303,7 +313,7 @@ export function TablesPage() {
                     {t.label ? `${t.label}` : `桌 ${t.table_no}`}
                   </p>
                   <p className="text-xs text-muted-foreground font-mono">
-                    桌號：{t.table_no}
+                    桌号：{t.table_no}
                   </p>
                   {!t.is_active && (
                     <Badge variant="secondary" className="mt-1 text-xs">
@@ -316,7 +326,7 @@ export function TablesPage() {
                     size="icon"
                     variant="ghost"
                     className="h-7 w-7"
-                    title="QR Code"
+                    title="生成二维码"
                     disabled={!webServerStatus.running}
                     onClick={() => setQrTable(t)}
                   >

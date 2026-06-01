@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -99,6 +100,7 @@ export function POSPage({
   const [tempNote, setTempNote] = useState("");
   const [clearCartConfirmOpen, setClearCartConfirmOpen] = useState(false);
   const [dineType, setDineType] = useState("dine_in");
+  const [cartSheetOpen, setCartSheetOpen] = useState(false);
 
   const presetModifiers = [
     { modifier_type: "加料", price_delta: 2, qty: 1 },
@@ -349,7 +351,8 @@ export function POSPage({
         </Card>
       </div>
 
-      <Card className="w-96 flex flex-col min-h-0">
+      {/* Desktop cart sidebar — hidden on small screens */}
+      <Card className="hidden md:flex md:w-80 lg:w-96 flex-col min-h-0">
         <CardHeader className="py-3 px-4 flex-shrink-0">
           <CardTitle className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5" />
@@ -511,6 +514,150 @@ export function POSPage({
           </div>
         </div>
       </Card>
+
+      {/* Mobile floating cart button — only shown on small screens */}
+      <div className="md:hidden fixed bottom-6 right-6 z-40">
+        <Button
+          size="lg"
+          className="relative h-14 w-14 rounded-full shadow-xl"
+          onClick={() => setCartSheetOpen(true)}
+        >
+          <ShoppingCart className="h-6 w-6" />
+          {cartCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-bold leading-none">
+              {cartCount > 9 ? "9+" : cartCount}
+            </span>
+          )}
+        </Button>
+      </div>
+
+      {/* Mobile cart sheet */}
+      <Sheet open={cartSheetOpen} onOpenChange={setCartSheetOpen}>
+        <SheetContent side="right" className="flex flex-col p-0 w-80 max-w-[85vw]">
+          <SheetHeader className="px-4 py-3 border-b flex-shrink-0">
+            <SheetTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5" />
+              当前订单
+              {cartCount > 0 && (
+                <Badge variant="default" className="ml-auto mr-8">
+                  {cartCount} 件
+                </Badge>
+              )}
+            </SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="flex-1 px-4 py-3">
+            {cart.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+                <ShoppingCart className="h-12 w-12 opacity-20" />
+                <span className="text-sm">请选择商品</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {cart.map((item, index) => (
+                  <div key={index} className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{item.menu_item.name}</div>
+                        {item.spec && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <Tag className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground">{item.spec.spec_name}</span>
+                          </div>
+                        )}
+                        {item.note && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <MessageSquare className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs text-muted-foreground truncate">{item.note}</span>
+                          </div>
+                        )}
+                        {item.modifiers.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.modifiers.map((mod, mi) => (
+                              <Badge key={mi} variant="outline" className="text-[10px] py-0 h-5">
+                                {mod.modifier_type}
+                                {mod.price_delta !== 0 && ` (${mod.price_delta > 0 ? "+" : ""}${mod.price_delta})`}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-sm font-medium text-primary whitespace-nowrap">
+                          {formatPriceMini(getItemPrice(item) * item.qty)}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => updateQty(index, -1)}>
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <span className="w-5 text-center text-sm font-medium">{item.qty}</span>
+                          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => updateQty(index, 1)}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openNoteDialog(index)}>
+                            <MessageSquare className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openModifierDialog(index)}>
+                            <Tag className="h-3 w-3" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeFromCart(index)}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+          <Separator />
+          <div className="p-4 space-y-3 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">合计</span>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { if (cart.length > 0) setClearCartConfirmOpen(true); }} disabled={cart.length === 0} className="text-muted-foreground hover:text-destructive">
+                  清空
+                </Button>
+                <span className="text-2xl font-bold text-primary">{formatPrice(cartTotal)}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant={dineType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setDineType("dine_in")}>堂食</Button>
+              <Button variant={dineType === "takeout" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setDineType("takeout")}>外带</Button>
+              <Button variant={dineType === "delivery" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setDineType("delivery")}>外送</Button>
+            </div>
+            {dineType === "dine_in" && (
+              <Input
+                placeholder="桌号（可选）"
+                value={tableNo}
+                onChange={(e) => setTableNo(e.target.value)}
+                className="h-9"
+              />
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" className="h-12" onClick={async () => {
+                if (isSubmitting) return;
+                setIsSubmitting(true);
+                try { const ok = await onCreateOrder(cart, dineType, tableNo || null); if (ok) { clearCart(); setCartSheetOpen(false); } }
+                finally { setIsSubmitting(false); }
+              }} disabled={cart.length === 0 || isSubmitting}>
+                暂存
+              </Button>
+              <Button className="h-12 text-base" size="lg" onClick={async () => {
+                if (isSubmitting) return;
+                setIsSubmitting(true);
+                try { const ok = await onCreateAndSubmit(cart, dineType, tableNo || null); if (ok) { clearCart(); setCartSheetOpen(false); } }
+                finally { setIsSubmitting(false); }
+              }} disabled={cart.length === 0 || isSubmitting}>
+                <Send className="mr-2 h-5 w-5" />
+                提交
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={clearCartConfirmOpen} onOpenChange={setClearCartConfirmOpen}>
         <DialogContent>
