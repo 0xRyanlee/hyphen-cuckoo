@@ -2,7 +2,7 @@ use rusqlite::{params, Result};
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 use super::*;
-use chrono::{self, Datelike, Timelike, Weekday};
+use chrono::{self, Datelike};
 
 // ==================== 打印創意模組靜態資源 ====================
 

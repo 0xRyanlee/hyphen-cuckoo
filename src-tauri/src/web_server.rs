@@ -223,12 +223,32 @@ fn dispatch_api(
 
         // Staff scans an order marketing QR → void-on-redeem (public; small-shop
         // trade-off, see research doc — future: gate behind staff PIN)
+        "/api/redeem_requires_pin" => {
+            let store = crate::commands::load_role_auth_store(&ctx.role_auth_path);
+            ("200 OK", format!(r#"{{"required":{}}}"#, !store.pin_hashes.is_empty()))
+        }
+
         "/api/redeem_marketing_qr_token" => {
             let token = v["token"].as_str().unwrap_or("");
             let staff = v["staff_name"].as_str();
+            let pin = v["pin"].as_str().unwrap_or("");
+            let store = crate::commands::load_role_auth_store(&ctx.role_auth_path);
+            if !crate::commands::verify_any_pin(&store, pin) {
+                return ("200 OK", r#"{"ok":false,"reason":"pin_required"}"#.to_string());
+            }
             match db.redeem_marketing_qr_token(token, staff) {
                 Ok(data) => ("200 OK", data.to_string()),
                 Err(e) => ("500 Internal Server Error", json_err(&e.to_string())),
+            }
+        }
+
+        "/api/sign_table_token" => {
+            let table_no = v["table_no"].as_str().unwrap_or("").trim();
+            if table_no.is_empty() {
+                ("400 Bad Request", json_err("table_no required"))
+            } else {
+                let token = crate::qr_token::make_token(&crate::qr_token::table_payload(table_no));
+                ("200 OK", format!(r#"{{"token":{}}}"#, serde_json::Value::String(token)))
             }
         }
 

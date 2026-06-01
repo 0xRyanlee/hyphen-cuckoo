@@ -115,6 +115,15 @@ pub fn verify_pin(pin: &str, stored_hash: &str) -> bool {
     }
 }
 
+/// True if `pin` matches any configured role PIN. 防呆:if no PIN is set at all
+/// (small shop that never configured passwords), redemption is allowed PIN-free.
+pub fn verify_any_pin(store: &RoleAuthStore, pin: &str) -> bool {
+    if store.pin_hashes.is_empty() {
+        return true;
+    }
+    store.pin_hashes.values().any(|h| verify_pin(pin, h))
+}
+
 pub fn load_role_auth_store(path: &std::path::Path) -> RoleAuthStore {
     std::fs::read_to_string(path)
         .ok()
@@ -2483,8 +2492,20 @@ pub fn issue_marketing_qr_token(state: State<AppState>, order_id: i64, component
 }
 
 #[tauri::command]
-pub fn redeem_marketing_qr_token(state: State<AppState>, token: String, staff_name: Option<String>) -> Result<serde_json::Value, String> {
+pub fn redeem_marketing_qr_token(state: State<AppState>, token: String, staff_name: Option<String>, pin: Option<String>) -> Result<serde_json::Value, String> {
+    {
+        let auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
+        if !verify_any_pin(&auth, pin.as_deref().unwrap_or("")) {
+            return Ok(serde_json::json!({ "ok": false, "reason": "pin_required" }));
+        }
+    }
     state.db.redeem_marketing_qr_token(&token, staff_name.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn redeem_requires_pin(state: State<AppState>) -> Result<bool, String> {
+    let auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
+    Ok(!auth.pin_hashes.is_empty())
 }
 
 #[tauri::command]

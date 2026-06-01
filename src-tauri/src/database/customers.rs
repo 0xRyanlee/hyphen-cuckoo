@@ -459,6 +459,7 @@ impl Database {
 
     // ── 行销兑奖追踪 ─────────────────────────────────────────────────────────
 
+    #[allow(dead_code)] // reserved for discount_coupon issuance pipeline (v3.3 W7)
     pub fn record_coupon_issued(&self, order_id: i64, code: &str, discount_type: &str, discount_value: f64, condition_text: Option<&str>, valid_until: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

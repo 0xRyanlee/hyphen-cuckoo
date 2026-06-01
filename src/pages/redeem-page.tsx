@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { call } from "@/lib/transport";
 
@@ -24,12 +24,28 @@ export function RedeemPage() {
   const [result, setResult] = useState<RedeemResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinRequired, setPinRequired] = useState(false);
+  const [pinError, setPinError] = useState(false);
+
+  // Discover whether this shop requires a staff PIN for redemption.
+  useEffect(() => {
+    call<{ required: boolean } | boolean>("redeem_requires_pin", {})
+      .then((r) => setPinRequired(typeof r === "boolean" ? r : r.required))
+      .catch(() => setPinRequired(false));
+  }, []);
 
   async function doRedeem() {
     if (!token) return;
     setLoading(true);
+    setPinError(false);
     try {
-      const r = await call<RedeemResult>("redeem_marketing_qr_token", { token });
+      const r = await call<RedeemResult>("redeem_marketing_qr_token", { token, pin });
+      if (!r.ok && r.reason === "pin_required") {
+        setPinError(true);
+        setLoading(false);
+        return;
+      }
       setResult(r);
       setDone(true);
     } catch (e) {
@@ -48,6 +64,21 @@ export function RedeemPage() {
             <div className="text-4xl mb-3">🎟️</div>
             <p className="text-lg font-bold text-gray-900 mb-1">营销核销</p>
             <p className="text-sm text-gray-500 mb-5">店员确认与顾客出示一致后点击核销</p>
+            {pinRequired && (
+              <div className="mb-4 text-left">
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  placeholder="店员密码"
+                  className={`w-full rounded-xl border px-4 py-3 text-center tracking-widest focus:outline-none focus:ring-2 ${
+                    pinError ? "border-red-400 focus:ring-red-300" : "border-gray-200 focus:ring-orange-300"
+                  }`}
+                />
+                {pinError && <p className="text-xs text-red-500 mt-1 text-center">密码错误，请重试</p>}
+              </div>
+            )}
             <button
               onClick={doRedeem}
               disabled={loading}

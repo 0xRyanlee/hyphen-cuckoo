@@ -378,6 +378,7 @@ pub fn run() {
             commands::resolve_table_token,
             commands::issue_marketing_qr_token,
             commands::redeem_marketing_qr_token,
+            commands::redeem_requires_pin,
             commands::get_marketing_funnel,
             commands::redeem_coupon,
             // Web 伺服器
