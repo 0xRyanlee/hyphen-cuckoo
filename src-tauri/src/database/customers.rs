@@ -359,26 +359,53 @@ impl Database {
     }
 
     pub fn get_marketing_popup_content(&self, order_id: i64, table_no: &str) -> Result<serde_json::Value> {
-        let conn = self.conn.lock().unwrap();
-        // Fetch order_no and created_at for display
-        let (order_no, created_at, amount_total): (String, String, f64) = conn.query_row(
-            "SELECT order_no, strftime('%H:%M', created_at, 'localtime'), COALESCE(amount_total, 0) FROM orders WHERE id = ?1",
-            rusqlite::params![order_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        ).unwrap_or_else(|_| (format!("#{}", order_id), "".to_string(), 0.0));
+        let (order_no, created_at, amount_total, content_json) = {
+            let conn = self.conn.lock().unwrap();
+            let meta: (String, String, f64) = conn.query_row(
+                "SELECT order_no, strftime('%H:%M', created_at, 'localtime'), COALESCE(amount_total, 0) FROM orders WHERE id = ?1",
+                rusqlite::params![order_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            ).unwrap_or_else(|_| (format!("#{}", order_id), "".to_string(), 0.0));
+            let content = conn.query_row(
+                "SELECT content FROM print_templates WHERE template_type = 'marketing_popup' AND is_active = 1 LIMIT 1",
+                [],
+                |r| r.get::<_, String>(0),
+            ).unwrap_or_else(|_| {
+                r#"{"elements":[
+                    {"type":"fortune","seed_strategy":"per_order"},
+                    {"type":"character_collect","game_name":"集字兑奖","characters":["恭","喜","发","财"],"prize":"集齐四字兑换免费饮品","seed_strategy":"per_order","style":"box"},
+                    {"type":"quote","language":"multilingual"}
+                ]}"#.to_string()
+            });
+            (meta.0, meta.1, meta.2, content)
+        }; // conn released before issuing tokens (issue re-locks)
 
-        // Get marketing popup template (type = marketing_popup), create default if absent
-        let content_json = conn.query_row(
-            "SELECT content FROM print_templates WHERE template_type = 'marketing_popup' AND is_active = 1 LIMIT 1",
-            [],
-            |r| r.get::<_, String>(0),
-        ).unwrap_or_else(|_| {
-            r#"{"elements":[
-                {"type":"fortune","seed_strategy":"per_order"},
-                {"type":"character_collect","game_name":"集字兌獎","characters":["恭","喜","發","財"],"prize":"集齊四字兌換免費飲品","seed_strategy":"per_order","style":"box"},
-                {"type":"quote","language":"multilingual"}
-            ]}"#.to_string()
-        });
+        // Inject per-order single-use QR token + backend-computed character into
+        // each character_collect element, so the phone popup and receipt agree on
+        // the same字 and the scan-to-redeem code is bound to this order.
+        let mut parsed: serde_json::Value =
+            serde_json::from_str(&content_json).unwrap_or_else(|_| serde_json::json!({ "elements": [] }));
+        if let Some(elements) = parsed.get_mut("elements").and_then(|e| e.as_array_mut()) {
+            let date_str = chrono::Local::now().format("%Y-%m-%d").to_string();
+            for elem in elements.iter_mut() {
+                if elem.get("type").and_then(|t| t.as_str()) != Some("character_collect") {
+                    continue;
+                }
+                let chars: Vec<String> = elem.get("characters").and_then(|c| c.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                if chars.is_empty() {
+                    continue;
+                }
+                let strategy = elem.get("seed_strategy").and_then(|s| s.as_str()).unwrap_or("per_order");
+                let seed = super::print::creative_fortune_seed(strategy, Some(table_no), Some(order_id), &date_str);
+                let ch = chars[(seed as usize) % chars.len()].clone();
+                if let Ok(token) = self.issue_marketing_qr_token(order_id, "character_collect", &ch) {
+                    elem["qr_token"] = serde_json::json!(token);
+                }
+                elem["picked_char"] = serde_json::json!(ch);
+            }
+        }
 
         Ok(serde_json::json!({
             "order_id": order_id,
@@ -386,7 +413,7 @@ impl Database {
             "table_no": table_no,
             "created_at": created_at,
             "amount_total": amount_total,
-            "template_content": content_json,
+            "template_content": parsed.to_string(),
         }))
     }
 
@@ -513,6 +540,128 @@ impl Database {
             "redemptions_today": redemptions,
             "coupons_issued_today": coupons_issued,
             "coupons_redeemed_today": coupons_redeemed,
+        }))
+    }
+
+    // ==================== QR Token (v2.8.0) ====================
+
+    /// Issues a per-order, single-use marketing QR token (集字类). The same字
+    /// on two receipts yields different tokens; redeeming voids it.
+    pub fn issue_marketing_qr_token(&self, order_id: i64, component: &str, ch: &str) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        // Idempotent per (order, component): "每单唯一" means one code per order, so a
+        // re-display (popup re-open, staff verify-order screen) reuses the same
+        // non-void token instead of minting duplicates.
+        if let Some(existing) = conn.query_row(
+            "SELECT token FROM marketing_qr_tokens WHERE order_id = ?1 AND component = ?2 AND void = 0 ORDER BY rowid LIMIT 1",
+            params![order_id, component],
+            |r| r.get::<_, String>(0),
+        ).ok() {
+            return Ok(existing);
+        }
+        let mut nonce_bytes = [0u8; 4];
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut nonce_bytes);
+        let nonce = hex::encode(nonce_bytes);
+        let payload = crate::qr_token::marketing_payload(order_id, component, ch, &nonce);
+        let token = crate::qr_token::make_token(&payload);
+        conn.execute(
+            "INSERT OR IGNORE INTO marketing_qr_tokens (token, order_id, component, ch) VALUES (?1, ?2, ?3, ?4)",
+            params![token, order_id, component, ch],
+        )?;
+        Ok(token)
+    }
+
+    /// Redeems (voids) a marketing QR token. Returns a JSON verdict:
+    /// `{ ok, already, reason?, order_id?, order_no?, component?, ch? }`.
+    pub fn redeem_marketing_qr_token(&self, token: &str, staff_name: Option<&str>) -> Result<serde_json::Value> {
+        let payload = match crate::qr_token::verify_token(token) {
+            Some(p) => p,
+            None => return Ok(serde_json::json!({ "ok": false, "reason": "invalid_signature" })),
+        };
+        let mp = match crate::qr_token::parse_marketing_payload(&payload) {
+            Some(m) => m,
+            None => return Ok(serde_json::json!({ "ok": false, "reason": "not_marketing_token" })),
+        };
+        let conn = self.conn.lock().unwrap();
+        let existing: Option<(i64, Option<String>)> = conn.query_row(
+            "SELECT void, redeemed_at FROM marketing_qr_tokens WHERE token = ?1",
+            params![token],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).ok();
+        if let Some((void, _)) = &existing {
+            if *void == 1 {
+                let order_no: String = conn.query_row(
+                    "SELECT order_no FROM orders WHERE id = ?1", params![mp.order_id], |r| r.get(0),
+                ).unwrap_or_else(|_| format!("#{}", mp.order_id));
+                return Ok(serde_json::json!({
+                    "ok": false, "already": true, "order_id": mp.order_id, "order_no": order_no,
+                    "component": mp.component, "ch": mp.ch,
+                }));
+            }
+        }
+        // Valid signature but token row absent (issued on a device that didn't persist)
+        // → upsert so redemption is still recorded.
+        conn.execute(
+            "INSERT OR IGNORE INTO marketing_qr_tokens (token, order_id, component, ch) VALUES (?1, ?2, ?3, ?4)",
+            params![token, mp.order_id, mp.component, mp.ch],
+        )?;
+        conn.execute(
+            "UPDATE marketing_qr_tokens SET void = 1, redeemed_at = datetime('now','localtime') WHERE token = ?1",
+            params![token],
+        )?;
+        conn.execute(
+            "INSERT INTO marketing_redemptions (order_id, component_type, note, staff_name) VALUES (?1, ?2, '扫码核销', ?3)",
+            params![mp.order_id, mp.component, staff_name],
+        )?;
+        let order_no: String = conn.query_row(
+            "SELECT order_no FROM orders WHERE id = ?1", params![mp.order_id], |r| r.get(0),
+        ).unwrap_or_else(|_| format!("#{}", mp.order_id));
+        Ok(serde_json::json!({
+            "ok": true, "already": false, "order_id": mp.order_id, "order_no": order_no,
+            "component": mp.component, "ch": mp.ch,
+        }))
+    }
+
+    pub fn record_qr_scan(&self, kind: &str, table_no: Option<&str>, order_id: Option<i64>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO qr_scan_events (kind, table_no, order_id) VALUES (?1, ?2, ?3)",
+            params![kind, table_no, order_id],
+        )?;
+        Ok(())
+    }
+
+    /// Scan→order→redeem funnel over the last `days` days (v3.0.0 analytics).
+    pub fn get_marketing_funnel(&self, days: i64) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().unwrap();
+        let since = format!("-{} days", days.max(1));
+        let scans: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM qr_scan_events WHERE kind = 'table' AND created_at >= datetime('now','localtime',?1)",
+            params![since], |r| r.get(0),
+        ).unwrap_or(0);
+        let self_orders: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM orders WHERE source = 'self_order' AND created_at >= datetime('now','localtime',?1)",
+            params![since], |r| r.get(0),
+        ).unwrap_or(0);
+        let redemptions: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM marketing_redemptions WHERE redeemed_at >= datetime('now','localtime',?1)",
+            params![since], |r| r.get(0),
+        ).unwrap_or(0);
+        // Per-component redemption breakdown
+        let mut stmt = conn.prepare(
+            "SELECT component_type, COUNT(*) FROM marketing_redemptions WHERE redeemed_at >= datetime('now','localtime',?1) GROUP BY component_type ORDER BY COUNT(*) DESC",
+        )?;
+        let by_component: Vec<serde_json::Value> = stmt.query_map(params![since], |r| Ok(serde_json::json!({
+            "component": r.get::<_,String>(0)?,
+            "count": r.get::<_,i64>(1)?,
+        })))?.collect::<Result<Vec<_>>>()?;
+        Ok(serde_json::json!({
+            "days": days,
+            "scans": scans,
+            "self_orders": self_orders,
+            "redemptions": redemptions,
+            "scan_to_order": if scans > 0 { self_orders as f64 / scans as f64 } else { 0.0 },
+            "by_component": by_component,
         }))
     }
 }

@@ -690,7 +690,26 @@ impl Database {
                 redeemed_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS marketing_qr_tokens (
+                token TEXT PRIMARY KEY,
+                order_id INTEGER NOT NULL,
+                component TEXT NOT NULL,
+                ch TEXT,
+                redeemed_at TEXT,
+                void INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS qr_scan_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL,
+                table_no TEXT,
+                order_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_categories_name ON menu_categories(name);
+            CREATE INDEX IF NOT EXISTS idx_qr_scan_events_kind ON qr_scan_events(kind, created_at);
             "
         )?;
         // Migrations for existing databases — errors are expected when column already exists

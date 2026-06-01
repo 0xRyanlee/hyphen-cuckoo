@@ -28,6 +28,7 @@ import { PrintTemplatesPage } from "@/pages/print-templates-page";
 import { ExpensesPage } from "@/pages/expenses-page";
 import { CustomersPage } from "@/pages/customers-page";
 import { SelfOrderPage } from "@/pages/self-order-page";
+import { RedeemPage } from "@/pages/redeem-page";
 import { TablesPage } from "@/pages/tables-page";
 import { MarketingPage } from "@/pages/marketing-page";
 import { Toaster } from "@/components/ui/toaster";
@@ -478,9 +479,18 @@ function App() {
     );
   }
 
-  // Self-order consumer page — no sidebar, no auth needed
-  if (location.pathname.startsWith("/table/")) {
-    return <Routes><Route path="/table/:tableNo" element={<SelfOrderPage />} /></Routes>;
+  // Self-order consumer page — no sidebar, no auth needed.
+  // /table/:tableNo = legacy static QR (grace period); /t/:token = signed QR.
+  if (location.pathname.startsWith("/table/") || location.pathname.startsWith("/t/")) {
+    return <Routes>
+      <Route path="/table/:tableNo" element={<SelfOrderPage />} />
+      <Route path="/t/:token" element={<SelfOrderPage />} />
+    </Routes>;
+  }
+
+  // Staff scans an order marketing QR → redeem confirmation page (no sidebar/auth)
+  if (location.pathname.startsWith("/redeem/")) {
+    return <Routes><Route path="/redeem/:token" element={<RedeemPage />} /></Routes>;
   }
 
   return (

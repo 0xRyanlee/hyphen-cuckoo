@@ -54,7 +54,7 @@ static ART_BLOCKS: &[&str] = &[
     "  ✿ ✿ ✿  用心烹飪  ✿ ✿ ✿",
 ];
 
-fn creative_fortune_seed(strategy: &str, table_no: Option<&str>, order_id: Option<i64>, date_str: &str) -> u64 {
+pub(crate) fn creative_fortune_seed(strategy: &str, table_no: Option<&str>, order_id: Option<i64>, date_str: &str) -> u64 {
     let mut h = DefaultHasher::new();
     match strategy {
         "per_table" => { table_no.unwrap_or("").hash(&mut h); date_str.hash(&mut h); }

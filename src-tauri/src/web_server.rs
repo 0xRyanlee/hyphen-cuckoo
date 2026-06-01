@@ -221,6 +221,31 @@ fn dispatch_api(
             }
         }
 
+        // Staff scans an order marketing QR → void-on-redeem (public; small-shop
+        // trade-off, see research doc — future: gate behind staff PIN)
+        "/api/redeem_marketing_qr_token" => {
+            let token = v["token"].as_str().unwrap_or("");
+            let staff = v["staff_name"].as_str();
+            match db.redeem_marketing_qr_token(token, staff) {
+                Ok(data) => ("200 OK", data.to_string()),
+                Err(e) => ("500 Internal Server Error", json_err(&e.to_string())),
+            }
+        }
+
+        // Customer scans a (fixed, signed) table QR → resolve to table_no + log scan
+        "/api/resolve_table_token" => {
+            let token = v["token"].as_str().unwrap_or("");
+            match crate::qr_token::verify_token(token)
+                .and_then(|p| crate::qr_token::parse_table_payload(&p))
+            {
+                Some(table_no) => {
+                    let _ = db.record_qr_scan("table", Some(&table_no), None);
+                    ("200 OK", format!(r#"{{"valid":true,"table_no":{}}}"#, serde_json::Value::String(table_no)))
+                }
+                None => ("200 OK", r#"{"valid":false}"#.to_string()),
+            }
+        }
+
         // ── Protected endpoints (T1.4 — admin POS on iPad) ───────────────────
         _ => {
             let role = match require_session(headers, &ctx.sessions) {
@@ -608,10 +633,14 @@ fn api_get_public_menu_direct(db: &Arc<Database>) -> Result<String, String> {
 fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8]) -> Result<(i64, String), String> {
     let v: Value =
         serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
-    let table_no = v["table_no"].as_str().unwrap_or("").to_string();
-    if table_no.len() > 32 {
+    let raw_table = v["table_no"].as_str().unwrap_or("");
+    if raw_table.len() > 32 {
         return Err("table_no too long".to_string());
     }
+    // Grace-period dual-mode: signed token (if present) binds the table and
+    // overrides the client-supplied value; legacy static QR (no token) falls back.
+    let token = v["token"].as_str();
+    let table_no = crate::commands::resolve_self_order_table(raw_table, token)?;
     let items_raw = v["items"].as_array().ok_or("items must be array")?;
     if items_raw.is_empty() {
         return Err("empty order".to_string());

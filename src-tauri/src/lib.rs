@@ -4,6 +4,7 @@ mod printer;
 mod updater_check;
 mod sync_server;
 mod web_server;
+mod qr_token;
 
 use commands::AppState;
 use database::Database;
@@ -373,6 +374,11 @@ pub fn run() {
             commands::record_marketing_redemption,
             commands::get_marketing_redemptions,
             commands::get_marketing_stats_today,
+            commands::sign_table_token,
+            commands::resolve_table_token,
+            commands::issue_marketing_qr_token,
+            commands::redeem_marketing_qr_token,
+            commands::get_marketing_funnel,
             commands::redeem_coupon,
             // Web 伺服器
             commands::get_web_server_status,

@@ -2433,15 +2433,63 @@ pub fn get_public_menu(state: State<AppState>) -> Result<Vec<PublicMenuCategory>
 }
 
 #[tauri::command]
-pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<SelfOrderItemInput>) -> Result<serde_json::Value, String> {
-    if table_no.trim().is_empty() {
-        return Err("桌号不能为空".to_string());
-    }
+pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<SelfOrderItemInput>, token: Option<String>) -> Result<serde_json::Value, String> {
+    let table_no = resolve_self_order_table(&table_no, token.as_deref())?;
     if items.is_empty() {
         return Err("订单不能为空".to_string());
     }
     let (order_id, order_no) = state.db.create_self_order(&table_no, &items).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "id": order_id, "order_no": order_no }))
+}
+
+/// Grace-period dual-mode table resolution: if a signed token is present it
+/// must verify and its bound table_no wins (prevents client tampering). If no
+/// token (legacy static QR sticker still in circulation), fall back to the raw
+/// table_no. Returns an error only for a present-but-invalid token.
+pub fn resolve_self_order_table(table_no: &str, token: Option<&str>) -> Result<String, String> {
+    if let Some(tok) = token.filter(|t| !t.is_empty()) {
+        let payload = crate::qr_token::verify_token(tok).ok_or("二维码无效或已过期，请重新扫码")?;
+        let bound = crate::qr_token::parse_table_payload(&payload).ok_or("二维码类型错误")?;
+        return Ok(bound);
+    }
+    if table_no.trim().is_empty() {
+        return Err("桌号不能为空".to_string());
+    }
+    Ok(table_no.trim().to_string())
+}
+
+#[tauri::command]
+pub fn sign_table_token(table_no: String) -> Result<String, String> {
+    if table_no.trim().is_empty() {
+        return Err("桌号不能为空".to_string());
+    }
+    Ok(crate::qr_token::make_token(&crate::qr_token::table_payload(table_no.trim())))
+}
+
+#[tauri::command]
+pub fn resolve_table_token(state: State<AppState>, token: String) -> Result<serde_json::Value, String> {
+    match crate::qr_token::verify_token(&token).and_then(|p| crate::qr_token::parse_table_payload(&p)) {
+        Some(table_no) => {
+            let _ = state.db.record_qr_scan("table", Some(&table_no), None);
+            Ok(serde_json::json!({ "valid": true, "table_no": table_no }))
+        }
+        None => Ok(serde_json::json!({ "valid": false })),
+    }
+}
+
+#[tauri::command]
+pub fn issue_marketing_qr_token(state: State<AppState>, order_id: i64, component: String, ch: String) -> Result<String, String> {
+    state.db.issue_marketing_qr_token(order_id, &component, &ch).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn redeem_marketing_qr_token(state: State<AppState>, token: String, staff_name: Option<String>) -> Result<serde_json::Value, String> {
+    state.db.redeem_marketing_qr_token(&token, staff_name.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_marketing_funnel(state: State<AppState>, days: Option<i64>) -> Result<serde_json::Value, String> {
+    state.db.get_marketing_funnel(days.unwrap_or(7)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

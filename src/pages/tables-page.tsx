@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { QRCodeCanvas } from "qrcode.react";
+import { StyledQR, downloadStyledQR } from "@/components/styled-qr";
 import { call as invoke } from "@/lib/transport";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,36 +31,39 @@ interface TableQrDialogProps {
 }
 
 function TableQrDialog({ table, baseUrl, onClose }: TableQrDialogProps) {
-  const tableUrl = `${baseUrl}/#/table/${encodeURIComponent(table.table_no)}`;
+  const [token, setToken] = useState<string | null>(null);
 
-  const handleDownload = () => {
-    const canvas = document.getElementById(`qr-canvas-${table.id}`) as HTMLCanvasElement | null;
-    if (!canvas) return;
-    const link = document.createElement("a");
-    link.download = `二维码-桌${table.table_no}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  };
+  useEffect(() => {
+    invoke<string>("sign_table_token", { tableNo: table.table_no })
+      .then(setToken)
+      .catch(() => setToken(null));
+  }, [table.table_no]);
+
+  // Token-based URL when available; fall back to legacy static URL during grace period.
+  const tableUrl = token
+    ? `${baseUrl}/#/t/${token}`
+    : `${baseUrl}/#/table/${encodeURIComponent(table.table_no)}`;
+  const label = table.label ?? `桌 ${table.table_no}`;
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-xs">
         <DialogHeader>
-          <DialogTitle>
-            {table.label ?? `桌 ${table.table_no}`} 扫码点单
-          </DialogTitle>
+          <DialogTitle>{label} 扫码点单</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-2">
-          <div className="rounded-xl border bg-white p-3">
-            <QRCodeCanvas
-              id={`qr-canvas-${table.id}`}
-              value={tableUrl}
-              size={200}
-              level="M"
-              includeMargin={false}
-            />
+          {/* 桌贴台卡 */}
+          <div className="w-full rounded-2xl border-2 border-orange-200 bg-white p-5 flex flex-col items-center gap-3 shadow-sm">
+            <div className="text-center">
+              <div className="text-[11px] text-gray-400 tracking-[0.3em]">扫码自助点餐</div>
+              <div className="text-3xl font-extrabold text-gray-900 mt-1">{label}</div>
+            </div>
+            <StyledQR value={tableUrl} size={200} dotColor="#ea580c" />
+            <div className="flex items-center gap-1.5 text-orange-500 text-sm font-bold">
+              <QrCode className="h-4 w-4" /> 扫一扫 自助点餐
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground font-mono text-center break-all px-2">
+          <p className="text-[10px] text-muted-foreground font-mono text-center break-all px-2">
             {tableUrl}
           </p>
           <div className="flex gap-2 w-full">
@@ -76,11 +79,16 @@ function TableQrDialog({ table, baseUrl, onClose }: TableQrDialogProps) {
               <Copy className="h-3.5 w-3.5 mr-1.5" />
               复制
             </Button>
-            <Button className="flex-1" size="sm" onClick={handleDownload}>
+            <Button
+              className="flex-1"
+              size="sm"
+              onClick={() => downloadStyledQR(tableUrl, { name: `二维码-桌${table.table_no}`, dotColor: "#ea580c" })}
+            >
               <Download className="h-3.5 w-3.5 mr-1.5" />
-              下载图片
+              下载高清图
             </Button>
           </div>
+          <p className="text-[10px] text-muted-foreground text-center">下载图可交印刷店制作桌贴</p>
         </div>
       </DialogContent>
     </Dialog>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { call } from "@/lib/transport";
+import { StyledQR } from "@/components/styled-qr";
 import type { PublicMenuCategory, PublicMenuItem, PublicMenuItemSpec, TableOrderSummary } from "@/types";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -289,7 +290,11 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
         if (elem.type === "character_collect") {
           const chars = (elem.characters as string[] | undefined) ?? ["恭","喜","發","財"];
           const prize = (elem.prize as string) ?? "集齐兑换免费饮品";
-          const idx = seed % chars.length;
+          // Prefer the backend-computed char (single source of truth, matches receipt);
+          // fall back to local seed only if absent.
+          const pickedChar = elem.picked_char as string | undefined;
+          const idx = pickedChar ? Math.max(0, chars.indexOf(pickedChar)) : seed % chars.length;
+          const qrToken = elem.qr_token as string | undefined;
           return (
             <div key={i} className="w-full rounded-2xl bg-white border-2 border-orange-200 p-5 text-center shadow-sm">
               <div className="text-xs text-orange-500 mb-2 tracking-widest">{(elem.game_name as string) ?? "集字兑奖"}</div>
@@ -303,7 +308,13 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
                   </span>
                 ))}
               </div>
-              <div className="text-xs text-orange-600">{prize}</div>
+              <div className="text-xs text-orange-600 mb-3">{prize}</div>
+              {qrToken && (
+                <div className="flex flex-col items-center gap-1 pt-3 border-t border-orange-100">
+                  <StyledQR value={`${window.location.origin}/#/redeem/${qrToken}`} size={120} dotColor="#ea580c" />
+                  <div className="text-[10px] text-orange-400">店员扫码核销 · 一码一次</div>
+                </div>
+              )}
             </div>
           );
         }
@@ -378,6 +389,70 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
           );
         }
 
+        if (elem.type === "qr_code") {
+          const url = (elem.url as string) ?? "";
+          if (!url) return null;
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 flex flex-col items-center gap-2 shadow-sm">
+              <div className="text-xs text-gray-400">{(elem.label as string) ?? "扫码关注"}</div>
+              <StyledQR value={url} size={120} dotColor="#1f2937" />
+            </div>
+          );
+        }
+
+        if (elem.type === "discount_coupon") {
+          const dt = (elem.discount_type as string) ?? "percent";
+          const val = (elem.value as number) ?? 0;
+          const cond = (elem.condition as string) ?? "";
+          const validDays = (elem.valid_days as number) ?? 30;
+          const discountText = dt === "percent" ? `${val}% OFF` : dt === "amount" ? `减 ¥${val}` : "免费赠品";
+          return (
+            <div key={i} className="w-full rounded-2xl border-2 border-dashed border-red-300 bg-red-50 p-5 text-center shadow-sm">
+              <div className="text-xs text-red-400 mb-1">{(elem.label as string) ?? "下次消费优惠"}</div>
+              <div className="text-3xl font-extrabold text-red-600 mb-1">{discountText}</div>
+              {cond && <div className="text-xs text-red-500">{cond}</div>}
+              <div className="text-[10px] text-red-400 mt-2">{validDays}天内有效 · 凭本页核销</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "product_spotlight") {
+          const name = (elem.name as string) ?? "";
+          if (!name) return null;
+          const price = elem.price as number | undefined;
+          const badge = (elem.badge as string) ?? "";
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs text-gray-400">{(elem.title as string) ?? "本店推荐"}</span>
+                {badge && <span className="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">{badge}</span>}
+              </div>
+              <div className="text-base font-bold text-gray-900">{name}</div>
+              {(elem.description as string) && <div className="text-xs text-gray-500 mt-0.5">{elem.description as string}</div>}
+              {price !== undefined && <div className="text-orange-500 font-bold mt-1">¥{fmt(price)}</div>}
+            </div>
+          );
+        }
+
+        if (elem.type === "rich_text") {
+          const content = (elem.content as string) ?? "";
+          if (!content) return null;
+          return (
+            <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 shadow-sm">
+              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{content.replace(/^[#>\-*]+\s?/gm, "").trim()}</pre>
+            </div>
+          );
+        }
+
+        if (elem.type === "dish_easter_egg") {
+          return (
+            <div key={i} className="w-full rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-200 p-4 text-center shadow-sm">
+              <div className="text-xs text-purple-400 mb-1">🥚 隐藏彩蛋</div>
+              <div className="text-sm text-purple-700">{(elem.message as string) ?? "今日彩蛋：愿你好运连连！"}</div>
+            </div>
+          );
+        }
+
         return null;
       })}
     </div>
@@ -387,8 +462,12 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
 // ── Main page ─────────────────────────────────────────────────────────────
 
 export function SelfOrderPage() {
-  const { tableNo } = useParams<{ tableNo: string }>();
+  const params = useParams<{ tableNo?: string; token?: string }>();
+  const token = params.token ?? null;
+  const [tableNo, setTableNo] = useState<string | undefined>(params.tableNo);
+  const [tokenInvalid, setTokenInvalid] = useState(false);
   const [menu, setMenu] = useState<PublicMenuCategory[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [activecat, setActiveCat] = useState<number | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -407,6 +486,17 @@ export function SelfOrderPage() {
       if (data.length > 0) setActiveCat(data[0].id);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+  // Resolve signed table token → real table_no (logs the scan server-side).
+  useEffect(() => {
+    if (!token) return;
+    call<{ valid: boolean; table_no?: string }>("resolve_table_token", { token })
+      .then((r) => {
+        if (r.valid && r.table_no) setTableNo(r.table_no);
+        else setTokenInvalid(true);
+      })
+      .catch(() => setTokenInvalid(true));
+  }, [token]);
 
   const fetchPastOrders = useCallback(() => {
     if (!tableNo) return;
@@ -481,6 +571,7 @@ export function SelfOrderPage() {
     try {
       const result = await call<{ id: number; order_no: string }>("create_self_order", {
         table_no: tableNo,
+        token,
         items: cart.map((c) => ({
           menu_item_id: c.menu_item_id,
           spec_code: c.spec_code ?? null,
@@ -523,8 +614,32 @@ export function SelfOrderPage() {
     }
   }
 
+  const q = search.trim().toLowerCase();
+  const filteredMenu = q
+    ? menu
+        .map((cat) => ({
+          ...cat,
+          items: cat.items.filter(
+            (it) => it.name.toLowerCase().includes(q) || (it.description ?? "").toLowerCase().includes(q)
+          ),
+        }))
+        .filter((cat) => cat.items.length > 0)
+    : menu;
+
   const totalQty = cart.reduce((s, c) => s + c.qty, 0);
   const totalPrice = cart.reduce((s, c) => s + c.unit_price * c.qty, 0);
+
+  if (tokenInvalid) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="text-center text-gray-500">
+          <p className="text-4xl mb-3">📷</p>
+          <p className="font-semibold text-gray-700">二维码已失效</p>
+          <p className="text-sm mt-1">请重新扫描桌上的最新二维码</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -557,27 +672,41 @@ export function SelfOrderPage() {
             </span>
           )}
         </div>
-        {/* Category tabs */}
-        <div className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide">
-          {menu.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => scrollToCategory(cat.id)}
-              className={`flex-shrink-0 text-xs px-4 py-1.5 rounded-full font-medium transition-colors ${
-                activecat === cat.id
-                  ? "bg-orange-400 text-white"
-                  : "bg-gray-100 text-gray-600"
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
+        {/* Search */}
+        <div className="px-4 pb-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索菜品…"
+            className="w-full text-sm bg-gray-100 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-orange-300"
+          />
         </div>
+        {/* Category tabs — hidden while searching */}
+        {!q && (
+          <div className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide">
+            {menu.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => scrollToCategory(cat.id)}
+                className={`flex-shrink-0 text-xs px-4 py-1.5 rounded-full font-medium transition-colors ${
+                  activecat === cat.id
+                    ? "bg-orange-400 text-white"
+                    : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Menu sections */}
       <div ref={scrollRef} className="px-4 pt-3 space-y-4">
-        {menu.map((cat, catIdx) => (
+        {q && filteredMenu.length === 0 && (
+          <p className="text-center text-sm text-gray-400 py-8">没有找到「{search}」相关菜品</p>
+        )}
+        {filteredMenu.map((cat, catIdx) => (
           <div
             key={cat.id}
             ref={(el) => { sectionRefs.current[cat.id] = el; }}

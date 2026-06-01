@@ -884,6 +884,28 @@ mod tests {
     }
 
     #[test]
+    fn test_marketing_qr_token_idempotent_and_void() {
+        let (db, _dir) = test_db();
+        db.init_tables().unwrap();
+        // Same order+component must reuse the token (一单一码).
+        let t1 = db.issue_marketing_qr_token(1001, "character_collect", "喜").unwrap();
+        let t2 = db.issue_marketing_qr_token(1001, "character_collect", "喜").unwrap();
+        assert_eq!(t1, t2, "re-display must reuse the same token");
+        // First redeem succeeds and voids.
+        let r1 = db.redeem_marketing_qr_token(&t1, None).unwrap();
+        assert_eq!(r1["ok"], serde_json::json!(true));
+        // Second redeem is rejected as already-redeemed.
+        let r2 = db.redeem_marketing_qr_token(&t1, None).unwrap();
+        assert_eq!(r2["already"], serde_json::json!(true));
+        // After void, a fresh issue mints a new token.
+        let t3 = db.issue_marketing_qr_token(1001, "character_collect", "喜").unwrap();
+        assert_ne!(t1, t3, "a voided token must not be reused");
+        // Tampered token is rejected.
+        let bad = db.redeem_marketing_qr_token("deadbeef.deadbeef", None).unwrap();
+        assert_eq!(bad["ok"], serde_json::json!(false));
+    }
+
+    #[test]
     fn test_init_tables_creates_all_tables() {
         let (db, _dir) = test_db();
         db.init_tables().unwrap();

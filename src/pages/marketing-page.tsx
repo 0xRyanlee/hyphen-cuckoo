@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search } from "lucide-react";
+import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search, BarChart3 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSummary, type PrintElement } from "./print-templates-page";
@@ -150,6 +150,15 @@ interface VerifyResult {
   already_redeemed: boolean;
 }
 
+interface MarketingFunnel {
+  days: number;
+  scans: number;
+  self_orders: number;
+  redemptions: number;
+  scan_to_order: number;
+  by_component: { component: string; count: number }[];
+}
+
 const COMPONENT_LABELS: Record<string, string> = {
   fortune: "运势卡",
   character_collect: "集字兑奖",
@@ -223,6 +232,11 @@ export function MarketingPage() {
 
   useEffect(() => {
     invoke<RedemptionRecord[]>("get_marketing_redemptions", {}).then(setRedemptions).catch(console.error);
+  }, []);
+
+  const [funnel, setFunnel] = useState<MarketingFunnel | null>(null);
+  useEffect(() => {
+    invoke<MarketingFunnel>("get_marketing_funnel", { days: 7 }).then(setFunnel).catch(console.error);
   }, []);
 
   async function handleVerify() {
@@ -333,6 +347,9 @@ export function MarketingPage() {
               {redemptions.length > 0 && (
                 <span className="ml-1 bg-green-100 text-green-700 text-[10px] px-1.5 rounded-full">{redemptions.length}</span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" />数据分析
             </TabsTrigger>
           </TabsList>
 
@@ -485,6 +502,65 @@ export function MarketingPage() {
                         <span className="text-muted-foreground shrink-0">{r.redeemed_at.slice(0, 16)}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* 数据分析 Tab */}
+          <TabsContent value="analytics" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">扫码营销漏斗（近 7 天）</CardTitle>
+                <CardDescription>扫码进店 → 自助下单 → 营销核销的转化情况</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!funnel ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">加载中…</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="rounded-lg border p-3 text-center">
+                        <div className="text-2xl font-bold text-blue-600">{funnel.scans}</div>
+                        <div className="text-xs text-muted-foreground mt-1">扫码进店</div>
+                      </div>
+                      <div className="rounded-lg border p-3 text-center">
+                        <div className="text-2xl font-bold text-orange-600">{funnel.self_orders}</div>
+                        <div className="text-xs text-muted-foreground mt-1">自助下单</div>
+                      </div>
+                      <div className="rounded-lg border p-3 text-center">
+                        <div className="text-2xl font-bold text-green-600">{funnel.redemptions}</div>
+                        <div className="text-xs text-muted-foreground mt-1">营销核销</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-sm px-1">
+                      <span className="text-muted-foreground">扫码 → 下单转化率</span>
+                      <span className="font-bold text-gray-900">{(funnel.scan_to_order * 100).toFixed(0)}%</span>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">各组件核销分布</p>
+                      {funnel.by_component.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-3">暂无核销数据</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {funnel.by_component.map((c) => {
+                            const max = Math.max(...funnel.by_component.map((x) => x.count), 1);
+                            return (
+                              <div key={c.component} className="flex items-center gap-2">
+                                <span className="text-xs w-20 shrink-0 text-muted-foreground">
+                                  {COMPONENT_LABELS[c.component] ?? c.component}
+                                </span>
+                                <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
+                                  <div className="bg-green-400 h-full rounded-full" style={{ width: `${(c.count / max) * 100}%` }} />
+                                </div>
+                                <span className="text-xs font-medium w-8 text-right">{c.count}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </CardContent>
