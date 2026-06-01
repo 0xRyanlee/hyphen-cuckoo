@@ -25,6 +25,12 @@ export default defineConfig(async () => ({
             if (id.includes("lucide") || id.includes("recharts") || id.includes("sonner")) {
               return "vendor-ui";
             }
+            if (id.includes("qr-code-styling") || id.includes("html-to-image") || id.includes("qrcode")) {
+              return "vendor-qr";
+            }
+            if (id.includes("dompurify")) {
+              return "vendor-util";
+            }
           }
         },
       },
