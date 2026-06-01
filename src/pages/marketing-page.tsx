@@ -186,6 +186,37 @@ export function MarketingPage() {
   const [verifyOrderNo, setVerifyOrderNo] = useState("");
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+
+  // D3: redeem directly by a scanned code — accepts a raw token or a full
+  // .../#/redeem/<token> URL pasted from a scanner gun, no order-no lookup.
+  async function handleRedeemByCode() {
+    const raw = redeemCode.trim();
+    if (!raw) return;
+    const token = raw.includes("/redeem/") ? raw.split("/redeem/")[1].split(/[?#]/)[0] : raw;
+    setRedeeming(true);
+    try {
+      const r = await invoke<{ ok: boolean; already?: boolean; reason?: string; order_no?: string; component?: string }>(
+        "redeem_marketing_qr_token", { token }
+      );
+      if (r.ok) {
+        toast.success(`核销成功 · ${COMPONENT_LABELS[r.component ?? ""] ?? r.component ?? ""} · ${r.order_no ?? ""}`);
+        setRedeemCode("");
+        invoke<RedemptionRecord[]>("get_marketing_redemptions", {}).then(setRedemptions).catch(() => {});
+      } else if (r.already) {
+        toast.error(`该码已核销 · ${r.order_no ?? ""}`);
+      } else if (r.reason === "pin_required") {
+        toast.error("需要店员密码，请在收银设备上核销");
+      } else {
+        toast.error("核销码无效");
+      }
+    } catch (e) {
+      toast.error("核销失败", { description: String(e) });
+    } finally {
+      setRedeeming(false);
+    }
+  }
 
   // Load existing marketing_popup template on mount
   useEffect(() => {
@@ -443,6 +474,20 @@ export function MarketingPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                {/* D3: 扫码枪/粘贴核销码 直接核销 */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="扫码核销：粘贴核销码或扫码链接"
+                    value={redeemCode}
+                    onChange={e => setRedeemCode(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleRedeemByCode()}
+                    className="flex-1"
+                  />
+                  <Button variant="secondary" onClick={handleRedeemByCode} disabled={redeeming || !redeemCode.trim()}>
+                    <ClipboardCheck className="h-4 w-4 mr-1" />{redeeming ? "核销中..." : "核销"}
+                  </Button>
+                </div>
+                <div className="relative text-center"><span className="text-[10px] text-muted-foreground bg-background px-2">或按订单号查询</span><div className="absolute inset-x-0 top-1/2 -z-10 border-t" /></div>
                 <div className="flex gap-2">
                   <Input
                     placeholder="输入订单号（如 SO20260601123456）或订单ID"

@@ -659,7 +659,12 @@ export function SelfOrderPage() {
         ]);
         setMarketingPopup(popup);
       } catch {
+        // Show local fallback immediately, then retry once in the background so
+        // the authoritative popup (with real qr_token + picked_char) replaces it.
         setMarketingPopup(fallbackPopup);
+        call<MarketingPopupData>("get_marketing_popup", { orderId: result.id, tableNo: tableNo })
+          .then((p) => setMarketingPopup(p))
+          .catch(() => {});
       }
     } catch (e) {
       alert(`下单失败：${e instanceof Error ? e.message : "请重试"}`);
