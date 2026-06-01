@@ -2493,12 +2493,10 @@ pub fn issue_marketing_qr_token(state: State<AppState>, order_id: i64, component
 
 #[tauri::command]
 pub fn redeem_marketing_qr_token(state: State<AppState>, token: String, staff_name: Option<String>, pin: Option<String>) -> Result<serde_json::Value, String> {
-    {
-        let auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
-        if !verify_any_pin(&auth, pin.as_deref().unwrap_or("")) {
-            return Ok(serde_json::json!({ "ok": false, "reason": "pin_required" }));
-        }
-    }
+    // PIN is enforced only at the public web endpoint (untrusted browser, prevents
+    // customers self-redeeming). In-app invocation is already a trusted, role-gated
+    // context, so it redeems PIN-free.
+    let _ = pin;
     state.db.redeem_marketing_qr_token(&token, staff_name.as_deref()).map_err(|e| e.to_string())
 }
 
