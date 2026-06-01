@@ -109,6 +109,7 @@ export interface PublicMenuItem {
   description: string | null;
   image_path: string | null;
   sales_price: number;
+  is_hot?: boolean;
   specs: PublicMenuItemSpec[];
 }
 

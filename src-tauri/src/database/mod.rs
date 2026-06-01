@@ -497,6 +497,7 @@ pub struct PublicMenuItem {
     pub description: Option<String>,
     pub image_path: Option<String>,
     pub sales_price: f64,
+    pub is_hot: bool,
     pub specs: Vec<PublicMenuItemSpec>,
 }
 

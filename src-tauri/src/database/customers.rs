@@ -268,6 +268,17 @@ impl Database {
         let cats: Vec<(i64, String)> = cat_stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>>>()?;
 
+        // Top-3 best sellers over the last 30 days → "热销" badge.
+        let hot_ids: std::collections::HashSet<i64> = {
+            let mut stmt = conn.prepare(
+                "SELECT oi.menu_item_id FROM order_items oi JOIN orders o ON oi.order_id = o.id
+                 WHERE o.created_at >= datetime('now','localtime','-30 days')
+                 GROUP BY oi.menu_item_id ORDER BY SUM(oi.qty) DESC LIMIT 3"
+            )?;
+            let ids: Vec<i64> = stmt.query_map([], |r| r.get::<_, i64>(0))?.collect::<Result<Vec<_>>>()?;
+            ids.into_iter().collect()
+        };
+
         let mut result = Vec::new();
         for (cat_id, cat_name) in cats {
             let mut item_stmt = conn.prepare(
@@ -275,12 +286,14 @@ impl Database {
                  WHERE category_id = ?1 AND is_available = 1 ORDER BY id ASC"
             )?;
             let items: Vec<PublicMenuItem> = item_stmt.query_map(params![cat_id], |row| {
+                let id: i64 = row.get(0)?;
                 Ok(PublicMenuItem {
-                    id: row.get(0)?,
+                    id,
                     name: row.get(1)?,
                     description: row.get(2)?,
                     image_path: row.get(3)?,
                     sales_price: row.get(4)?,
+                    is_hot: hot_ids.contains(&id),
                     specs: vec![],
                 })
             })?.collect::<Result<Vec<_>>>()?;
@@ -312,6 +325,20 @@ impl Database {
 
     pub fn create_self_order(&self, table_no: &str, items: &[SelfOrderItemInput]) -> Result<(i64, String)> {
         let conn = self.conn.lock().unwrap();
+        // D4: reject the order if any item went unavailable since the menu was cached.
+        for item in items {
+            let avail: Option<i64> = conn.query_row(
+                "SELECT is_available FROM menu_items WHERE id = ?1",
+                params![item.menu_item_id],
+                |r| r.get(0),
+            ).ok();
+            if avail != Some(1) {
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                    Some("部分商品已售罄或下架，请刷新菜单后重试".to_string()),
+                ));
+            }
+        }
         let order_no: String = conn.query_row(
             "SELECT 'SO' || strftime('%Y%m%d%H%M%S', 'now', 'localtime') || substr(lower(hex(randomblob(2))),1,4)",
             [],

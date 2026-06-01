@@ -64,6 +64,8 @@ const CAT_COLORS = [
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
+const FLAVOR_OPTIONS = ["少冰", "去冰", "少糖", "半糖", "去蔥", "不要辣", "微辣"];
+
 function ItemCard({
   item,
   catIndex,
@@ -74,16 +76,30 @@ function ItemCard({
   item: PublicMenuItem;
   catIndex: number;
   cartQty: number;
-  onAdd: (item: PublicMenuItem, spec: PublicMenuItemSpec | null) => void;
+  onAdd: (item: PublicMenuItem, spec: PublicMenuItemSpec | null, qty?: number, note?: string) => void;
   onRemove: (item: PublicMenuItem, spec: PublicMenuItemSpec | null) => void;
 }) {
   const [specOpen, setSpecOpen] = useState(false);
+  const [selSpec, setSelSpec] = useState<PublicMenuItemSpec | null>(null);
+  const [qty, setQty] = useState(1);
+  const [flavors, setFlavors] = useState<string[]>([]);
   const hasSpecs = item.specs.length > 0;
   const colorClass = CAT_COLORS[catIndex % CAT_COLORS.length];
 
-  function handleAdd() {
-    if (hasSpecs) { setSpecOpen(true); return; }
-    onAdd(item, null);
+  function openSheet() {
+    setSelSpec(hasSpecs ? item.specs[0] : null);
+    setQty(1);
+    setFlavors([]);
+    setSpecOpen(true);
+  }
+
+  function toggleFlavor(f: string) {
+    setFlavors((prev) => prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]);
+  }
+
+  function confirmAdd() {
+    onAdd(item, selSpec, qty, flavors.join("、"));
+    setSpecOpen(false);
   }
 
   return (
@@ -102,7 +118,12 @@ function ItemCard({
         {/* Info */}
         <div className="flex-1 min-w-0 flex flex-col justify-between">
           <div>
-            <p className="font-semibold text-gray-900 text-sm leading-tight">{item.name}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="font-semibold text-gray-900 text-sm leading-tight">{item.name}</p>
+              {item.is_hot && (
+                <span className="text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded font-bold shrink-0">热销</span>
+              )}
+            </div>
             {item.description && (
               <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.description}</p>
             )}
@@ -120,7 +141,7 @@ function ItemCard({
                 </>
               )}
               <button
-                onClick={handleAdd}
+                onClick={openSheet}
                 className="w-7 h-7 rounded-full bg-orange-400 text-white flex items-center justify-center font-bold text-lg leading-none shadow-sm"
               >+</button>
             </div>
@@ -128,26 +149,60 @@ function ItemCard({
         </div>
       </div>
 
-      {/* Spec picker sheet */}
+      {/* Add sheet: spec + quantity + flavors */}
       {specOpen && (
-        <div className="fixed inset-0 z-50 flex items-end" onClick={() => setSpecOpen(false)}>
-          <div className="w-full bg-white rounded-t-2xl p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <p className="text-base font-bold mb-3">{item.name} — 选规格</p>
-            <div className="space-y-2">
-              {item.specs.map((spec) => (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/20" onClick={() => setSpecOpen(false)}>
+          <div className="w-full bg-white rounded-t-2xl p-5 shadow-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <p className="text-base font-bold mb-3">{item.name}</p>
+
+            {hasSpecs && (
+              <>
+                <p className="text-xs text-gray-400 mb-1.5">规格</p>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {item.specs.map((spec) => (
+                    <button
+                      key={spec.spec_code}
+                      onClick={() => setSelSpec(spec)}
+                      className={`flex justify-between items-center px-3 py-2.5 rounded-xl border text-sm ${
+                        selSpec?.spec_code === spec.spec_code ? "border-orange-400 bg-orange-50" : "border-gray-200"
+                      }`}
+                    >
+                      <span>{spec.spec_name}</span>
+                      <span className="text-orange-500 font-semibold text-xs">¥{fmt(item.sales_price + spec.price_delta)}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <p className="text-xs text-gray-400 mb-1.5">口味（可选）</p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {FLAVOR_OPTIONS.map((f) => (
                 <button
-                  key={spec.spec_code}
-                  onClick={() => { onAdd(item, spec); setSpecOpen(false); }}
-                  className="w-full flex justify-between items-center px-4 py-3 rounded-xl border border-gray-200 hover:border-orange-400 text-sm"
-                >
-                  <span>{spec.spec_name}</span>
-                  <span className="text-orange-500 font-semibold">
-                    ¥{fmt(item.sales_price + spec.price_delta)}
-                  </span>
-                </button>
+                  key={f}
+                  onClick={() => toggleFlavor(f)}
+                  className={`px-3 py-1.5 rounded-full text-xs border ${
+                    flavors.includes(f) ? "border-orange-400 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-600"
+                  }`}
+                >{f}</button>
               ))}
             </div>
-            <button onClick={() => setSpecOpen(false)} className="mt-4 w-full py-3 text-gray-500 text-sm">取消</button>
+
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm text-gray-500">数量</span>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  className="w-8 h-8 rounded-full border-2 border-orange-400 text-orange-400 font-bold text-lg flex items-center justify-center">−</button>
+                <span className="w-6 text-center font-semibold">{qty}</span>
+                <button onClick={() => setQty((q) => q + 1)}
+                  className="w-8 h-8 rounded-full bg-orange-400 text-white font-bold text-lg flex items-center justify-center">+</button>
+              </div>
+            </div>
+
+            <button onClick={confirmAdd} className="w-full py-3.5 rounded-2xl bg-orange-500 text-white font-bold text-base">
+              加入购物车 · ¥{fmt((item.sales_price + (selSpec?.price_delta ?? 0)) * qty)}
+            </button>
+            <button onClick={() => setSpecOpen(false)} className="mt-2 w-full py-2 text-gray-400 text-sm">取消</button>
           </div>
         </div>
       )}
@@ -529,15 +584,15 @@ export function SelfOrderPage() {
     sectionRefs.current[catId]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function addToCart(item: PublicMenuItem, spec: PublicMenuItemSpec | null) {
+  function addToCart(item: PublicMenuItem, spec: PublicMenuItemSpec | null, qty = 1, note = "") {
     const key = `${item.id}__${spec?.spec_code ?? ""}`;
     setCart((prev) => {
       const existing = prev.find((c) => cartKey(c) === key);
-      if (existing) return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty + 1 } : c);
+      if (existing) return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty + qty, note: note || c.note } : c);
       return [...prev, {
         menu_item_id: item.id, name: item.name,
         spec_code: spec?.spec_code ?? null, spec_name: spec?.spec_name ?? null,
-        unit_price: priceOf(item, spec?.spec_code ?? null), qty: 1, note: "",
+        unit_price: priceOf(item, spec?.spec_code ?? null), qty, note,
       }];
     });
   }
@@ -703,6 +758,15 @@ export function SelfOrderPage() {
 
       {/* Menu sections */}
       <div ref={scrollRef} className="px-4 pt-3 space-y-4">
+        {!q && (
+          <div className="rounded-2xl bg-gradient-to-r from-amber-100 to-orange-100 border border-amber-200 px-4 py-3 flex items-center gap-3">
+            <span className="text-2xl">🎁</span>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-amber-800">下单即抽今日运势</p>
+              <p className="text-xs text-amber-600">集字兑好礼 · 截图保存凭码核销</p>
+            </div>
+          </div>
+        )}
         {q && filteredMenu.length === 0 && (
           <p className="text-center text-sm text-gray-400 py-8">没有找到「{search}」相关菜品</p>
         )}
