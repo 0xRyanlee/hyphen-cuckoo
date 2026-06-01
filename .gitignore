@@ -58,6 +58,10 @@ src-tauri/icons/logo-option-*.svg
 *.temp
 .cache/
 
+# --- Python (build scripts) ---
+__pycache__/
+*.pyc
+
 # --- Internal / AI-generated dev docs (not for public repo) ---
 TODOs.md
 docs/archived/
@@ -76,5 +80,9 @@ docs/backlog-and-fix-list.md
 docs/test-plan-*.md
 docs/test-report-*.md
 
-# --- Certs (local signing, never commit) ---
+# --- Certs / Signing keys (never commit) ---
 certs/
+*.jks
+*.keystore
+keystore.properties
+key.properties

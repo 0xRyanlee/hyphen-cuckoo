@@ -56,71 +56,38 @@ jobs:
 
       # ── Signing ────────────────────────────────────────────────────────────
       # To enable release signing, add these GitHub Secrets:
-      #   ANDROID_KEY_STORE   — base64-encoded .jks keystore file
+      #   ANDROID_KEY_STORE        — base64-encoded .jks keystore file
       #     (generate: keytool -genkey -v -keystore cuckoo.jks -alias cuckoo \
       #                 -keyalg RSA -keysize 2048 -validity 10000)
-      #     (encode:   base64 -i cuckoo.jks | pbcopy)
+      #     (encode:   base64 -i cuckoo.jks | tr -d '\n' | gh secret set ANDROID_KEY_STORE)
       #   ANDROID_KEY_ALIAS        — alias used during keytool -genkey (e.g. "cuckoo")
       #   ANDROID_KEY_PASSWORD     — key password
       #   ANDROID_STORE_PASSWORD   — keystore password (often same as key password)
-      # If no secrets configured, the build produces an unsigned debug APK for testing.
+      # If no secrets configured, the build produces an unsigned release APK for testing.
+      - name: check signing secrets
+        id: signing
+        env:
+          ANDROID_KEY_STORE: ${{ secrets.ANDROID_KEY_STORE }}
+        run: |
+          if [ -n "$ANDROID_KEY_STORE" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Release signing ENABLED."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No ANDROID_KEY_STORE secret set — building an UNSIGNED release APK (cannot be installed on production PADs)."
+          fi
+
       - name: setup android signing
-        if: ${{ env.ANDROID_KEY_STORE != '' }}
+        if: steps.signing.outputs.enabled == 'true'
         env:
           ANDROID_KEY_STORE: ${{ secrets.ANDROID_KEY_STORE }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          CUCKOO_KEYSTORE_PATH: /tmp/cuckoo.jks
         run: |
           echo "$ANDROID_KEY_STORE" | base64 -d > /tmp/cuckoo.jks
-          cat > src-tauri/gen/android/keystore.properties << EOF
-          storeFile=/tmp/cuckoo.jks
-          storePassword=${ANDROID_STORE_PASSWORD}
-          keyAlias=${ANDROID_KEY_ALIAS}
-          keyPassword=${ANDROID_KEY_PASSWORD}
-          EOF
-          # Inject signing config into generated build.gradle.kts
-          python3 - << 'PYEOF'
-          import re, sys
-
-          path = "src-tauri/gen/android/app/build.gradle.kts"
-          with open(path) as f:
-              src = f.read()
-
-          props_loader = """
-          val keystorePropertiesFile = rootProject.file("keystore.properties")
-          val keystoreProperties = java.util.Properties().also { props ->
-              if (keystorePropertiesFile.exists()) props.load(keystorePropertiesFile.inputStream())
-          }
-          """
-
-          signing_cfg = """
-              signingConfigs {
-                  create("release") {
-                      if (keystorePropertiesFile.exists()) {
-                          storeFile = file(keystoreProperties["storeFile"] as String)
-                          storePassword = keystoreProperties["storePassword"] as String
-                          keyAlias = keystoreProperties["keyAlias"] as String
-                          keyPassword = keystoreProperties["keyPassword"] as String
-                      }
-                  }
-              }
-          """
-
-          # Add loader before android { block
-          src = props_loader + src
-          # Insert signingConfigs after "android {"
-          src = re.sub(r'(android \{)', r'\1\n' + signing_cfg, src, count=1)
-          # Apply signing to release buildType
-          src = re.sub(
-              r'(release \{[^}]*?)(\})',
-              r'\1    signingConfig = signingConfigs.getByName("release")\n        \2',
-              src, count=1, flags=re.DOTALL
-          )
-          with open(path, "w") as f:
-              f.write(src)
-          print("Signing config injected.")
-          PYEOF
+          python3 scripts/sign-android.py
 
       - name: build android apk
         env:
