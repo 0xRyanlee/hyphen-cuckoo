@@ -75,11 +75,25 @@ def main() -> "None":
         print("Signing config already present — skipping Gradle patch.")
         return
 
-    # 2) Properties loader at top level, immediately before `android {`.
+    # 2a) Ensure the imports we rely on exist. Kotlin-script imports must precede
+    #     declarations, so prepend any that are missing to the very top of the file.
+    #     (Fully-qualified `java.util.Properties()` does NOT resolve in Tauri's
+    #     Gradle Kotlin DSL context — we mirror the template's own import + bare
+    #     `Properties()` style, which is known to compile.)
+    prepend = ""
+    if "import java.util.Properties" not in src:
+        prepend += "import java.util.Properties\n"
+    if "import java.io.FileInputStream" not in src:
+        prepend += "import java.io.FileInputStream\n"
+    if prepend:
+        src = prepend + src
+
+    # 2b) Properties loader at top level, immediately before `android {`.
     loader = (
         'val keystorePropertiesFile = rootProject.file("keystore.properties")\n'
-        "val keystoreProperties = java.util.Properties().apply {\n"
-        "    if (keystorePropertiesFile.exists()) keystorePropertiesFile.inputStream().use { load(it) }\n"
+        "val keystoreProperties = Properties()\n"
+        "if (keystorePropertiesFile.exists()) {\n"
+        "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
         "}\n\n"
     )
     m = re.search(r"(?m)^android\s*\{", src)
@@ -92,10 +106,10 @@ def main() -> "None":
     signing_block = (
         "\n    signingConfigs {\n"
         '        create("release") {\n'
-        '            (keystoreProperties["keyAlias"] as String?)?.let { keyAlias = it }\n'
-        '            (keystoreProperties["keyPassword"] as String?)?.let { keyPassword = it }\n'
-        '            (keystoreProperties["storePassword"] as String?)?.let { storePassword = it }\n'
-        '            (keystoreProperties["storeFile"] as String?)?.let { storeFile = file(it) }\n'
+        '            keystoreProperties.getProperty("keyAlias")?.let { keyAlias = it }\n'
+        '            keystoreProperties.getProperty("keyPassword")?.let { keyPassword = it }\n'
+        '            keystoreProperties.getProperty("storePassword")?.let { storePassword = it }\n'
+        '            keystoreProperties.getProperty("storeFile")?.let { storeFile = file(it) }\n'
         "        }\n"
         "    }\n"
     )
