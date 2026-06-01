@@ -170,6 +170,8 @@ function TableFormDialog({ initial, onSave, onClose }: TableFormDialogProps) {
   );
 }
 
+const MANUAL_IP_KEY = "cuckoo_manual_lan_ip";
+
 export function TablesPage() {
   const [tables, setTables] = useState<RestaurantTable[]>([]);
   const [webServerStatus, setWebServerStatus] = useState<WebServerStatus>({
@@ -181,6 +183,20 @@ export function TablesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<RestaurantTable | null>(null);
   const [qrTable, setQrTable] = useState<RestaurantTable | null>(null);
+  const [manualIp, setManualIp] = useState(() => localStorage.getItem(MANUAL_IP_KEY) ?? "");
+  const [editingIp, setEditingIp] = useState(false);
+  const [ipDraft, setIpDraft] = useState("");
+
+  // Compute the effective base URL: prefer manualIp if set, else auto-detected
+  const effectiveUrl = (() => {
+    if (!webServerStatus.running || !webServerStatus.port) return null;
+    const ip = manualIp.trim() || null;
+    if (ip) return `http://${ip}:${webServerStatus.port}`;
+    return webServerStatus.url;
+  })();
+
+  const autoIpIsLoopback =
+    webServerStatus.url?.includes("127.0.0.1") || webServerStatus.url?.includes("::1");
 
   const load = async () => {
     try {
@@ -276,18 +292,75 @@ export function TablesPage() {
         </Card>
       )}
 
-      {webServerStatus.running && webServerStatus.url && (
-        <Card>
+      {webServerStatus.running && (
+        <Card className={autoIpIsLoopback && !manualIp ? "border-amber-300 dark:border-amber-700" : ""}>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">自助点单入口</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2">
+              自助点单入口
+              {autoIpIsLoopback && !manualIp && (
+                <Badge variant="outline" className="text-amber-600 border-amber-400 text-xs">IP 未识别</Badge>
+              )}
+            </CardTitle>
             <CardDescription className="text-xs font-mono break-all">
-              {webServerStatus.url}/#/table/桌号
+              {effectiveUrl ? `${effectiveUrl}/#/table/桌号` : "—"}
             </CardDescription>
           </CardHeader>
-          <CardContent className="pb-3">
+          <CardContent className="pb-3 space-y-3">
             <p className="text-xs text-muted-foreground">
               顾客用手机扫描各桌二维码，即可在自己的手机上浏览菜单并提交订单。
             </p>
+            {(autoIpIsLoopback && !manualIp) && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                ⚠️ 未能自动检测局域网 IP。请手动填写本机 IP（通常为 192.168.x.x）。
+              </p>
+            )}
+            {/* Manual IP override */}
+            {editingIp ? (
+              <div className="flex gap-2 items-center">
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="例：192.168.1.100"
+                  value={ipDraft}
+                  onChange={(e) => setIpDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const v = ipDraft.trim();
+                      setManualIp(v);
+                      if (v) localStorage.setItem(MANUAL_IP_KEY, v);
+                      else localStorage.removeItem(MANUAL_IP_KEY);
+                      setEditingIp(false);
+                    }
+                  }}
+                  autoFocus
+                />
+                <Button size="sm" className="h-8" onClick={() => {
+                  const v = ipDraft.trim();
+                  setManualIp(v);
+                  if (v) localStorage.setItem(MANUAL_IP_KEY, v);
+                  else localStorage.removeItem(MANUAL_IP_KEY);
+                  setEditingIp(false);
+                }}>保存</Button>
+                <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditingIp(false)}>取消</Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {manualIp ? `手动 IP：${manualIp}` : "IP 自动检测"}
+                </span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
+                  setIpDraft(manualIp);
+                  setEditingIp(true);
+                }}>
+                  {manualIp ? "修改 IP" : "手动设置 IP"}
+                </Button>
+                {manualIp && (
+                  <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => {
+                    setManualIp("");
+                    localStorage.removeItem(MANUAL_IP_KEY);
+                  }}>清除</Button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -327,7 +400,7 @@ export function TablesPage() {
                     variant="ghost"
                     className="h-7 w-7"
                     title="生成二维码"
-                    disabled={!webServerStatus.running}
+                    disabled={!webServerStatus.running || !effectiveUrl}
                     onClick={() => setQrTable(t)}
                   >
                     <QrCode className="h-3.5 w-3.5" />
@@ -367,10 +440,10 @@ export function TablesPage() {
         />
       )}
 
-      {qrTable && webServerStatus.url && (
+      {qrTable && effectiveUrl && (
         <TableQrDialog
           table={qrTable}
-          baseUrl={webServerStatus.url}
+          baseUrl={effectiveUrl}
           onClose={() => setQrTable(null)}
         />
       )}

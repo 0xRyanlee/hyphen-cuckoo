@@ -13,8 +13,8 @@ use uuid::Uuid;
 
 use crate::database::{Database, SelfOrderItemInput};
 
-const MAX_SESSIONS: usize = 10_000;
-const SESSION_TTL_SECS: u64 = 86_400; // 24 hours
+const MAX_SESSIONS: usize = 500;      // ample for a single restaurant
+const SESSION_TTL_SECS: u64 = 14_400; // 4 hours — covers one full shift
 const MAX_BODY_BYTES: usize = 1_048_576; // 1 MB
 const MAX_ORDER_ITEMS: usize = 100;
 const MENU_CACHE_TTL_SECS: u64 = 30; // public menu cached for 30s

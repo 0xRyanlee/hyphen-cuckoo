@@ -563,8 +563,19 @@ fn query_orders_since(conn: &Connection, since_epoch_s: i64) -> Result<String, S
 }
 
 pub fn get_local_ip() -> Option<String> {
-    // UDP connect trick: no packets sent, just determines routing interface
-    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    socket.local_addr().ok().map(|a| a.ip().to_string())
+    // UDP routing-table trick: no packets sent, just determines outbound interface.
+    // Works on Android WiFi even without internet — only needs a default route.
+    for target in &["8.8.8.8:80", "1.1.1.1:80", "192.168.1.1:80"] {
+        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+            if socket.connect(target).is_ok() {
+                if let Ok(addr) = socket.local_addr() {
+                    let ip = addr.ip().to_string();
+                    if !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                        return Some(ip);
+                    }
+                }
+            }
+        }
+    }
+    None
 }
