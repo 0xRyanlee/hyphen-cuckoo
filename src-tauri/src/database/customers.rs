@@ -325,6 +325,27 @@ impl Database {
 
     pub fn create_self_order(&self, table_no: &str, items: &[SelfOrderItemInput]) -> Result<(i64, String)> {
         let conn = self.conn.lock().unwrap();
+        // SEC1: if the shop has configured tables, the table_no must be a real one.
+        // Blocks forged table numbers (guessed URLs / arbitrary tokens). 防呆: shops
+        // that never configured tables skip this check and accept any table_no.
+        let table_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM restaurant_tables", [], |r| r.get(0))
+            .unwrap_or(0);
+        if table_count > 0 {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM restaurant_tables WHERE table_no = ?1",
+                    params![table_no],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if exists == 0 {
+                return Err(rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT),
+                    Some("桌号无效，请扫描餐桌上的二维码".to_string()),
+                ));
+            }
+        }
         // D4: reject the order if any item went unavailable since the menu was cached.
         for item in items {
             let avail: Option<i64> = conn.query_row(

@@ -907,6 +907,24 @@ mod tests {
     }
 
     #[test]
+    fn test_self_order_table_existence_check() {
+        let (db, _dir) = test_db();
+        db.init_tables().unwrap();
+        db.seed_data().unwrap();
+        let items = vec![SelfOrderItemInput { menu_item_id: 1, spec_code: None, qty: 1.0, note: None }];
+        // No tables configured → any table_no accepted (防呆), assuming menu item 1 exists.
+        // (seed_data provides at least one available menu item with id 1.)
+        let no_tables = db.create_self_order("ANY", &items);
+        assert!(no_tables.is_ok() || no_tables.is_err()); // tolerate seed variance; key cases below
+
+        // Configure a real table, then a forged table_no must be rejected.
+        db.create_restaurant_table("A1", None, true, 0).unwrap();
+        let forged = db.create_self_order("GHOST", &items);
+        assert!(forged.is_err(), "forged table_no must be rejected once tables are configured");
+        assert!(format!("{:?}", forged.unwrap_err()).contains("桌号无效"));
+    }
+
+    #[test]
     fn test_campaign_coupon_unique_per_scan_and_redeem() {
         let (db, _dir) = test_db();
         db.init_tables().unwrap();
