@@ -950,7 +950,7 @@ mod tests {
     fn test_campaign_coupon_unique_per_scan_and_redeem() {
         let (db, _dir) = test_db();
         db.init_tables().unwrap();
-        let cid = db.create_campaign("开业大酬宾", "percent", 10.0, Some("满50可用"), 30).unwrap();
+        let cid = db.create_campaign("开业大酬宾", "percent", 10.0, Some("满50可用"), 30, 0).unwrap();
         // Each scan mints a DIFFERENT coupon (not idempotent — multi-claim allowed).
         let c1 = db.issue_campaign_coupon(cid).unwrap();
         let c2 = db.issue_campaign_coupon(cid).unwrap();

@@ -716,6 +716,7 @@ impl Database {
                 condition_text TEXT,
                 valid_days INTEGER NOT NULL DEFAULT 30,
                 is_active INTEGER NOT NULL DEFAULT 1,
+                daily_limit INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
 
@@ -913,6 +914,13 @@ impl Database {
             .exists([])?;
         if !has_printer_id {
             conn.execute_batch("ALTER TABLE kitchen_stations ADD COLUMN printer_id INTEGER REFERENCES printers(id)")?;
+        }
+        let has_daily_limit: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name='daily_limit'")?
+            .exists([])?;
+        if !has_daily_limit {
+            // campaigns table may not exist on very old DBs; ignore failure there.
+            let _ = conn.execute_batch("ALTER TABLE campaigns ADD COLUMN daily_limit INTEGER NOT NULL DEFAULT 0");
         }
         let has_cancel_reason: bool = conn
             .prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='cancel_reason'")?

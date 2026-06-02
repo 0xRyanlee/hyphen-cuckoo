@@ -716,11 +716,11 @@ impl Database {
 
     // ==================== Campaigns (v3.2 方案B 扫码活动码得券) ====================
 
-    pub fn create_campaign(&self, name: &str, discount_type: &str, discount_value: f64, condition_text: Option<&str>, valid_days: i64) -> Result<i64> {
+    pub fn create_campaign(&self, name: &str, discount_type: &str, discount_value: f64, condition_text: Option<&str>, valid_days: i64, daily_limit: i64) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO campaigns (name, discount_type, discount_value, condition_text, valid_days) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![name, discount_type, discount_value, condition_text, valid_days],
+            "INSERT INTO campaigns (name, discount_type, discount_value, condition_text, valid_days, daily_limit) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![name, discount_type, discount_value, condition_text, valid_days, daily_limit],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -728,7 +728,7 @@ impl Database {
     pub fn list_campaigns(&self) -> Result<Vec<serde_json::Value>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.name, c.discount_type, c.discount_value, c.condition_text, c.valid_days, c.is_active, c.created_at,
+            "SELECT c.id, c.name, c.discount_type, c.discount_value, c.condition_text, c.valid_days, c.is_active, c.created_at, c.daily_limit,
                     (SELECT COUNT(*) FROM marketing_qr_tokens t WHERE t.order_id = c.id AND t.component = 'campaign_coupon') AS claimed,
                     (SELECT COUNT(*) FROM marketing_qr_tokens t WHERE t.order_id = c.id AND t.component = 'campaign_coupon' AND t.void = 1) AS redeemed
              FROM campaigns c ORDER BY c.id DESC"
@@ -742,8 +742,9 @@ impl Database {
             "valid_days": r.get::<_, i64>(5)?,
             "is_active": r.get::<_, i64>(6)? == 1,
             "created_at": r.get::<_, String>(7)?,
-            "claimed": r.get::<_, i64>(8)?,
-            "redeemed": r.get::<_, i64>(9)?,
+            "daily_limit": r.get::<_, i64>(8)?,
+            "claimed": r.get::<_, i64>(9)?,
+            "redeemed": r.get::<_, i64>(10)?,
         })))?.collect::<Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -766,17 +767,27 @@ impl Database {
     /// existing `redeem_marketing_qr_token` loop (component = campaign_coupon).
     pub fn issue_campaign_coupon(&self, campaign_id: i64) -> Result<serde_json::Value> {
         let conn = self.conn.lock().unwrap();
-        let camp: Option<(String, String, f64, Option<String>, i64, i64)> = conn.query_row(
-            "SELECT name, discount_type, discount_value, condition_text, valid_days, is_active FROM campaigns WHERE id = ?1",
+        let camp: Option<(String, String, f64, Option<String>, i64, i64, i64)> = conn.query_row(
+            "SELECT name, discount_type, discount_value, condition_text, valid_days, is_active, daily_limit FROM campaigns WHERE id = ?1",
             params![campaign_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
         ).ok();
-        let (name, dtype, dval, cond, valid_days, is_active) = match camp {
+        let (name, dtype, dval, cond, valid_days, is_active, daily_limit) = match camp {
             Some(c) => c,
             None => return Ok(serde_json::json!({ "valid": false })),
         };
         if is_active != 1 {
             return Ok(serde_json::json!({ "valid": false, "reason": "inactive" }));
+        }
+        // MUL backend: enforce a per-day issuance cap when set (daily_limit > 0).
+        if daily_limit > 0 {
+            let today_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM marketing_qr_tokens WHERE order_id = ?1 AND component = 'campaign_coupon' AND date(created_at) = date('now','localtime')",
+                params![campaign_id], |r| r.get(0),
+            ).unwrap_or(0);
+            if today_count >= daily_limit {
+                return Ok(serde_json::json!({ "valid": false, "reason": "daily_limit_reached" }));
+            }
         }
         let mut nonce_bytes = [0u8; 6];
         rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut nonce_bytes);

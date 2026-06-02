@@ -99,6 +99,7 @@ export function CampaignManager() {
   const [discountValue, setDiscountValue] = useState("10");
   const [condition, setCondition] = useState("");
   const [validDays, setValidDays] = useState("30");
+  const [dailyLimit, setDailyLimit] = useState("0");
   const [saving, setSaving] = useState(false);
 
   const load = () => {
@@ -126,6 +127,7 @@ export function CampaignManager() {
         discountValue: parseFloat(discountValue) || 0,
         conditionText: condition.trim() || null,
         validDays: parseInt(validDays, 10) || 30,
+        dailyLimit: parseInt(dailyLimit, 10) || 0,
       });
       toast.success("活动已创建");
       setName(""); setCondition("");
@@ -187,6 +189,10 @@ export function CampaignManager() {
             <div className="space-y-1.5">
               <Label className="text-xs">有效天数</Label>
               <Input type="number" value={validDays} onChange={(e) => setValidDays(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">每日领取上限（0=不限）</Label>
+              <Input type="number" value={dailyLimit} onChange={(e) => setDailyLimit(e.target.value)} />
             </div>
           </div>
           <Button onClick={handleCreate} disabled={saving} size="sm">

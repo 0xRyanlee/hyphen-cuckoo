@@ -2540,11 +2540,11 @@ pub fn sign_campaign_token(campaign_id: i64) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn create_campaign(state: State<AppState>, name: String, discount_type: String, discount_value: f64, condition_text: Option<String>, valid_days: i64) -> Result<i64, String> {
+pub fn create_campaign(state: State<AppState>, name: String, discount_type: String, discount_value: f64, condition_text: Option<String>, valid_days: i64, daily_limit: Option<i64>) -> Result<i64, String> {
     if name.trim().is_empty() {
         return Err("活动名称不能为空".to_string());
     }
-    state.db.create_campaign(name.trim(), &discount_type, discount_value, condition_text.as_deref(), valid_days).map_err(|e| e.to_string())
+    state.db.create_campaign(name.trim(), &discount_type, discount_value, condition_text.as_deref(), valid_days, daily_limit.unwrap_or(0)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
