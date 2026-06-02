@@ -252,6 +252,21 @@ fn dispatch_api(
             }
         }
 
+        // Customer scans a campaign poster QR → issue a fresh single-use coupon
+        "/api/resolve_campaign" => {
+            let token = v["token"].as_str().unwrap_or("");
+            match crate::qr_token::verify_token(token).and_then(|p| crate::qr_token::parse_campaign_payload(&p)) {
+                Some(id) => {
+                    let _ = db.record_qr_scan("campaign", None, Some(id));
+                    match db.issue_campaign_coupon(id) {
+                        Ok(data) => ("200 OK", data.to_string()),
+                        Err(e) => ("500 Internal Server Error", json_err(&e.to_string())),
+                    }
+                }
+                None => ("200 OK", r#"{"valid":false}"#.to_string()),
+            }
+        }
+
         // Customer scans a (fixed, signed) table QR → resolve to table_no + log scan
         "/api/resolve_table_token" => {
             let token = v["token"].as_str().unwrap_or("");

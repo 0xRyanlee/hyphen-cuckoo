@@ -29,6 +29,7 @@ import { ExpensesPage } from "@/pages/expenses-page";
 import { CustomersPage } from "@/pages/customers-page";
 import { SelfOrderPage } from "@/pages/self-order-page";
 import { RedeemPage } from "@/pages/redeem-page";
+import { CampaignPage } from "@/pages/campaign-page";
 import { TablesPage } from "@/pages/tables-page";
 import { MarketingPage } from "@/pages/marketing-page";
 import { Toaster } from "@/components/ui/toaster";
@@ -491,6 +492,11 @@ function App() {
   // Staff scans an order marketing QR → redeem confirmation page (no sidebar/auth)
   if (location.pathname.startsWith("/redeem/")) {
     return <Routes><Route path="/redeem/:token" element={<RedeemPage />} /></Routes>;
+  }
+
+  // Customer scans a campaign poster QR → claim coupon page (no sidebar/auth)
+  if (location.pathname.startsWith("/c/")) {
+    return <Routes><Route path="/c/:token" element={<CampaignPage />} /></Routes>;
   }
 
   return (

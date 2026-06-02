@@ -907,6 +907,30 @@ mod tests {
     }
 
     #[test]
+    fn test_campaign_coupon_unique_per_scan_and_redeem() {
+        let (db, _dir) = test_db();
+        db.init_tables().unwrap();
+        let cid = db.create_campaign("开业大酬宾", "percent", 10.0, Some("满50可用"), 30).unwrap();
+        // Each scan mints a DIFFERENT coupon (not idempotent — multi-claim allowed).
+        let c1 = db.issue_campaign_coupon(cid).unwrap();
+        let c2 = db.issue_campaign_coupon(cid).unwrap();
+        let t1 = c1["coupon_token"].as_str().unwrap();
+        let t2 = c2["coupon_token"].as_str().unwrap();
+        assert_ne!(t1, t2, "each scan must issue a fresh coupon");
+        assert_eq!(c1["valid"], serde_json::json!(true));
+        // Coupon redeems via the existing marketing redeem loop and voids.
+        let r = db.redeem_marketing_qr_token(t1, None).unwrap();
+        assert_eq!(r["ok"], serde_json::json!(true));
+        assert_eq!(r["component"], serde_json::json!("campaign_coupon"));
+        let again = db.redeem_marketing_qr_token(t1, None).unwrap();
+        assert_eq!(again["already"], serde_json::json!(true));
+        // Inactive campaign issues no coupon.
+        db.set_campaign_active(cid, false).unwrap();
+        let c3 = db.issue_campaign_coupon(cid).unwrap();
+        assert_eq!(c3["valid"], serde_json::json!(false));
+    }
+
+    #[test]
     fn test_init_tables_creates_all_tables() {
         let (db, _dir) = test_db();
         db.init_tables().unwrap();

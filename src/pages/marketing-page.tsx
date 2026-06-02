@@ -10,6 +10,8 @@ import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search, 
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSummary, type PrintElement } from "./print-templates-page";
+import { CampaignManager } from "./campaign-manager";
+import { Megaphone } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -382,6 +384,9 @@ export function MarketingPage() {
             <TabsTrigger value="analytics" className="gap-1.5">
               <BarChart3 className="h-3.5 w-3.5" />数据分析
             </TabsTrigger>
+            <TabsTrigger value="campaign" className="gap-1.5">
+              <Megaphone className="h-3.5 w-3.5" />扫码活动
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="popup">
@@ -610,6 +615,10 @@ export function MarketingPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="campaign">
+            <CampaignManager />
           </TabsContent>
         </Tabs>
       </div>

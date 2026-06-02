@@ -87,6 +87,15 @@ pub fn parse_table_payload(payload: &str) -> Option<String> {
     payload.strip_prefix("t|").map(|s| s.to_string())
 }
 
+// Campaign poster code (fixed, printed): "c|{campaign_id}"
+pub fn campaign_payload(campaign_id: i64) -> String {
+    format!("c|{}", campaign_id)
+}
+
+pub fn parse_campaign_payload(payload: &str) -> Option<i64> {
+    payload.strip_prefix("c|").and_then(|s| s.parse().ok())
+}
+
 pub fn marketing_payload(order_id: i64, component: &str, ch: &str, nonce: &str) -> String {
     format!("m|{}|{}|{}|{}", order_id, component, ch, nonce)
 }

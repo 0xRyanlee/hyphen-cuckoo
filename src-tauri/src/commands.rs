@@ -2511,6 +2511,47 @@ pub fn get_marketing_funnel(state: State<AppState>, days: Option<i64>) -> Result
     state.db.get_marketing_funnel(days.unwrap_or(7)).map_err(|e| e.to_string())
 }
 
+// ── Campaigns (v3.2 方案B 扫码活动码得券) ──────────────────────────────────
+
+#[tauri::command]
+pub fn sign_campaign_token(campaign_id: i64) -> Result<String, String> {
+    Ok(crate::qr_token::make_token(&crate::qr_token::campaign_payload(campaign_id)))
+}
+
+#[tauri::command]
+pub fn create_campaign(state: State<AppState>, name: String, discount_type: String, discount_value: f64, condition_text: Option<String>, valid_days: i64) -> Result<i64, String> {
+    if name.trim().is_empty() {
+        return Err("活动名称不能为空".to_string());
+    }
+    state.db.create_campaign(name.trim(), &discount_type, discount_value, condition_text.as_deref(), valid_days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_campaigns(state: State<AppState>) -> Result<Vec<serde_json::Value>, String> {
+    state.db.list_campaigns().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_campaign_active(state: State<AppState>, id: i64, active: bool) -> Result<(), String> {
+    state.db.set_campaign_active(id, active).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_campaign(state: State<AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_campaign(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn resolve_campaign(state: State<AppState>, token: String) -> Result<serde_json::Value, String> {
+    match crate::qr_token::verify_token(&token).and_then(|p| crate::qr_token::parse_campaign_payload(&p)) {
+        Some(id) => {
+            let _ = state.db.record_qr_scan("campaign", None, Some(id));
+            state.db.issue_campaign_coupon(id).map_err(|e| e.to_string())
+        }
+        None => Ok(serde_json::json!({ "valid": false })),
+    }
+}
+
 #[tauri::command]
 pub fn get_marketing_popup(state: State<AppState>, order_id: i64, table_no: String) -> Result<serde_json::Value, String> {
     state.db.get_marketing_popup_content(order_id, &table_no).map_err(|e| e.to_string())

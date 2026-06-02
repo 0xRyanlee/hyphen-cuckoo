@@ -380,6 +380,12 @@ pub fn run() {
             commands::redeem_marketing_qr_token,
             commands::redeem_requires_pin,
             commands::get_marketing_funnel,
+            commands::sign_campaign_token,
+            commands::create_campaign,
+            commands::list_campaigns,
+            commands::set_campaign_active,
+            commands::delete_campaign,
+            commands::resolve_campaign,
             commands::redeem_coupon,
             // Web 伺服器
             commands::get_web_server_status,

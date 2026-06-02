@@ -16,6 +16,7 @@ const COMPONENT_LABELS: Record<string, string> = {
   fortune: "运势卡",
   discount_coupon: "折价券",
   riddle: "谜语挑战",
+  campaign_coupon: "活动优惠券",
 };
 
 /** Staff scans the marketing QR on a customer's phone → opens this page → confirms redeem. */

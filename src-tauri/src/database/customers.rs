@@ -692,4 +692,82 @@ impl Database {
             "by_component": by_component,
         }))
     }
+
+    // ==================== Campaigns (v3.2 方案B 扫码活动码得券) ====================
+
+    pub fn create_campaign(&self, name: &str, discount_type: &str, discount_value: f64, condition_text: Option<&str>, valid_days: i64) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO campaigns (name, discount_type, discount_value, condition_text, valid_days) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![name, discount_type, discount_value, condition_text, valid_days],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_campaigns(&self) -> Result<Vec<serde_json::Value>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, discount_type, discount_value, condition_text, valid_days, is_active, created_at FROM campaigns ORDER BY id DESC"
+        )?;
+        let rows = stmt.query_map([], |r| Ok(serde_json::json!({
+            "id": r.get::<_, i64>(0)?,
+            "name": r.get::<_, String>(1)?,
+            "discount_type": r.get::<_, String>(2)?,
+            "discount_value": r.get::<_, f64>(3)?,
+            "condition_text": r.get::<_, Option<String>>(4)?,
+            "valid_days": r.get::<_, i64>(5)?,
+            "is_active": r.get::<_, i64>(6)? == 1,
+            "created_at": r.get::<_, String>(7)?,
+        })))?.collect::<Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    pub fn set_campaign_active(&self, id: i64, active: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE campaigns SET is_active = ?2 WHERE id = ?1", params![id, active as i64])?;
+        Ok(())
+    }
+
+    pub fn delete_campaign(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM campaigns WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Resolve a scanned campaign poster code → issue ONE fresh coupon. Not
+    /// idempotent: each scan mints a new single-use coupon (multi-claim is an
+    /// accepted promo cost under the no-membership model). Coupon redeems via the
+    /// existing `redeem_marketing_qr_token` loop (component = campaign_coupon).
+    pub fn issue_campaign_coupon(&self, campaign_id: i64) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().unwrap();
+        let camp: Option<(String, String, f64, Option<String>, i64, i64)> = conn.query_row(
+            "SELECT name, discount_type, discount_value, condition_text, valid_days, is_active FROM campaigns WHERE id = ?1",
+            params![campaign_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        ).ok();
+        let (name, dtype, dval, cond, valid_days, is_active) = match camp {
+            Some(c) => c,
+            None => return Ok(serde_json::json!({ "valid": false })),
+        };
+        if is_active != 1 {
+            return Ok(serde_json::json!({ "valid": false, "reason": "inactive" }));
+        }
+        let mut nonce_bytes = [0u8; 6];
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut nonce_bytes);
+        let nonce = hex::encode(nonce_bytes);
+        let payload = crate::qr_token::marketing_payload(campaign_id, "campaign_coupon", &dtype, &nonce);
+        let token = crate::qr_token::make_token(&payload);
+        conn.execute(
+            "INSERT OR IGNORE INTO marketing_qr_tokens (token, order_id, component, ch) VALUES (?1, ?2, 'campaign_coupon', ?3)",
+            params![token, campaign_id, dtype],
+        )?;
+        Ok(serde_json::json!({
+            "valid": true,
+            "coupon_token": token,
+            "campaign": {
+                "id": campaign_id, "name": name, "discount_type": dtype,
+                "discount_value": dval, "condition_text": cond, "valid_days": valid_days,
+            },
+        }))
+    }
 }

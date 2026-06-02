@@ -708,6 +708,17 @@ impl Database {
                 created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS campaigns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                discount_type TEXT NOT NULL,
+                discount_value REAL NOT NULL DEFAULT 0,
+                condition_text TEXT,
+                valid_days INTEGER NOT NULL DEFAULT 30,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_categories_name ON menu_categories(name);
             CREATE INDEX IF NOT EXISTS idx_qr_scan_events_kind ON qr_scan_events(kind, created_at);
             "
