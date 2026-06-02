@@ -70,6 +70,10 @@ pub struct RoleAuthStore {
     pub current_role: UserRole,
     #[serde(default)]
     pub pin_hashes: HashMap<String, String>,
+    /// C2: when true, self-orders MUST carry a valid signed token (legacy static
+    /// /table/ QR codes are rejected — used to harden after the grace period).
+    #[serde(default)]
+    pub require_token: bool,
 }
 
 impl Default for RoleAuthStore {
@@ -77,6 +81,7 @@ impl Default for RoleAuthStore {
         Self {
             current_role: UserRole::Owner,
             pin_hashes: HashMap::new(),
+            require_token: false,
         }
     }
 }
@@ -2443,7 +2448,8 @@ pub fn get_public_menu(state: State<AppState>) -> Result<Vec<PublicMenuCategory>
 
 #[tauri::command]
 pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<SelfOrderItemInput>, token: Option<String>) -> Result<serde_json::Value, String> {
-    let table_no = resolve_self_order_table(&table_no, token.as_deref())?;
+    let require_token = state.role_auth.lock().map(|a| a.require_token).unwrap_or(false);
+    let table_no = resolve_self_order_table(&table_no, token.as_deref(), require_token)?;
     if items.is_empty() {
         return Err("订单不能为空".to_string());
     }
@@ -2451,20 +2457,35 @@ pub fn create_self_order(state: State<AppState>, table_no: String, items: Vec<Se
     Ok(serde_json::json!({ "id": order_id, "order_no": order_no }))
 }
 
-/// Grace-period dual-mode table resolution: if a signed token is present it
-/// must verify and its bound table_no wins (prevents client tampering). If no
-/// token (legacy static QR sticker still in circulation), fall back to the raw
-/// table_no. Returns an error only for a present-but-invalid token.
-pub fn resolve_self_order_table(table_no: &str, token: Option<&str>) -> Result<String, String> {
+/// Dual-mode table resolution. A valid signed token always wins (its bound
+/// table_no overrides the client value). Without a token: rejected if
+/// `require_token` (C2 hardened mode); otherwise grace-period fallback to the
+/// raw table_no (legacy static stickers).
+pub fn resolve_self_order_table(table_no: &str, token: Option<&str>, require_token: bool) -> Result<String, String> {
     if let Some(tok) = token.filter(|t| !t.is_empty()) {
         let payload = crate::qr_token::verify_token(tok).ok_or("二维码无效或已过期，请重新扫码")?;
         let bound = crate::qr_token::parse_table_payload(&payload).ok_or("二维码类型错误")?;
         return Ok(bound);
     }
+    if require_token {
+        return Err("请扫描餐桌上的最新二维码下单".to_string());
+    }
     if table_no.trim().is_empty() {
         return Err("桌号不能为空".to_string());
     }
     Ok(table_no.trim().to_string())
+}
+
+#[tauri::command]
+pub fn get_require_token(state: State<AppState>) -> Result<bool, String> {
+    Ok(state.role_auth.lock().map(|a| a.require_token).unwrap_or(false))
+}
+
+#[tauri::command]
+pub fn set_require_token(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let mut auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
+    auth.require_token = enabled;
+    save_role_auth_store(&state.role_auth_path, &auth)
 }
 
 #[tauri::command]

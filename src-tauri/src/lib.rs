@@ -391,6 +391,8 @@ pub fn run() {
             commands::peek_marketing_qr_token,
             commands::find_collect_token_by_order_no,
             commands::collect_redeem_set,
+            commands::get_require_token,
+            commands::set_require_token,
             commands::redeem_coupon,
             // Web 伺服器
             commands::get_web_server_status,

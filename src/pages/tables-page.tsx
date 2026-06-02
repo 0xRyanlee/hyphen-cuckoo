@@ -222,6 +222,8 @@ export function TablesPage() {
   const autoIpIsLoopback =
     webServerStatus.url?.includes("127.0.0.1") || webServerStatus.url?.includes("::1");
 
+  const [requireToken, setRequireToken] = useState(false);
+
   const load = async () => {
     try {
       const [t, ws] = await Promise.all([
@@ -230,10 +232,21 @@ export function TablesPage() {
       ]);
       setTables(t);
       setWebServerStatus(ws);
+      invoke<boolean>("get_require_token").then(setRequireToken).catch(() => {});
     } catch (e) {
       toast.error(String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleRequireToken = async (v: boolean) => {
+    try {
+      await invoke("set_require_token", { enabled: v });
+      setRequireToken(v);
+      toast.success(v ? "已开启：仅接受最新二维码下单" : "已关闭：兼容旧二维码");
+    } catch (e) {
+      toast.error(String(e));
     }
   };
 
@@ -333,6 +346,13 @@ export function TablesPage() {
             <p className="text-xs text-muted-foreground">
               顾客用手机扫描各桌二维码，即可在自己的手机上浏览菜单并提交订单。
             </p>
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs font-medium">仅接受最新二维码下单</p>
+                <p className="text-[10px] text-muted-foreground">开启后旧二维码失效，防伪造桌号刷单（请先重新生成并张贴新桌贴）</p>
+              </div>
+              <Switch checked={requireToken} onCheckedChange={toggleRequireToken} />
+            </div>
             {(autoIpIsLoopback && !manualIp) && (
               <p className="text-xs text-amber-700 dark:text-amber-400">
                 ⚠️ 未能自动检测局域网 IP。请手动填写本机 IP（通常为 192.168.x.x）。

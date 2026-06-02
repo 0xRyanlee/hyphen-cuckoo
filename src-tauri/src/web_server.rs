@@ -199,10 +199,13 @@ fn dispatch_api(
             }
         }
 
-        "/api/create_self_order" => match api_create_self_order_direct(db, body) {
-            Ok((id, order_no)) => ("200 OK", format!(r#"{{"id":{},"order_no":"{}"}}"#, id, order_no)),
-            Err(e) => ("400 Bad Request", json_err(&e)),
-        },
+        "/api/create_self_order" => {
+            let require_token = crate::commands::load_role_auth_store(&ctx.role_auth_path).require_token;
+            match api_create_self_order_direct(db, body, require_token) {
+                Ok((id, order_no)) => ("200 OK", format!(r#"{{"id":{},"order_no":"{}"}}"#, id, order_no)),
+                Err(e) => ("400 Bad Request", json_err(&e)),
+            }
+        }
 
         "/api/get_table_orders_today" => {
             let table_no = v["table_no"].as_str().unwrap_or("").to_string();
@@ -665,7 +668,7 @@ fn api_get_public_menu_direct(db: &Arc<Database>) -> Result<String, String> {
         .and_then(|v| serde_json::to_string(&v).map_err(|e| e.to_string()))
 }
 
-fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8]) -> Result<(i64, String), String> {
+fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8], require_token: bool) -> Result<(i64, String), String> {
     let v: Value =
         serde_json::from_slice(body).map_err(|e| format!("JSON parse error: {}", e))?;
     let raw_table = v["table_no"].as_str().unwrap_or("");
@@ -675,7 +678,7 @@ fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8]) -> Result<(i64,
     // Grace-period dual-mode: signed token (if present) binds the table and
     // overrides the client-supplied value; legacy static QR (no token) falls back.
     let token = v["token"].as_str();
-    let table_no = crate::commands::resolve_self_order_table(raw_table, token)?;
+    let table_no = crate::commands::resolve_self_order_table(raw_table, token, require_token)?;
     let items_raw = v["items"].as_array().ok_or("items must be array")?;
     if items_raw.is_empty() {
         return Err("empty order".to_string());
