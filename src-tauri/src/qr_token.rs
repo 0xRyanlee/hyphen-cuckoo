@@ -6,8 +6,19 @@ use std::sync::OnceLock;
 type HmacSha256 = Hmac<Sha256>;
 
 static SECRET: OnceLock<Vec<u8>> = OnceLock::new();
+static SECRET_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Pin the directory for the persisted HMAC secret. Called once at startup with
+/// the platform-correct data dir (Android sandbox via Tauri path API) so the
+/// secret survives restarts — otherwise printed table QR codes would break.
+pub fn set_secret_dir(dir: PathBuf) {
+    let _ = SECRET_DIR.set(dir);
+}
 
 fn secret_path() -> PathBuf {
+    if let Some(dir) = SECRET_DIR.get() {
+        return dir.join("qr-secret.bin");
+    }
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("Cuckoo")

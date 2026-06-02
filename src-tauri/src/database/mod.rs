@@ -907,6 +907,28 @@ mod tests {
     }
 
     #[test]
+    fn test_collect_redeem_set() {
+        let (db, _dir) = test_db();
+        db.init_tables().unwrap();
+        let t1 = db.issue_marketing_qr_token(101, "character_collect", "恭").unwrap();
+        let t2 = db.issue_marketing_qr_token(102, "character_collect", "喜").unwrap();
+        // Peek does NOT void.
+        let p = db.peek_marketing_qr_token(&t1).unwrap();
+        assert_eq!(p["valid"], serde_json::json!(true));
+        assert_eq!(p["ch"], serde_json::json!("恭"));
+        assert_eq!(p["already_void"], serde_json::json!(false));
+        // Set redeem voids all and returns collected chars.
+        let r = db.collect_redeem_set(&[t1.clone(), t2.clone()], Some("店员")).unwrap();
+        assert_eq!(r["ok"], serde_json::json!(true));
+        assert_eq!(r["count"], serde_json::json!(2));
+        // After set redeem, peek shows voided; re-redeem rejected.
+        assert_eq!(db.peek_marketing_qr_token(&t1).unwrap()["already_void"], serde_json::json!(true));
+        let again = db.collect_redeem_set(&[t1.clone()], None).unwrap();
+        assert_eq!(again["ok"], serde_json::json!(false));
+        assert_eq!(again["reason"], serde_json::json!("already_void"));
+    }
+
+    #[test]
     fn test_self_order_table_existence_check() {
         let (db, _dir) = test_db();
         db.init_tables().unwrap();

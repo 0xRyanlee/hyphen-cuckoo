@@ -2541,6 +2541,23 @@ pub fn delete_campaign(state: State<AppState>, id: i64) -> Result<(), String> {
     state.db.delete_campaign(id).map_err(|e| e.to_string())
 }
 
+// ── 集字兑换闭环 (v3.3 4.0) ──────────────────────────────────────────────
+
+#[tauri::command]
+pub fn peek_marketing_qr_token(state: State<AppState>, token: String) -> Result<serde_json::Value, String> {
+    state.db.peek_marketing_qr_token(&token).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn find_collect_token_by_order_no(state: State<AppState>, order_no: String) -> Result<serde_json::Value, String> {
+    state.db.find_collect_token_by_order_no(order_no.trim()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn collect_redeem_set(state: State<AppState>, tokens: Vec<String>, staff_name: Option<String>) -> Result<serde_json::Value, String> {
+    state.db.collect_redeem_set(&tokens, staff_name.as_deref()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn resolve_campaign(state: State<AppState>, token: String) -> Result<serde_json::Value, String> {
     match crate::qr_token::verify_token(&token).and_then(|p| crate::qr_token::parse_campaign_payload(&p)) {

@@ -791,4 +791,102 @@ impl Database {
             },
         }))
     }
+
+    // ==================== 集字兑换闭环 (v3.3 4.0) ====================
+
+    /// Verify a marketing token and return its character + void status WITHOUT
+    /// voiding it. Used by the staff 集字兑换 mode to accumulate scanned chars
+    /// before redeeming the whole set at once.
+    pub fn peek_marketing_qr_token(&self, token: &str) -> Result<serde_json::Value> {
+        let payload = match crate::qr_token::verify_token(token) {
+            Some(p) => p,
+            None => return Ok(serde_json::json!({ "valid": false, "reason": "invalid_signature" })),
+        };
+        let mp = match crate::qr_token::parse_marketing_payload(&payload) {
+            Some(m) => m,
+            None => return Ok(serde_json::json!({ "valid": false, "reason": "not_marketing_token" })),
+        };
+        let conn = self.conn.lock().unwrap();
+        let void: Option<i64> = conn.query_row(
+            "SELECT void FROM marketing_qr_tokens WHERE token = ?1",
+            params![token],
+            |r| r.get(0),
+        ).ok();
+        Ok(serde_json::json!({
+            "valid": true,
+            "token": token,
+            "order_id": mp.order_id,
+            "component": mp.component,
+            "ch": mp.ch,
+            "already_void": void == Some(1),
+        }))
+    }
+
+    /// Find the集字 token issued for a given order_no (序号后备:扫码失败时手输).
+    pub fn find_collect_token_by_order_no(&self, order_no: &str) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().unwrap();
+        let row: Option<(String, Option<String>, i64)> = conn.query_row(
+            "SELECT t.token, t.ch, t.void FROM marketing_qr_tokens t
+             JOIN orders o ON o.id = t.order_id
+             WHERE o.order_no = ?1 AND t.component = 'character_collect'
+             ORDER BY t.rowid DESC LIMIT 1",
+            params![order_no],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).ok();
+        match row {
+            Some((token, ch, void)) => Ok(serde_json::json!({
+                "valid": true, "token": token, "ch": ch, "already_void": void == 1,
+            })),
+            None => Ok(serde_json::json!({ "valid": false })),
+        }
+    }
+
+    /// Redeem a SET of集字 tokens at once: re-verify each (signature + not voided),
+    /// then void all and record a single set-redemption. Returns collected chars.
+    pub fn collect_redeem_set(&self, tokens: &[String], staff_name: Option<&str>) -> Result<serde_json::Value> {
+        if tokens.is_empty() {
+            return Ok(serde_json::json!({ "ok": false, "reason": "empty" }));
+        }
+        let conn = self.conn.lock().unwrap();
+        let mut chars: Vec<String> = Vec::new();
+        let mut order_ids: Vec<i64> = Vec::new();
+        // Validate all before mutating (all-or-nothing).
+        for token in tokens {
+            let payload = match crate::qr_token::verify_token(token) {
+                Some(p) => p,
+                None => return Ok(serde_json::json!({ "ok": false, "reason": "invalid_signature" })),
+            };
+            let mp = match crate::qr_token::parse_marketing_payload(&payload) {
+                Some(m) => m,
+                None => return Ok(serde_json::json!({ "ok": false, "reason": "not_marketing_token" })),
+            };
+            let void: Option<i64> = conn.query_row(
+                "SELECT void FROM marketing_qr_tokens WHERE token = ?1",
+                params![token], |r| r.get(0),
+            ).ok();
+            if void == Some(1) {
+                return Ok(serde_json::json!({ "ok": false, "reason": "already_void", "ch": mp.ch }));
+            }
+            chars.push(mp.ch.clone());
+            order_ids.push(mp.order_id);
+        }
+        // All valid → void each + record one set redemption.
+        for token in tokens {
+            conn.execute(
+                "INSERT OR IGNORE INTO marketing_qr_tokens (token, order_id, component, ch)
+                 SELECT ?1, 0, 'character_collect', '' WHERE NOT EXISTS (SELECT 1 FROM marketing_qr_tokens WHERE token = ?1)",
+                params![token],
+            )?;
+            conn.execute(
+                "UPDATE marketing_qr_tokens SET void = 1, redeemed_at = datetime('now','localtime') WHERE token = ?1",
+                params![token],
+            )?;
+        }
+        let note = format!("集字兑换:{}", chars.join(""));
+        conn.execute(
+            "INSERT INTO marketing_redemptions (order_id, component_type, note, staff_name) VALUES (?1, 'character_collect_set', ?2, ?3)",
+            params![order_ids.first().copied().unwrap_or(0), note, staff_name],
+        )?;
+        Ok(serde_json::json!({ "ok": true, "chars": chars, "count": chars.len() }))
+    }
 }

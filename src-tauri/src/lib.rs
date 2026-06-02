@@ -15,48 +15,40 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::panic;
 
-fn get_db_path() -> PathBuf {
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("Cuckoo");
-    
-    fs::create_dir_all(&data_dir).expect("Failed to create data directory");
-    
-    data_dir.join("cuckoo.db")
+/// Platform-correct, writable app data dir. Android MUST use Tauri's path API
+/// (returns the app sandbox `/data/data/<pkg>/files`); `dirs` returns None on
+/// Android → previously fell back to "." (unwritable) → create_dir_all().expect()
+/// panic → with panic=abort = instant crash on launch. Desktop keeps `dirs` so
+/// existing users' data path is unchanged.
+fn resolve_data_dir(app: &tauri::App) -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        app.path()
+            .app_data_dir()
+            .unwrap_or_else(|_| PathBuf::from("/data/local/tmp"))
+            .join("Cuckoo")
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("Cuckoo")
+    }
 }
 
-fn get_log_dir() -> PathBuf {
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("Cuckoo")
-        .join("logs");
-    fs::create_dir_all(&data_dir).expect("Failed to create log directory");
-    data_dir
-}
-
-fn get_role_auth_path() -> PathBuf {
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("Cuckoo");
-    fs::create_dir_all(&data_dir).expect("Failed to create auth directory");
-    data_dir.join("role-auth.json")
-}
-
-fn setup_panic_hook() {
-    let log_dir = get_log_dir();
+fn install_crash_log_hook(log_dir: PathBuf) {
     let start_time = std::time::Instant::now();
     panic::set_hook(Box::new(move |panic_info| {
         let elapsed = start_time.elapsed().as_secs();
-        let log_file = log_dir.join("crash.log");
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let message = format!(
             "[{}] PANIC after {}s: {}\nLocation: {:?}\n\n",
-            timestamp,
-            elapsed,
-            panic_info,
-            panic_info.location()
+            timestamp, elapsed, panic_info, panic_info.location()
         );
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_file) {
+        let _ = fs::create_dir_all(&log_dir);
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_dir.join("crash.log")) {
             let _ = file.write_all(message.as_bytes());
         }
         eprintln!("{}", message);
@@ -66,37 +58,49 @@ fn setup_panic_hook() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     eprintln!("[Cuckoo] Starting application...");
-    setup_panic_hook();
-    
-    let db_path = get_db_path();
-    let role_auth_path = get_role_auth_path();
-    eprintln!("[Cuckoo] Database path: {:?}", db_path);
-    
-    let db = match Database::new(db_path.to_str().unwrap()) {
-        Ok(db) => { eprintln!("[Cuckoo] Database created successfully"); Arc::new(db) }
-        Err(e) => { eprintln!("[Cuckoo] Database error: {}", e); panic!("Failed to create database: {}", e) }
-    };
-    
-    let role_auth = commands::load_role_auth_store(&role_auth_path);
-    
-    eprintln!("[Cuckoo] Building Tauri app...");
-    
+    // Early hook: stderr only (visible in Android logcat) until the data dir is known.
+    panic::set_hook(Box::new(|info| eprintln!("[Cuckoo] PANIC: {}", info)));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(AppState {
-            db: db.clone(),
-            db_path: db_path.clone(),
-            sync_server: std::sync::Mutex::new(None),
-            web_server: std::sync::Mutex::new(None),
-            role_auth: std::sync::Mutex::new(role_auth),
-            role_auth_path,
-        })
         .setup(move |app| {
-            // Locate the frontend dist — try several candidate paths so it works
-            // both in `tauri dev` and in the production bundle (T4.1).
+            // All filesystem init happens here (app handle available → Android-safe path).
+            let data_dir = resolve_data_dir(app);
+            if let Err(e) = fs::create_dir_all(&data_dir) {
+                eprintln!("[Cuckoo] FATAL: cannot create data dir {:?}: {}", data_dir, e);
+            }
+            let log_dir = data_dir.join("logs");
+            install_crash_log_hook(log_dir);
+
+            // Persist the QR HMAC secret under the same dir (Android-safe).
+            qr_token::set_secret_dir(data_dir.clone());
+
+            let db_path = data_dir.join("cuckoo.db");
+            eprintln!("[Cuckoo] Database path: {:?}", db_path);
+            let db = match Database::new(db_path.to_str().unwrap_or("cuckoo.db")) {
+                Ok(d) => { eprintln!("[Cuckoo] Database created successfully"); Arc::new(d) }
+                Err(e) => {
+                    eprintln!("[Cuckoo] Database error: {}", e);
+                    return Err(Box::new(e) as Box<dyn std::error::Error>);
+                }
+            };
+            let role_auth_path = data_dir.join("role-auth.json");
+            let role_auth = commands::load_role_auth_store(&role_auth_path);
+
+            app.manage(AppState {
+                db: db.clone(),
+                db_path: db_path.clone(),
+                sync_server: std::sync::Mutex::new(None),
+                web_server: std::sync::Mutex::new(None),
+                role_auth: std::sync::Mutex::new(role_auth),
+                role_auth_path: role_auth_path.clone(),
+            });
+
+            // Locate the frontend dist — several candidates so it works in dev,
+            // the desktop bundle, and the Android asset dir.
             let resource_dist = app.path().resource_dir().ok().map(|r| r.join("dist"));
             let exe_dist = std::env::current_exe()
                 .ok()
@@ -114,8 +118,6 @@ pub fn run() {
             } else {
                 eprintln!("[WebServer] No dist/ found — API-only mode");
             }
-
-            let role_auth_path = app.state::<AppState>().role_auth_path.clone();
 
             match web_server::start_web_server(db.clone(), dist_dir, role_auth_path, 9001) {
                 Ok(handle) => {
@@ -386,6 +388,9 @@ pub fn run() {
             commands::set_campaign_active,
             commands::delete_campaign,
             commands::resolve_campaign,
+            commands::peek_marketing_qr_token,
+            commands::find_collect_token_by_order_no,
+            commands::collect_redeem_set,
             commands::redeem_coupon,
             // Web 伺服器
             commands::get_web_server_status,
