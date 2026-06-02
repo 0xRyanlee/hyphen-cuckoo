@@ -19,6 +19,8 @@ interface Campaign {
   condition_text: string | null;
   valid_days: number;
   is_active: boolean;
+  claimed?: number;
+  redeemed?: number;
 }
 
 interface WebServerStatus {
@@ -207,6 +209,10 @@ export function CampaignManager() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{c.name}</p>
                     <p className="text-xs text-muted-foreground">{discountText(c.discount_type, c.discount_value)} · {c.valid_days}天{c.condition_text ? ` · ${c.condition_text}` : ""}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      领取 {c.claimed ?? 0} · 核销 {c.redeemed ?? 0}
+                      {(c.claimed ?? 0) > 0 && ` · 核销率 ${Math.round(((c.redeemed ?? 0) / (c.claimed ?? 1)) * 100)}%`}
+                    </p>
                   </div>
                   <Switch checked={c.is_active} onCheckedChange={() => toggleActive(c)} />
                   <Button size="icon" variant="ghost" className="h-7 w-7" title="活动码" disabled={!baseUrl} onClick={() => setPoster(c)}>

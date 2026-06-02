@@ -728,7 +728,10 @@ impl Database {
     pub fn list_campaigns(&self) -> Result<Vec<serde_json::Value>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, discount_type, discount_value, condition_text, valid_days, is_active, created_at FROM campaigns ORDER BY id DESC"
+            "SELECT c.id, c.name, c.discount_type, c.discount_value, c.condition_text, c.valid_days, c.is_active, c.created_at,
+                    (SELECT COUNT(*) FROM marketing_qr_tokens t WHERE t.order_id = c.id AND t.component = 'campaign_coupon') AS claimed,
+                    (SELECT COUNT(*) FROM marketing_qr_tokens t WHERE t.order_id = c.id AND t.component = 'campaign_coupon' AND t.void = 1) AS redeemed
+             FROM campaigns c ORDER BY c.id DESC"
         )?;
         let rows = stmt.query_map([], |r| Ok(serde_json::json!({
             "id": r.get::<_, i64>(0)?,
@@ -739,6 +742,8 @@ impl Database {
             "valid_days": r.get::<_, i64>(5)?,
             "is_active": r.get::<_, i64>(6)? == 1,
             "created_at": r.get::<_, String>(7)?,
+            "claimed": r.get::<_, i64>(8)?,
+            "redeemed": r.get::<_, i64>(9)?,
         })))?.collect::<Result<Vec<_>>>()?;
         Ok(rows)
     }
