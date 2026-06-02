@@ -33,8 +33,18 @@ export function CampaignPage() {
 
   useEffect(() => {
     if (!token) return;
+    // MUL: same-device, same-poster, same-day claim guard (防呆，防误领/刷领).
+    const key = `cuckoo_campaign_${token}_${new Date().toISOString().slice(0, 10)}`;
+    if (localStorage.getItem(key)) {
+      setData({ valid: false, reason: "already_claimed_today" });
+      setLoading(false);
+      return;
+    }
     call<ResolveResult>("resolve_campaign", { token })
-      .then(setData)
+      .then((r) => {
+        if (r.valid) localStorage.setItem(key, "1");
+        setData(r);
+      })
       .catch(() => setData({ valid: false }))
       .finally(() => setLoading(false));
   }, [token]);
@@ -48,11 +58,14 @@ export function CampaignPage() {
   }
 
   if (!data?.valid || !data.campaign || !data.coupon_token) {
+    const claimedToday = data?.reason === "already_claimed_today";
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="text-center text-gray-500">
-          <p className="text-4xl mb-3">🎫</p>
-          <p className="font-semibold text-gray-700">活动已结束或二维码无效</p>
+          <p className="text-4xl mb-3">{claimedToday ? "✅" : "🎫"}</p>
+          <p className="font-semibold text-gray-700">
+            {claimedToday ? "今日已领取，明天再来吧" : "活动已结束或二维码无效"}
+          </p>
         </div>
       </div>
     );
