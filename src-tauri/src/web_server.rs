@@ -245,6 +245,24 @@ fn dispatch_api(
             }
         }
 
+        "/api/redeem_discount_coupon" => {
+            let code = v["code"].as_str().unwrap_or("").trim();
+            let amount = v["amount"].as_f64().unwrap_or(0.0);
+            let staff = v["staff_name"].as_str();
+            let pin = v["pin"].as_str().unwrap_or("");
+            let store = crate::commands::load_role_auth_store(&ctx.role_auth_path);
+            if !crate::commands::verify_any_pin(&store, pin) {
+                return ("200 OK", r#"{"ok":false,"reason":"pin_required"}"#.to_string());
+            }
+            if code.is_empty() || amount < 0.0 {
+                return ("200 OK", r#"{"ok":false,"reason":"invalid_input"}"#.to_string());
+            }
+            match db.redeem_discount_coupon(code, amount, staff) {
+                Ok(data) => ("200 OK", data.to_string()),
+                Err(e) => ("500 Internal Server Error", json_err(&e.to_string())),
+            }
+        }
+
         "/api/sign_table_token" => {
             let table_no = v["table_no"].as_str().unwrap_or("").trim();
             if table_no.is_empty() {
@@ -688,11 +706,21 @@ fn api_create_self_order_direct(db: &Arc<Database>, body: &[u8], require_token: 
     }
     let mut items: Vec<SelfOrderItemInput> = Vec::with_capacity(items_raw.len());
     for item in items_raw {
+        let modifiers = item["modifiers"].as_array().map(|arr| {
+            arr.iter().filter_map(|m| {
+                Some(crate::database::SelfOrderModifierInput {
+                    modifier_type: m["modifier_type"].as_str()?.to_string(),
+                    price_delta: m["price_delta"].as_f64().unwrap_or(0.0),
+                    qty: m["qty"].as_f64().unwrap_or(1.0),
+                })
+            }).collect()
+        }).unwrap_or_default();
         items.push(SelfOrderItemInput {
             menu_item_id: item["menu_item_id"].as_i64().ok_or("invalid menu_item_id")?,
             spec_code: item["spec_code"].as_str().map(|s| s.to_string()),
             qty: item["qty"].as_f64().unwrap_or(1.0),
             note: item["note"].as_str().map(|s| s.to_string()),
+            modifiers,
         });
     }
     db.create_self_order(&table_no, &items).map_err(|e| e.to_string())

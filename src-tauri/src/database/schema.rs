@@ -687,6 +687,7 @@ impl Database {
                 component_type TEXT NOT NULL,
                 note TEXT,
                 staff_name TEXT,
+                amount REAL NOT NULL DEFAULT 0,
                 redeemed_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
 
@@ -963,6 +964,12 @@ impl Database {
             .exists([])?;
         if !has_menu_desc {
             conn.execute_batch("ALTER TABLE menu_items ADD COLUMN description TEXT")?;
+        }
+        let has_redemption_amount: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('marketing_redemptions') WHERE name='amount'")?
+            .exists([])?;
+        if !has_redemption_amount {
+            let _ = conn.execute_batch("ALTER TABLE marketing_redemptions ADD COLUMN amount REAL NOT NULL DEFAULT 0");
         }
         Ok(())
     }

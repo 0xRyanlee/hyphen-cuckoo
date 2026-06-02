@@ -377,9 +377,23 @@ impl Database {
                  FROM menu_items WHERE id = ?2",
                 params![order_id, item.menu_item_id, item.spec_code, item.qty, item.note],
             )?;
+            // B3': persist structured modifiers (加料/去料) for this line.
+            let order_item_id = conn.last_insert_rowid();
+            for m in &item.modifiers {
+                conn.execute(
+                    "INSERT INTO order_item_modifiers (order_item_id, modifier_type, qty, price_delta) VALUES (?1, ?2, ?3, ?4)",
+                    params![order_item_id, m.modifier_type, m.qty, m.price_delta],
+                )?;
+            }
         }
+        // amount_total now includes modifier price deltas.
         conn.execute(
-            "UPDATE orders SET amount_total = (SELECT COALESCE(SUM(qty * unit_price), 0) FROM order_items WHERE order_id = ?1) WHERE id = ?1",
+            "UPDATE orders SET amount_total =
+                (SELECT COALESCE(SUM(qty * unit_price), 0) FROM order_items WHERE order_id = ?1)
+              + (SELECT COALESCE(SUM(m.price_delta * m.qty), 0)
+                 FROM order_item_modifiers m JOIN order_items oi ON m.order_item_id = oi.id
+                 WHERE oi.order_id = ?1)
+             WHERE id = ?1",
             params![order_id],
         )?;
         // Auto-submit: create kitchen tickets
@@ -543,9 +557,9 @@ impl Database {
     pub fn get_marketing_redemptions(&self, date: Option<&str>) -> Result<Vec<serde_json::Value>> {
         let conn = self.conn.lock().unwrap();
         let sql = if date.is_some() {
-            "SELECT mr.id, mr.order_id, o.order_no, mr.component_type, mr.note, mr.staff_name, mr.redeemed_at FROM marketing_redemptions mr LEFT JOIN orders o ON mr.order_id = o.id WHERE date(mr.redeemed_at) = ?1 ORDER BY mr.redeemed_at DESC"
+            "SELECT mr.id, mr.order_id, o.order_no, mr.component_type, mr.note, mr.staff_name, mr.amount, mr.redeemed_at FROM marketing_redemptions mr LEFT JOIN orders o ON mr.order_id = o.id WHERE date(mr.redeemed_at) = ?1 ORDER BY mr.redeemed_at DESC"
         } else {
-            "SELECT mr.id, mr.order_id, o.order_no, mr.component_type, mr.note, mr.staff_name, mr.redeemed_at FROM marketing_redemptions mr LEFT JOIN orders o ON mr.order_id = o.id ORDER BY mr.redeemed_at DESC LIMIT 100"
+            "SELECT mr.id, mr.order_id, o.order_no, mr.component_type, mr.note, mr.staff_name, mr.amount, mr.redeemed_at FROM marketing_redemptions mr LEFT JOIN orders o ON mr.order_id = o.id ORDER BY mr.redeemed_at DESC LIMIT 100"
         };
         let mut stmt = conn.prepare(sql)?;
         let rows = if let Some(d) = date {
@@ -555,7 +569,8 @@ impl Database {
                 "component_type": r.get::<_,String>(3)?,
                 "note": r.get::<_,Option<String>>(4)?,
                 "staff_name": r.get::<_,Option<String>>(5)?,
-                "redeemed_at": r.get::<_,String>(6)?,
+                "amount": r.get::<_,f64>(6)?,
+                "redeemed_at": r.get::<_,String>(7)?,
             })))?.collect::<Result<Vec<_>>>()?
         } else {
             stmt.query_map([], |r| Ok(serde_json::json!({
@@ -564,7 +579,8 @@ impl Database {
                 "component_type": r.get::<_,String>(3)?,
                 "note": r.get::<_,Option<String>>(4)?,
                 "staff_name": r.get::<_,Option<String>>(5)?,
-                "redeemed_at": r.get::<_,String>(6)?,
+                "amount": r.get::<_,f64>(6)?,
+                "redeemed_at": r.get::<_,String>(7)?,
             })))?.collect::<Result<Vec<_>>>()?
         };
         Ok(rows)
@@ -671,6 +687,26 @@ impl Database {
         }))
     }
 
+    /// Redeems a printed discount_coupon by its 12-hex 优惠码. The code is unique
+    /// per order (deterministic from order_id), so it doubles as the dedup key —
+    /// no issuance row needs to exist. `amount` is the discount actually deducted
+    /// from the bill, entered by staff; it feeds 促销成本 in the funnel report.
+    pub fn redeem_discount_coupon(&self, code: &str, amount: f64, staff_name: Option<&str>) -> Result<serde_json::Value> {
+        let conn = self.conn.lock().unwrap();
+        let already: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM marketing_redemptions WHERE component_type = 'discount_coupon' AND note = ?1",
+            params![code], |r| r.get(0),
+        ).unwrap_or(0);
+        if already > 0 {
+            return Ok(serde_json::json!({ "ok": false, "already": true, "code": code }));
+        }
+        conn.execute(
+            "INSERT INTO marketing_redemptions (order_id, component_type, note, staff_name, amount) VALUES (0, 'discount_coupon', ?1, ?2, ?3)",
+            params![code, staff_name, amount],
+        )?;
+        Ok(serde_json::json!({ "ok": true, "already": false, "code": code, "amount": amount }))
+    }
+
     pub fn record_qr_scan(&self, kind: &str, table_no: Option<&str>, order_id: Option<i64>) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -704,12 +740,17 @@ impl Database {
             "component": r.get::<_,String>(0)?,
             "count": r.get::<_,i64>(1)?,
         })))?.collect::<Result<Vec<_>>>()?;
+        let coupon_discount: f64 = conn.query_row(
+            "SELECT COALESCE(SUM(amount),0) FROM marketing_redemptions WHERE component_type = 'discount_coupon' AND redeemed_at >= datetime('now','localtime',?1)",
+            params![since], |r| r.get(0),
+        ).unwrap_or(0.0);
         Ok(serde_json::json!({
             "days": days,
             "scans": scans,
             "self_orders": self_orders,
             "redemptions": redemptions,
             "scan_to_order": if scans > 0 { self_orders as f64 / scans as f64 } else { 0.0 },
+            "coupon_discount": coupon_discount,
             "by_component": by_component,
         }))
     }

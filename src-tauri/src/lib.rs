@@ -394,6 +394,7 @@ pub fn run() {
             commands::get_require_token,
             commands::set_require_token,
             commands::redeem_coupon,
+            commands::redeem_discount_coupon,
             // Web 伺服器
             commands::get_web_server_status,
             commands::stop_web_server,

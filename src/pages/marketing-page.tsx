@@ -144,6 +144,7 @@ interface RedemptionRecord {
   component_type: string;
   note: string | null;
   staff_name: string | null;
+  amount: number;
   redeemed_at: string;
 }
 
@@ -159,6 +160,7 @@ interface MarketingFunnel {
   self_orders: number;
   redemptions: number;
   scan_to_order: number;
+  coupon_discount: number;
   by_component: { component: string; count: number }[];
 }
 
@@ -191,6 +193,9 @@ export function MarketingPage() {
   const [verifying, setVerifying] = useState(false);
   const [redeemCode, setRedeemCode] = useState("");
   const [redeeming, setRedeeming] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponAmount, setCouponAmount] = useState("");
+  const [couponRedeeming, setCouponRedeeming] = useState(false);
 
   // D3: redeem directly by a scanned code — accepts a raw token or a full
   // .../#/redeem/<token> URL pasted from a scanner gun, no order-no lookup.
@@ -218,6 +223,35 @@ export function MarketingPage() {
       toast.error("核销失败", { description: String(e) });
     } finally {
       setRedeeming(false);
+    }
+  }
+
+  // B7: redeem a printed discount_coupon by its 优惠码 + record actual discount given.
+  async function handleRedeemCoupon() {
+    const code = couponCode.trim();
+    const amount = parseFloat(couponAmount);
+    if (!code || !(amount >= 0)) return;
+    setCouponRedeeming(true);
+    try {
+      const r = await invoke<{ ok: boolean; already?: boolean; reason?: string }>(
+        "redeem_discount_coupon", { code, amount }
+      );
+      if (r.ok) {
+        toast.success(`折价券核销成功 · 优惠 ¥${amount}`);
+        setCouponCode(""); setCouponAmount("");
+        invoke<RedemptionRecord[]>("get_marketing_redemptions", {}).then(setRedemptions).catch(() => {});
+        invoke<MarketingFunnel>("get_marketing_funnel", { days: 7 }).then(setFunnel).catch(() => {});
+      } else if (r.already) {
+        toast.error("该优惠码已核销");
+      } else if (r.reason === "pin_required") {
+        toast.error("需要店员密码，请在收银设备上核销");
+      } else {
+        toast.error("核销失败");
+      }
+    } catch (e) {
+      toast.error("核销失败", { description: String(e) });
+    } finally {
+      setCouponRedeeming(false);
     }
   }
 
@@ -533,6 +567,39 @@ export function MarketingPage() {
               </CardContent>
             </Card>
 
+            {/* B7 折价券金额核销 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">折价券核销</CardTitle>
+                <CardDescription>
+                  顾客出示小票折价券时，输入优惠码与本次实际抵扣金额，计入促销成本
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="优惠码（小票上 12 位）"
+                    value={couponCode}
+                    onChange={e => setCouponCode(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="实付优惠 ¥"
+                    value={couponAmount}
+                    onChange={e => setCouponAmount(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleRedeemCoupon()}
+                    className="w-32"
+                  />
+                  <Button variant="secondary" onClick={handleRedeemCoupon}
+                    disabled={couponRedeeming || !couponCode.trim() || !(parseFloat(couponAmount) >= 0)}>
+                    <ClipboardCheck className="h-4 w-4 mr-1" />{couponRedeeming ? "核销中..." : "核销"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* 兑奖记录 */}
             <Card>
               <CardHeader>
@@ -551,6 +618,7 @@ export function MarketingPage() {
                           {COMPONENT_LABELS[r.component_type] ?? r.component_type}
                         </span>
                         <span className="flex-1 text-muted-foreground truncate">{r.note ?? ""}</span>
+                        {r.amount > 0 && <span className="text-rose-600 shrink-0">-¥{r.amount.toFixed(2)}</span>}
                         <span className="text-muted-foreground shrink-0">{r.redeemed_at.slice(0, 16)}</span>
                       </div>
                     ))}
@@ -589,6 +657,10 @@ export function MarketingPage() {
                     <div className="flex items-center justify-between text-sm px-1">
                       <span className="text-muted-foreground">扫码 → 下单转化率</span>
                       <span className="font-bold text-gray-900">{(funnel.scan_to_order * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm px-1">
+                      <span className="text-muted-foreground">折价券促销成本</span>
+                      <span className="font-bold text-rose-600">¥{(funnel.coupon_discount ?? 0).toFixed(2)}</span>
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2">各组件核销分布</p>

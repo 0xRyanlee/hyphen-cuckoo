@@ -2528,6 +2528,13 @@ pub fn redeem_marketing_qr_token(state: State<AppState>, token: String, staff_na
 }
 
 #[tauri::command]
+pub fn redeem_discount_coupon(state: State<AppState>, code: String, amount: f64, staff_name: Option<String>, pin: Option<String>) -> Result<serde_json::Value, String> {
+    // Same trust model as redeem_marketing_qr_token: in-app is role-gated, PIN only at web endpoint.
+    let _ = pin;
+    state.db.redeem_discount_coupon(code.trim(), amount, staff_name.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn redeem_requires_pin(state: State<AppState>) -> Result<bool, String> {
     let auth = state.role_auth.lock().map_err(|_| "角色权限状态不可用".to_string())?;
     Ok(!auth.pin_hashes.is_empty())

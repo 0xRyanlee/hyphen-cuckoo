@@ -15,20 +15,30 @@ interface MarketingPopupData {
   template_content: string;  // JSON elements[]
 }
 
+interface CartModifier {
+  modifier_type: string;
+  price_delta: number;
+}
+
 interface CartItem {
   menu_item_id: number;
   name: string;
   spec_code: string | null;
   spec_name: string | null;
-  unit_price: number;
+  unit_price: number;  // base + sum(modifier price_delta), per single item
   qty: number;
   note: string;
+  modifiers: CartModifier[];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+function modSig(mods: CartModifier[]) {
+  return mods.map((m) => m.modifier_type).sort().join(",");
+}
+
 function cartKey(item: CartItem) {
-  return `${item.menu_item_id}__${item.spec_code ?? ""}`;
+  return `${item.menu_item_id}__${item.spec_code ?? ""}__${modSig(item.modifiers)}`;
 }
 
 function priceOf(item: PublicMenuItem, specCode: string | null): number {
@@ -64,7 +74,19 @@ const CAT_COLORS = [
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
-const FLAVOR_OPTIONS = ["少冰", "去冰", "少糖", "半糖", "去蔥", "不要辣", "微辣"];
+const MODIFIER_OPTIONS: { label: string; price: number }[] = [
+  { label: "少冰", price: 0 },
+  { label: "去冰", price: 0 },
+  { label: "少糖", price: 0 },
+  { label: "半糖", price: 0 },
+  { label: "不要辣", price: 0 },
+  { label: "微辣", price: 0 },
+  { label: "加珍珠", price: 3 },
+  { label: "加椰果", price: 3 },
+  { label: "加布丁", price: 4 },
+  { label: "加蛋", price: 5 },
+  { label: "加大份", price: 8 },
+];
 
 function ItemCard({
   item,
@@ -76,29 +98,34 @@ function ItemCard({
   item: PublicMenuItem;
   catIndex: number;
   cartQty: number;
-  onAdd: (item: PublicMenuItem, spec: PublicMenuItemSpec | null, qty?: number, note?: string) => void;
+  onAdd: (item: PublicMenuItem, spec: PublicMenuItemSpec | null, qty: number, modifiers: CartModifier[]) => void;
   onRemove: (item: PublicMenuItem, spec: PublicMenuItemSpec | null) => void;
 }) {
   const [specOpen, setSpecOpen] = useState(false);
   const [selSpec, setSelSpec] = useState<PublicMenuItemSpec | null>(null);
   const [qty, setQty] = useState(1);
-  const [flavors, setFlavors] = useState<string[]>([]);
+  const [mods, setMods] = useState<string[]>([]);
   const hasSpecs = item.specs.length > 0;
   const colorClass = CAT_COLORS[catIndex % CAT_COLORS.length];
 
   function openSheet() {
     setSelSpec(hasSpecs ? item.specs[0] : null);
     setQty(1);
-    setFlavors([]);
+    setMods([]);
     setSpecOpen(true);
   }
 
-  function toggleFlavor(f: string) {
-    setFlavors((prev) => prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]);
+  function toggleMod(label: string) {
+    setMods((prev) => prev.includes(label) ? prev.filter((x) => x !== label) : [...prev, label]);
   }
 
+  const modsExtra = MODIFIER_OPTIONS.filter((o) => mods.includes(o.label)).reduce((s, o) => s + o.price, 0);
+
   function confirmAdd() {
-    onAdd(item, selSpec, qty, flavors.join("、"));
+    const selected: CartModifier[] = MODIFIER_OPTIONS
+      .filter((o) => mods.includes(o.label))
+      .map((o) => ({ modifier_type: o.label, price_delta: o.price }));
+    onAdd(item, selSpec, qty, selected);
     setSpecOpen(false);
   }
 
@@ -175,16 +202,16 @@ function ItemCard({
               </>
             )}
 
-            <p className="text-xs text-gray-400 mb-1.5">口味（可选）</p>
+            <p className="text-xs text-gray-400 mb-1.5">口味 / 加料（可选）</p>
             <div className="flex flex-wrap gap-2 mb-4">
-              {FLAVOR_OPTIONS.map((f) => (
+              {MODIFIER_OPTIONS.map((o) => (
                 <button
-                  key={f}
-                  onClick={() => toggleFlavor(f)}
+                  key={o.label}
+                  onClick={() => toggleMod(o.label)}
                   className={`px-3 py-1.5 rounded-full text-xs border ${
-                    flavors.includes(f) ? "border-orange-400 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-600"
+                    mods.includes(o.label) ? "border-orange-400 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-600"
                   }`}
-                >{f}</button>
+                >{o.label}{o.price > 0 && <span className="ml-0.5 text-orange-400">+{o.price}</span>}</button>
               ))}
             </div>
 
@@ -200,7 +227,7 @@ function ItemCard({
             </div>
 
             <button onClick={confirmAdd} className="w-full py-3.5 rounded-2xl bg-orange-500 text-white font-bold text-base">
-              加入购物车 · ¥{fmt((item.sales_price + (selSpec?.price_delta ?? 0)) * qty)}
+              加入购物车 · ¥{fmt((item.sales_price + (selSpec?.price_delta ?? 0) + modsExtra) * qty)}
             </button>
             <button onClick={() => setSpecOpen(false)} className="mt-2 w-full py-2 text-gray-400 text-sm">取消</button>
           </div>
@@ -246,6 +273,9 @@ function CartSheet({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold">{item.name}</p>
                     {item.spec_name && <p className="text-xs text-gray-500">{item.spec_name}</p>}
+                    {item.modifiers.length > 0 && (
+                      <p className="text-xs text-gray-400">{item.modifiers.map((m) => m.modifier_type).join("、")}</p>
+                    )}
                     <p className="text-orange-500 text-sm font-bold mt-0.5">¥{fmt(item.unit_price)}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -585,15 +615,16 @@ export function SelfOrderPage() {
     sectionRefs.current[catId]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function addToCart(item: PublicMenuItem, spec: PublicMenuItemSpec | null, qty = 1, note = "") {
-    const key = `${item.id}__${spec?.spec_code ?? ""}`;
+  function addToCart(item: PublicMenuItem, spec: PublicMenuItemSpec | null, qty = 1, modifiers: CartModifier[] = []) {
+    const modsExtra = modifiers.reduce((s, m) => s + m.price_delta, 0);
+    const key = `${item.id}__${spec?.spec_code ?? ""}__${modSig(modifiers)}`;
     setCart((prev) => {
       const existing = prev.find((c) => cartKey(c) === key);
-      if (existing) return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty + qty, note: note || c.note } : c);
+      if (existing) return prev.map((c) => cartKey(c) === key ? { ...c, qty: c.qty + qty } : c);
       return [...prev, {
         menu_item_id: item.id, name: item.name,
         spec_code: spec?.spec_code ?? null, spec_name: spec?.spec_name ?? null,
-        unit_price: priceOf(item, spec?.spec_code ?? null), qty, note,
+        unit_price: priceOf(item, spec?.spec_code ?? null) + modsExtra, qty, note: "", modifiers,
       }];
     });
   }
@@ -633,6 +664,11 @@ export function SelfOrderPage() {
           spec_code: c.spec_code ?? null,
           qty: c.qty,
           note: c.note || null,
+          modifiers: c.modifiers.map((m) => ({
+            modifier_type: m.modifier_type,
+            price_delta: m.price_delta,
+            qty: c.qty,
+          })),
         })),
       });
       setSuccessOrder(result);

@@ -514,7 +514,20 @@ pub struct SelfOrderItemInput {
     pub spec_code: Option<String>,
     pub qty: f64,
     pub note: Option<String>,
+    #[serde(default)]
+    pub modifiers: Vec<SelfOrderModifierInput>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelfOrderModifierInput {
+    pub modifier_type: String,
+    #[serde(default)]
+    pub price_delta: f64,
+    #[serde(default = "one_qty")]
+    pub qty: f64,
+}
+
+fn one_qty() -> f64 { 1.0 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableOrderItem {
@@ -933,7 +946,7 @@ mod tests {
         let (db, _dir) = test_db();
         db.init_tables().unwrap();
         db.seed_data().unwrap();
-        let items = vec![SelfOrderItemInput { menu_item_id: 1, spec_code: None, qty: 1.0, note: None }];
+        let items = vec![SelfOrderItemInput { menu_item_id: 1, spec_code: None, qty: 1.0, note: None, modifiers: vec![] }];
         // No tables configured → any table_no accepted (防呆), assuming menu item 1 exists.
         // (seed_data provides at least one available menu item with id 1.)
         let no_tables = db.create_self_order("ANY", &items);
@@ -968,6 +981,20 @@ mod tests {
         db.set_campaign_active(cid, false).unwrap();
         let c3 = db.issue_campaign_coupon(cid).unwrap();
         assert_eq!(c3["valid"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn test_discount_coupon_redeem_records_amount_once() {
+        let (db, _dir) = test_db();
+        db.init_tables().unwrap();
+        let r = db.redeem_discount_coupon("A1B2C3D4E5F6", 12.5, Some("店长")).unwrap();
+        assert_eq!(r["ok"], serde_json::json!(true));
+        // Same code cannot be redeemed twice.
+        let again = db.redeem_discount_coupon("A1B2C3D4E5F6", 12.5, None).unwrap();
+        assert_eq!(again["already"], serde_json::json!(true));
+        // Discount enters the funnel as promotion cost.
+        let f = db.get_marketing_funnel(7).unwrap();
+        assert_eq!(f["coupon_discount"], serde_json::json!(12.5));
     }
 
     #[test]
