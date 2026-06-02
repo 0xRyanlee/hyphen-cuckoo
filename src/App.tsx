@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { call as invoke } from "@/lib/transport";
 import { appLogger } from "@/lib/logger";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
@@ -27,9 +27,11 @@ import { PrintSettingsPage } from "@/pages/print-settings-page";
 import { PrintTemplatesPage } from "@/pages/print-templates-page";
 import { ExpensesPage } from "@/pages/expenses-page";
 import { CustomersPage } from "@/pages/customers-page";
-import { SelfOrderPage } from "@/pages/self-order-page";
-import { RedeemPage } from "@/pages/redeem-page";
-import { CampaignPage } from "@/pages/campaign-page";
+// E1: customer-facing pages are lazy-loaded so the scanned-QR first paint only
+// pulls its own chunk (not the whole admin app).
+const SelfOrderPage = lazy(() => import("@/pages/self-order-page").then((m) => ({ default: m.SelfOrderPage })));
+const RedeemPage = lazy(() => import("@/pages/redeem-page").then((m) => ({ default: m.RedeemPage })));
+const CampaignPage = lazy(() => import("@/pages/campaign-page").then((m) => ({ default: m.CampaignPage })));
 import { TablesPage } from "@/pages/tables-page";
 import { MarketingPage } from "@/pages/marketing-page";
 import { Toaster } from "@/components/ui/toaster";
@@ -480,23 +482,23 @@ function App() {
     );
   }
 
-  // Self-order consumer page — no sidebar, no auth needed.
-  // /table/:tableNo = legacy static QR (grace period); /t/:token = signed QR.
-  if (location.pathname.startsWith("/table/") || location.pathname.startsWith("/t/")) {
-    return <Routes>
-      <Route path="/table/:tableNo" element={<SelfOrderPage />} />
-      <Route path="/t/:token" element={<SelfOrderPage />} />
-    </Routes>;
-  }
-
-  // Staff scans an order marketing QR → redeem confirmation page (no sidebar/auth)
-  if (location.pathname.startsWith("/redeem/")) {
-    return <Routes><Route path="/redeem/:token" element={<RedeemPage />} /></Routes>;
-  }
-
-  // Customer scans a campaign poster QR → claim coupon page (no sidebar/auth)
-  if (location.pathname.startsWith("/c/")) {
-    return <Routes><Route path="/c/:token" element={<CampaignPage />} /></Routes>;
+  // Customer/staff QR-landing pages — no sidebar, no auth, lazy-loaded chunks.
+  const isCustomerRoute =
+    location.pathname.startsWith("/table/") ||
+    location.pathname.startsWith("/t/") ||
+    location.pathname.startsWith("/redeem/") ||
+    location.pathname.startsWith("/c/");
+  if (isCustomerRoute) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400 text-sm">加载中…</div>}>
+        <Routes>
+          <Route path="/table/:tableNo" element={<SelfOrderPage />} />
+          <Route path="/t/:token" element={<SelfOrderPage />} />
+          <Route path="/redeem/:token" element={<RedeemPage />} />
+          <Route path="/c/:token" element={<CampaignPage />} />
+        </Routes>
+      </Suspense>
+    );
   }
 
   return (
