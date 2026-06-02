@@ -1,6 +1,6 @@
 {
   "name": "cuckoo",
-  "version": "3.2.2",
+  "version": "3.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
