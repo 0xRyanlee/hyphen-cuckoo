@@ -44,7 +44,7 @@ pub struct DebugPrintResult {
 
 fn debug_output_dir() -> Result<PathBuf, String> {
     let base = dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(std::env::temp_dir)
         .join("Cuckoo")
         .join("debug_prints");
     std::fs::create_dir_all(&base).map_err(|e| format!("創建調試目錄失敗: {}", e))?;

@@ -1377,9 +1377,15 @@ pub fn backup_database(state: State<AppState>, dest_dir: Option<String>) -> Resu
     require_roles(&state, &[UserRole::Owner], "备份数据库")?;
     let backup_dir = match dest_dir {
         Some(d) => std::path::PathBuf::from(d),
+        // Desktop: user-visible Documents. Android (document_dir → None): fall back
+        // to the app data dir (db's parent, sandbox) so backup never fails on launch path.
         None => dirs::document_dir()
-            .unwrap_or_else(|| dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from(".")))
-            .join("Cuckoo 备份"),
+            .map(|d| d.join("Cuckoo 备份"))
+            .unwrap_or_else(|| {
+                state.db_path.parent()
+                    .map(|p| p.join("backups"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("backups"))
+            }),
     };
     std::fs::create_dir_all(&backup_dir).map_err(|e| format!("创建备份目录失败: {}", e))?;
     let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
