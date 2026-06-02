@@ -368,6 +368,7 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
                 <div className="flex flex-col items-center gap-1 pt-3 border-t border-orange-100">
                   <StyledQR value={`${window.location.origin}/#/redeem/${qrToken}`} size={120} dotColor="#ea580c" />
                   <div className="text-[10px] text-orange-400">店员扫码核销 · 一码一次</div>
+                  <div className="text-[10px] text-orange-400 font-mono">序号 {popup.order_no}</div>
                 </div>
               )}
             </div>

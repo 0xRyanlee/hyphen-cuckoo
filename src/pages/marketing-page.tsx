@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSummary, type PrintElement } from "./print-templates-page";
 import { CampaignManager } from "./campaign-manager";
+import { CollectRedeem } from "./collect-redeem";
 import { Megaphone } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -470,6 +471,7 @@ export function MarketingPage() {
 
           {/* 兑奖核销 Tab */}
           <TabsContent value="redeem" className="space-y-4">
+            <CollectRedeem />
             {/* 验码区 */}
             <Card>
               <CardHeader>
