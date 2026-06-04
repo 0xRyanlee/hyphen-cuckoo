@@ -1,6 +1,6 @@
 use tauri::{State, Manager};
 use std::sync::Arc;
-use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, LoyaltyTxn, Coupon, RecipeComponentType, OrderComponentType, RestaurantTable, PublicMenuCategory, SelfOrderItemInput, TableOrderSummary};
+use crate::database::{Database, MaterialWithTags, Unit, MaterialCategory, Tag, MaterialState, Supplier, Expense, SupplierProduct, Recipe, RecipeWithItems, RecipeCostResult, RecipeType, MenuItem, MenuCategory, Order, OrderItem, OrderItemModifier, KitchenStation, KitchenTicket, InventoryBatch, InventorySummary, AttributeTemplate, EntityAttribute, InventoryTxn, MenuItemSpec, PrinterConfig, PrintTask, PurchaseOrder, PurchaseOrderWithItems, ProductionOrder, ProductionOrderWithItems, Stocktake, StocktakeWithItems, Notification, Customer, LoyaltyTxn, Coupon, RecipeComponentType, OrderComponentType, RestaurantTable, PublicMenuCategory, SelfOrderItemInput, TableOrderSummary, ComboWithComponents};
 use crate::printer::{self, EscPosBuilder, LanPrinter, scan_lan_printers as LAN_SCAN};
 use serde::{Deserialize, Serialize};
 use argon2::{
@@ -1258,6 +1258,37 @@ pub fn update_menu_category(state: State<AppState>, id: i64, name: String, sort_
 pub fn delete_menu_category(state: State<AppState>, id: i64) -> Result<(), String> {
     require_roles(&state, &[UserRole::Owner], "删除菜单分类")?;
     state.db.delete_menu_category(id).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ComboComponentInput {
+    pub component_item_id: i64,
+    pub qty: i32,
+}
+
+#[tauri::command]
+pub fn create_combo(state: State<AppState>, name: String, sales_price: f64, description: Option<String>, components: Vec<ComboComponentInput>) -> Result<i64, String> {
+    require_roles(&state, &[UserRole::Owner], "创建套餐")?;
+    let comps: Vec<(i64, i32)> = components.into_iter().map(|c| (c.component_item_id, c.qty)).collect();
+    state.db.create_combo(&name, sales_price, description.as_deref(), &comps).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_combos(state: State<AppState>) -> Result<Vec<ComboWithComponents>, String> {
+    state.db.list_combos().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_combo(state: State<AppState>, menu_item_id: i64, name: Option<String>, sales_price: Option<f64>, description: Option<String>, is_available: Option<bool>, components: Option<Vec<ComboComponentInput>>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新套餐")?;
+    let comps: Option<Vec<(i64, i32)>> = components.map(|cs| cs.into_iter().map(|c| (c.component_item_id, c.qty)).collect());
+    state.db.update_combo(menu_item_id, name.as_deref(), sales_price, description.as_deref(), is_available, comps.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_combo(state: State<AppState>, menu_item_id: i64) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "删除套餐")?;
+    state.db.delete_combo(menu_item_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

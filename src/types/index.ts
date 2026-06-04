@@ -110,7 +110,23 @@ export interface PublicMenuItem {
   image_path: string | null;
   sales_price: number;
   is_hot?: boolean;
+  is_combo?: boolean;
   specs: PublicMenuItemSpec[];
+}
+
+export interface ComboComponent {
+  component_item_id: number;
+  component_name: string;
+  qty: number;
+}
+
+export interface ComboItem {
+  menu_item_id: number;
+  name: string;
+  description: string | null;
+  sales_price: number;
+  is_available: boolean;
+  components: ComboComponent[];
 }
 
 export interface PublicMenuCategory {
@@ -414,4 +430,9 @@ export interface LoyaltyTxn {
   delta: number;
   reason: string;
   created_at: string;
+}
+export interface WebServerStatus {
+  running: boolean;
+  port: number | null;
+  url: string | null;
 }

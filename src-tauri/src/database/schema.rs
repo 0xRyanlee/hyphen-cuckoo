@@ -977,6 +977,25 @@ impl Database {
         if !has_redemption_amount {
             let _ = conn.execute_batch("ALTER TABLE marketing_redemptions ADD COLUMN amount REAL NOT NULL DEFAULT 0");
         }
+        let has_is_combo: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('menu_items') WHERE name='is_combo'")?
+            .exists([])?;
+        if !has_is_combo {
+            conn.execute_batch("ALTER TABLE menu_items ADD COLUMN is_combo INTEGER NOT NULL DEFAULT 0")?;
+        }
+        let has_combo_components: bool = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='combo_components'")?
+            .exists([])?;
+        if !has_combo_components {
+            conn.execute_batch(
+                "CREATE TABLE combo_components (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    combo_item_id INTEGER NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+                    component_item_id INTEGER NOT NULL REFERENCES menu_items(id),
+                    qty INTEGER NOT NULL DEFAULT 1
+                )"
+            )?;
+        }
         Ok(())
     }
 

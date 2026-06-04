@@ -283,7 +283,7 @@ impl Database {
         for (cat_id, cat_name) in cats {
             let mut item_stmt = conn.prepare(
                 "SELECT id, name, description, image_path, sales_price FROM menu_items
-                 WHERE category_id = ?1 AND is_available = 1 ORDER BY id ASC"
+                 WHERE category_id = ?1 AND is_available = 1 AND is_combo = 0 ORDER BY id ASC"
             )?;
             let items: Vec<PublicMenuItem> = item_stmt.query_map(params![cat_id], |row| {
                 let id: i64 = row.get(0)?;
@@ -294,6 +294,7 @@ impl Database {
                     image_path: row.get(3)?,
                     sales_price: row.get(4)?,
                     is_hot: hot_ids.contains(&id),
+                    is_combo: false,
                     specs: vec![],
                 })
             })?.collect::<Result<Vec<_>>>()?;
@@ -320,6 +321,47 @@ impl Database {
                 });
             }
         }
+
+        // Append a virtual "套餐" category for available combos.
+        let mut combo_stmt = conn.prepare(
+            "SELECT mi.id, mi.name, mi.description, mi.sales_price,
+                    GROUP_CONCAT(comp.name || ' x' || cc.qty, ' + ') as components_label
+             FROM menu_items mi
+             LEFT JOIN combo_components cc ON cc.combo_item_id = mi.id
+             LEFT JOIN menu_items comp ON comp.id = cc.component_item_id
+             WHERE mi.is_combo = 1 AND mi.is_available = 1
+             GROUP BY mi.id ORDER BY mi.name"
+        )?;
+        let combo_items: Vec<PublicMenuItem> = combo_stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let base_desc: Option<String> = row.get(2)?;
+            let components_label: Option<String> = row.get(4)?;
+            let description = match (base_desc, components_label) {
+                (Some(d), Some(c)) => Some(format!("{} ({})", d, c)),
+                (None, Some(c)) => Some(c),
+                (Some(d), None) => Some(d),
+                (None, None) => None,
+            };
+            Ok(PublicMenuItem {
+                id,
+                name: row.get(1)?,
+                description,
+                image_path: None,
+                sales_price: row.get(3)?,
+                is_hot: false,
+                is_combo: true,
+                specs: vec![],
+            })
+        })?.collect::<Result<Vec<_>>>()?;
+
+        if !combo_items.is_empty() {
+            result.push(PublicMenuCategory {
+                id: -1,
+                name: "套餐".to_string(),
+                items: combo_items,
+            });
+        }
+
         Ok(result)
     }
 

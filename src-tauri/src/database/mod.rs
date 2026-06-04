@@ -498,7 +498,25 @@ pub struct PublicMenuItem {
     pub image_path: Option<String>,
     pub sales_price: f64,
     pub is_hot: bool,
+    pub is_combo: bool,
     pub specs: Vec<PublicMenuItemSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComboComponent {
+    pub component_item_id: i64,
+    pub component_name: String,
+    pub qty: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComboWithComponents {
+    pub menu_item_id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub sales_price: f64,
+    pub is_available: bool,
+    pub components: Vec<ComboComponent>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

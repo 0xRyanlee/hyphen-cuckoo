@@ -13,7 +13,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
-import { Plus, Minus, ShoppingCart, Send, X, MessageSquare, Tag, FileText, Star } from "lucide-react";
+import { Plus, Minus, ShoppingCart, Send, X, MessageSquare, Tag, FileText, Star, Layers } from "lucide-react";
+import { call as invoke } from "@/lib/transport";
+import type { ComboItem } from "@/types";
 
 function formatPrice(price: number): string {
   return price.toLocaleString("zh-CN", { style: "currency", currency: "CNY" });
@@ -150,13 +152,39 @@ export function POSPage({
     localStorage.removeItem("cuckoo_cart");
   };
 
+  const [combos, setCombos] = useState<ComboItem[]>([]);
+  useEffect(() => {
+    invoke<ComboItem[]>("list_combos", {}).then(setCombos).catch(() => {});
+  }, []);
+
   const favoriteItems = menuItems.filter((item) => item.is_favorite);
   const filteredItems = menuItems.filter((item) => {
     if (selectedCategory === -1) return item.is_favorite && (!searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (selectedCategory === -2) return false; // combos tab handled separately
     const matchesCategory = !selectedCategory || item.category_id === selectedCategory;
     const matchesSearch = !searchQuery || item.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+  const filteredCombos = selectedCategory === -2
+    ? combos.filter((c) => c.is_available && (!searchQuery || c.name.toLowerCase().includes(searchQuery.toLowerCase())))
+    : [];
+
+  function addComboToCart(combo: ComboItem) {
+    const syntheticItem: MenuItem = {
+      id: combo.menu_item_id,
+      code: null,
+      name: combo.name,
+      sales_price: combo.sales_price,
+      is_available: combo.is_available,
+      is_favorite: false,
+      image_path: null,
+      description: combo.components.map(c => `${c.component_name}×${c.qty}`).join(" + "),
+      recipe_id: null,
+      category_id: null,
+      created_at: "",
+    };
+    addToCart(syntheticItem, null);
+  }
 
   const cartTotal = cart.reduce((sum, item) => {
     const itemTotal = (item.menu_item.sales_price + (item.spec?.price_delta || 0)) * item.qty;
@@ -282,6 +310,16 @@ export function POSPage({
                   <Star className="h-3 w-3" />常用
                 </Button>
               )}
+              {combos.length > 0 && (
+                <Button
+                  variant={selectedCategory === -2 ? "default" : "outline"}
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setSelectedCategory(-2)}
+                >
+                  <Layers className="h-3 w-3" />套餐
+                </Button>
+              )}
               {menuCategories.map((cat) => (
                 <Button
                   key={cat.id}
@@ -319,30 +357,60 @@ export function POSPage({
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {filteredItems.map((item, i) => (
-                      <Button
-                        key={item.id}
-                        variant="ghost"
-                        className="group relative flex flex-col items-start gap-2 rounded-lg border bg-card p-4 text-left transition-all hover:border-primary hover:shadow-md active:scale-95 disabled:opacity-50 disabled:pointer-events-none animate-stagger h-auto"
-                        style={{ animationDelay: `${i * 30}ms` }}
-                        onClick={() => item.is_available && openSpecDialog(item)}
-                        disabled={!item.is_available}
-                      >
-                        <div className="flex w-full items-start justify-between">
-                          <span className="font-medium text-sm line-clamp-2">{item.name}</span>
-                          {!item.is_available && (
-                            <Badge variant="destructive" className="text-xs">停售</Badge>
-                          )}
-                        </div>
-                        <span className="text-sm font-bold text-primary">
-                          {formatPriceMini(item.sales_price)}
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
-                  {filteredItems.length === 0 && (
-                    <EmptyState icon={FileText} title="暂无商品" description="搜索或选择分类查找商品" />
+                  {selectedCategory === -2 ? (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {filteredCombos.map((combo, i) => (
+                          <Button
+                            key={combo.menu_item_id}
+                            variant="ghost"
+                            className="group relative flex flex-col items-start gap-2 rounded-lg border bg-card p-4 text-left transition-all hover:border-primary hover:shadow-md active:scale-95 animate-stagger h-auto"
+                            style={{ animationDelay: `${i * 30}ms` }}
+                            onClick={() => addComboToCart(combo)}
+                          >
+                            <div className="flex w-full items-start justify-between gap-1">
+                              <span className="font-medium text-sm line-clamp-2">{combo.name}</span>
+                              <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground line-clamp-1">
+                              {combo.components.map(c => `${c.component_name}×${c.qty}`).join(" + ")}
+                            </span>
+                            <span className="text-sm font-bold text-primary">{formatPriceMini(combo.sales_price)}</span>
+                          </Button>
+                        ))}
+                      </div>
+                      {filteredCombos.length === 0 && (
+                        <EmptyState icon={Layers} title="暂无套餐" description="在菜单管理中创建套餐" />
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {filteredItems.map((item, i) => (
+                          <Button
+                            key={item.id}
+                            variant="ghost"
+                            className="group relative flex flex-col items-start gap-2 rounded-lg border bg-card p-4 text-left transition-all hover:border-primary hover:shadow-md active:scale-95 disabled:opacity-50 disabled:pointer-events-none animate-stagger h-auto"
+                            style={{ animationDelay: `${i * 30}ms` }}
+                            onClick={() => item.is_available && openSpecDialog(item)}
+                            disabled={!item.is_available}
+                          >
+                            <div className="flex w-full items-start justify-between">
+                              <span className="font-medium text-sm line-clamp-2">{item.name}</span>
+                              {!item.is_available && (
+                                <Badge variant="destructive" className="text-xs">停售</Badge>
+                              )}
+                            </div>
+                            <span className="text-sm font-bold text-primary">
+                              {formatPriceMini(item.sales_price)}
+                            </span>
+                          </Button>
+                        ))}
+                      </div>
+                      {filteredItems.length === 0 && (
+                        <EmptyState icon={FileText} title="暂无商品" description="搜索或选择分类查找商品" />
+                      )}
+                    </>
                   )}
                 </>
               )}

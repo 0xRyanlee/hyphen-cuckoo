@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -6,14 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Plus, FileText, ToggleRight, ToggleLeft, Link, Pencil, Trash2, Edit2, Tag, Save, X, EyeOff, Eye, Star } from "lucide-react";
+import { Plus, FileText, ToggleRight, ToggleLeft, Link, Pencil, Trash2, Edit2, Tag, Save, X, EyeOff, Eye, Star, AlertTriangle, Layers } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
+import { call as invoke } from "@/lib/transport";
+import type { ComboItem } from "@/types";
 
 interface MenuCategory { id: number; name: string; }
 interface MenuItem { id: number; name: string; sales_price: number; is_available: boolean; is_favorite: boolean; recipe_id: number | null; category_id: number | null; }
@@ -266,7 +269,7 @@ export function MenuPage({
                       <TableCell><Checkbox checked={selectedItems.includes(item.id)} onClick={() => toggleSelect(item.id)} /></TableCell>
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{menuCategories.find((c) => c.id === item.category_id)?.name || "-"}</TableCell>
-                      <TableCell className="text-xs">{item.recipe_id ? (<div className="flex items-center gap-1"><Link className="h-3 w-3 text-primary" /><span className="text-primary">{recipes.find((r) => r.id === item.recipe_id)?.name || `配方 #${item.recipe_id}`}</span></div>) : (<span className="text-muted-foreground">未绑定</span>)}</TableCell>
+                      <TableCell className="text-xs">{item.recipe_id ? (<div className="flex items-center gap-1"><Link className="h-3 w-3 text-primary" /><span className="text-primary">{recipes.find((r) => r.id === item.recipe_id)?.name || `配方 #${item.recipe_id}`}</span></div>) : (<div className="flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-amber-500" /><span className="text-xs text-muted-foreground">未绑定</span></div>)}</TableCell>
                       <TableCell className="text-right">¥{item.sales_price.toFixed(2)}</TableCell>
                       <TableCell><Badge variant={item.is_available ? "default" : "secondary"}>{item.is_available ? "可售" : "停售"}</Badge></TableCell>
                       <TableCell className="text-right">
@@ -458,6 +461,240 @@ export function MenuPage({
           <DialogFooter><Button variant="outline" onClick={() => setDeleteConfirmTarget(null)}>取消</Button><Button variant="destructive" onClick={executeDelete}>删除</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ComboManager menuItems={menuItems} />
     </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// ComboManager — standalone combo CRUD, embedded in MenuPage
+// ────────────────────────────────────────────────────────────────────
+
+interface ComboManagerProps { menuItems: { id: number; name: string; sales_price: number }[] }
+
+function ComboManager({ menuItems }: ComboManagerProps) {
+  const [combos, setCombos] = useState<ComboItem[]>([]);
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [desc, setDesc] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ComboItem | null>(null);
+  const [editTarget, setEditTarget] = useState<ComboItem | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editComps, setEditComps] = useState<{ id: number; qty: number }[]>([]);
+
+  // selected components for the create form: {id -> qty}
+  const [selComps, setSelComps] = useState<{ id: number; qty: number }[]>([]);
+
+  const load = () => invoke<ComboItem[]>("list_combos", {}).then(setCombos).catch(console.error);
+  useEffect(() => { load(); }, []);
+
+  function toggleComp(id: number, checked: boolean, list: { id: number; qty: number }[], setList: (v: { id: number; qty: number }[]) => void) {
+    if (checked) setList([...list, { id, qty: 1 }]);
+    else setList(list.filter(c => c.id !== id));
+  }
+  function setCompQty(id: number, qty: number, list: { id: number; qty: number }[], setList: (v: { id: number; qty: number }[]) => void) {
+    setList(list.map(c => c.id === id ? { ...c, qty: Math.max(1, qty) } : c));
+  }
+
+  async function handleCreate() {
+    if (!name.trim()) { toast.error("请填写套餐名称"); return; }
+    if (selComps.length === 0) { toast.error("请至少选一个组成菜品"); return; }
+    const p = parseFloat(price);
+    if (!price || isNaN(p) || p <= 0) { toast.error("请填写有效价格"); return; }
+    setSaving(true);
+    try {
+      await invoke("create_combo", {
+        name: name.trim(),
+        salesPrice: p,
+        description: desc.trim() || null,
+        components: selComps.map(c => ({ componentItemId: c.id, qty: c.qty })),
+      });
+      toast.success("套餐已创建");
+      setName(""); setPrice(""); setDesc(""); setSelComps([]);
+      load();
+    } catch (e) { toast.error("创建失败", { description: String(e) }); }
+    finally { setSaving(false); }
+  }
+
+  function openEdit(c: ComboItem) {
+    setEditTarget(c);
+    setEditName(c.name);
+    setEditPrice(String(c.sales_price));
+    setEditDesc(c.description ?? "");
+    setEditComps(c.components.map(cc => ({ id: cc.component_item_id, qty: cc.qty })));
+  }
+
+  async function handleEdit() {
+    if (!editTarget) return;
+    if (!editName.trim()) { toast.error("请填写套餐名称"); return; }
+    if (editComps.length === 0) { toast.error("请至少选一个组成菜品"); return; }
+    const p = parseFloat(editPrice);
+    if (!editPrice || isNaN(p) || p <= 0) { toast.error("请填写有效价格"); return; }
+    setSaving(true);
+    try {
+      await invoke("update_combo", {
+        menuItemId: editTarget.menu_item_id,
+        name: editName.trim(),
+        salesPrice: p,
+        description: editDesc.trim() || null,
+        isAvailable: editTarget.is_available,
+        components: editComps.map(c => ({ componentItemId: c.id, qty: c.qty })),
+      });
+      toast.success("套餐已更新");
+      setEditTarget(null);
+      load();
+    } catch (e) { toast.error("更新失败", { description: String(e) }); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleAvailable(c: ComboItem) {
+    try {
+      await invoke("update_combo", { menuItemId: c.menu_item_id, isAvailable: !c.is_available });
+      load();
+    } catch (e) { toast.error(String(e)); }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const t = deleteTarget;
+    setDeleteTarget(null);
+    try {
+      await invoke("delete_combo", { menuItemId: t.menu_item_id });
+      toast.success("已删除");
+      load();
+    } catch (e) { toast.error(String(e)); }
+  }
+
+  const ComponentSelector = ({ list, setList }: { list: { id: number; qty: number }[]; setList: (v: { id: number; qty: number }[]) => void }) => (
+    <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
+      {menuItems.map(m => {
+        const entry = list.find(c => c.id === m.id);
+        const checked = !!entry;
+        return (
+          <div key={m.id} className="flex items-center gap-2">
+            <Checkbox checked={checked} onCheckedChange={(v) => toggleComp(m.id, !!v, list, setList)} />
+            <span className="flex-1 text-sm">{m.name}</span>
+            <span className="text-xs text-muted-foreground">¥{m.sales_price}</span>
+            {checked && (
+              <Input type="number" className="w-14 h-7 text-xs" min={1} value={entry!.qty}
+                onChange={(e) => setCompQty(m.id, parseInt(e.target.value) || 1, list, setList)} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><Layers className="h-4 w-4" />套餐管理</CardTitle>
+          <CardDescription>创建由多个菜品组成的套餐，顾客可在点餐时选购</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-xs">套餐名称</Label>
+              <Input placeholder="例：早餐套餐" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">套餐价格 (¥)</Label>
+              <Input type="number" placeholder="29.9" value={price} onChange={(e) => setPrice(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">备注说明（选填）</Label>
+              <Input placeholder="例：含一杯饮料" value={desc} onChange={(e) => setDesc(e.target.value)} />
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-xs">组成菜品（勾选后可设置数量）</Label>
+              {menuItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">暂无菜品，请先添加菜品</p>
+              ) : (
+                <ComponentSelector list={selComps} setList={setSelComps} />
+              )}
+            </div>
+          </div>
+          <Button size="sm" onClick={handleCreate} disabled={saving}>
+            <Plus className="h-4 w-4 mr-1" />{saving ? "创建中…" : "创建套餐"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {combos.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">套餐列表</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {combos.map(c => (
+                <div key={c.menu_item_id} className={`flex items-center gap-3 border rounded-lg px-3 py-2 ${c.is_available ? "" : "opacity-50"}`}>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{c.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      ¥{c.sales_price.toFixed(2)} · {c.components.map(cc => `${cc.component_name} ×${cc.qty}`).join(" + ")}
+                    </p>
+                    {c.description && <p className="text-[10px] text-muted-foreground">{c.description}</p>}
+                  </div>
+                  <Switch checked={c.is_available} onCheckedChange={() => toggleAvailable(c)} />
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(c)}>
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(c)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={!!editTarget} onOpenChange={(v) => !v && setEditTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>编辑套餐</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">套餐名称</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">价格 (¥)</Label>
+                <Input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">备注说明</Label>
+                <Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">组成菜品</Label>
+              <ComponentSelector list={editComps} setList={setEditComps} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTarget(null)}>取消</Button>
+            <Button onClick={handleEdit} disabled={saving}>{saving ? "保存中…" : "保存"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>删除套餐</DialogTitle></DialogHeader>
+          <p className="py-2 text-sm text-muted-foreground">确定删除套餐「{deleteTarget?.name}」？此操作不可撤销。</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={confirmDelete}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -21,9 +21,9 @@ impl Database {
     pub fn get_menu_items(&self, category_id: Option<i64>) -> Result<Vec<MenuItem>> {
         let conn = self.conn.lock().unwrap();
         let query = if category_id.is_some() {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE category_id = ?1 ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE category_id = ?1 AND is_combo = 0 ORDER BY name"
         } else {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE is_combo = 0 ORDER BY name"
         };
         let mut stmt = conn.prepare(query)?;
         let items = if let Some(cat_id) = category_id {
@@ -92,9 +92,9 @@ impl Database {
     pub fn get_menu_items_for_pos(&self, category_id: Option<i64>) -> Result<Vec<MenuItem>> {
         let conn = self.conn.lock().unwrap();
         let query = if category_id.is_some() {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE is_available = 1 AND category_id = ?1 ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE is_available = 1 AND is_combo = 0 AND category_id = ?1 ORDER BY name"
         } else {
-            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE is_available = 1 ORDER BY name"
+            "SELECT id, name, code, category_id, recipe_id, sales_price, cost, is_available, is_favorite, image_path, description, created_at FROM menu_items WHERE is_available = 1 AND is_combo = 0 ORDER BY name"
         };
         let mut stmt = conn.prepare(query)?;
         let items = if let Some(cat_id) = category_id {
@@ -223,6 +223,113 @@ impl Database {
         conn.execute("UPDATE menu_items SET category_id = NULL WHERE category_id = ?1", params![id])?;
         conn.execute("UPDATE menu_categories SET is_active = 0 WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    pub fn create_combo(&self, name: &str, sales_price: f64, description: Option<&str>, components: &[(i64, i32)]) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<i64> = (|| {
+            conn.execute(
+                "INSERT INTO menu_items (name, sales_price, description, is_combo, is_available) VALUES (?1, ?2, ?3, 1, 1)",
+                params![name, sales_price, description],
+            )?;
+            let menu_item_id = conn.last_insert_rowid();
+            for (component_item_id, qty) in components {
+                conn.execute(
+                    "INSERT INTO combo_components (combo_item_id, component_item_id, qty) VALUES (?1, ?2, ?3)",
+                    params![menu_item_id, component_item_id, qty],
+                )?;
+            }
+            Ok(menu_item_id)
+        })();
+        match result {
+            Ok(id) => { conn.execute_batch("COMMIT")?; Ok(id) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
+    }
+
+    pub fn list_combos(&self) -> Result<Vec<ComboWithComponents>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, sales_price, is_available FROM menu_items WHERE is_combo = 1 ORDER BY name"
+        )?;
+        let combos: Vec<ComboWithComponents> = stmt.query_map([], |row| {
+            Ok(ComboWithComponents {
+                menu_item_id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                sales_price: row.get(3)?,
+                is_available: row.get::<_, i32>(4)? != 0,
+                components: vec![],
+            })
+        })?.collect::<Result<Vec<_>>>()?;
+
+        let mut result = Vec::with_capacity(combos.len());
+        for mut combo in combos {
+            let mut comp_stmt = conn.prepare(
+                "SELECT cc.component_item_id, mi.name, cc.qty FROM combo_components cc
+                 JOIN menu_items mi ON mi.id = cc.component_item_id
+                 WHERE cc.combo_item_id = ?1 ORDER BY cc.id"
+            )?;
+            combo.components = comp_stmt.query_map(params![combo.menu_item_id], |row| {
+                Ok(ComboComponent {
+                    component_item_id: row.get(0)?,
+                    component_name: row.get(1)?,
+                    qty: row.get(2)?,
+                })
+            })?.collect::<Result<Vec<_>>>()?;
+            result.push(combo);
+        }
+        Ok(result)
+    }
+
+    pub fn update_combo(&self, menu_item_id: i64, name: Option<&str>, sales_price: Option<f64>, description: Option<&str>, is_available: Option<bool>, components: Option<&[(i64, i32)]>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            if let Some(n) = name {
+                conn.execute("UPDATE menu_items SET name = ?1 WHERE id = ?2 AND is_combo = 1", params![n, menu_item_id])?;
+            }
+            if let Some(p) = sales_price {
+                conn.execute("UPDATE menu_items SET sales_price = ?1 WHERE id = ?2 AND is_combo = 1", params![p, menu_item_id])?;
+            }
+            if description.is_some() {
+                conn.execute("UPDATE menu_items SET description = ?1 WHERE id = ?2 AND is_combo = 1", params![description, menu_item_id])?;
+            }
+            if let Some(av) = is_available {
+                conn.execute("UPDATE menu_items SET is_available = ?1 WHERE id = ?2 AND is_combo = 1", params![if av { 1 } else { 0 }, menu_item_id])?;
+            }
+            if let Some(comps) = components {
+                conn.execute("DELETE FROM combo_components WHERE combo_item_id = ?1", params![menu_item_id])?;
+                for (component_item_id, qty) in comps {
+                    conn.execute(
+                        "INSERT INTO combo_components (combo_item_id, component_item_id, qty) VALUES (?1, ?2, ?3)",
+                        params![menu_item_id, component_item_id, qty],
+                    )?;
+                }
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
+    }
+
+    pub fn delete_combo(&self, menu_item_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("BEGIN")?;
+        let result: Result<()> = (|| {
+            conn.execute("DELETE FROM combo_components WHERE combo_item_id = ?1", params![menu_item_id])?;
+            conn.execute("DELETE FROM menu_item_specs WHERE menu_item_id = ?1", params![menu_item_id])?;
+            conn.execute("DELETE FROM station_menu_items WHERE menu_item_id = ?1", params![menu_item_id])?;
+            conn.execute("DELETE FROM menu_items WHERE id = ?1 AND is_combo = 1", params![menu_item_id])?;
+            Ok(())
+        })();
+        match result {
+            Ok(_) => { conn.execute_batch("COMMIT")?; Ok(()) }
+            Err(e) => { conn.execute_batch("ROLLBACK").ok(); Err(e) }
+        }
     }
 
 
