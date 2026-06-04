@@ -18,6 +18,7 @@ export function PrintTicketsPage() {
   const [loading, setLoading] = useState(true);
   const [editDialog, setEditDialog] = useState<PrintTicketType | null>(null);
   const [createDialog, setCreateDialog] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PrintTicketType | null>(null);
 
   useEffect(() => {
     loadData();
@@ -54,7 +55,7 @@ export function PrintTicketsPage() {
   async function handleUpdate(id: number, req: UpdateTicketTypeRequest) {
     try {
       await invoke("update_print_ticket_type", { id, req });
-      toast.success("票據類型已更新");
+      toast.success("票据类型已更新");
       loadData();
       setEditDialog(null);
     } catch (e) {
@@ -66,6 +67,7 @@ export function PrintTicketsPage() {
     try {
       await invoke("delete_print_ticket_type", { id });
       toast.success("已删除");
+      setDeleteTarget(null);
       loadData();
     } catch (e) {
       toast.error("删除失败", { description: String(e) });
@@ -94,16 +96,13 @@ export function PrintTicketsPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">票據類型</h1>
-          <p className="text-muted-foreground mt-1">管理打印票據的類型和配置</p>
+          <h1 className="text-2xl font-bold">票据类型</h1>
+          <p className="text-muted-foreground mt-1">管理打印票据的类型和配置</p>
         </div>
-        <Dialog open={createDialog} onOpenChange={setCreateDialog}>
-          <Button onClick={() => setCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            新建票據類型
-          </Button>
-          <CreateTicketTypeDialog stations={stations} open={createDialog} onSubmit={handleCreate} onCancel={() => setCreateDialog(false)} />
-        </Dialog>
+        <Button onClick={() => setCreateDialog(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          新建票据类型
+        </Button>
       </div>
 
       <div className="grid gap-4">
@@ -121,7 +120,7 @@ export function PrintTicketsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {ticket.is_default && <Badge>默認</Badge>}
+                  {ticket.is_default && <Badge>默认</Badge>}
                   {!ticket.is_active && <Badge variant="secondary">已停用</Badge>}
                 </div>
               </div>
@@ -129,11 +128,11 @@ export function PrintTicketsPage() {
             <CardContent className="space-y-4">
               <div className="flex flex-wrap gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">紙寬:</span>{" "}
+                  <span className="text-muted-foreground">纸宽:</span>{" "}
                   <span className="font-medium">{ticket.paper_width}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">字體:</span>{" "}
+                  <span className="text-muted-foreground">字体:</span>{" "}
                   <span className="font-medium">{ticket.font_size}</span>
                 </div>
                 <div>
@@ -157,10 +156,10 @@ export function PrintTicketsPage() {
                   {ticket.show_table_no && <Badge variant="outline">桌号</Badge>}
                   {ticket.show_dine_type && <Badge variant="outline">用餐类型</Badge>}
                   {ticket.show_item_name && <Badge variant="outline">菜品</Badge>}
-                  {ticket.show_item_qty && <Badge variant="outline">數量</Badge>}
-{ticket.show_item_price && <Badge variant="outline">单价</Badge>}
-                  {ticket.show_price && <Badge variant="outline" className="bg-yellow-100">显示价格</Badge>}
-                  {ticket.show_seq && <Badge variant="outline" className="bg-blue-100">显示序号</Badge>}
+                  {ticket.show_item_qty && <Badge variant="outline">数量</Badge>}
+                  {ticket.show_item_price && <Badge variant="outline">单价</Badge>}
+                  {ticket.show_price && <Badge variant="outline" className="bg-muted">显示价格</Badge>}
+                  {ticket.show_seq && <Badge variant="outline" className="bg-muted">显示序号</Badge>}
                 </div>
               </div>
 
@@ -171,10 +170,9 @@ export function PrintTicketsPage() {
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setEditDialog(ticket)}>
                   <Edit className="h-3 w-3 mr-1" />
-                  編輯
+                  编辑
                 </Button>
-                <EditTicketTypeDialog ticket={editDialog} open={!!editDialog} stations={stations} onSubmit={(req) => handleUpdate(ticket.id, req)} onCancel={() => setEditDialog(null)} />
-                <Button variant="outline" size="sm" onClick={() => handleDelete(ticket.id)}>
+                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteTarget(ticket)}>
                   <Trash2 className="h-3 w-3 mr-1" />
                   删除
                 </Button>
@@ -191,6 +189,41 @@ export function PrintTicketsPage() {
           </Card>
         )}
       </div>
+
+      {/* EditDialog 在 loop 外，key={editDialog?.id} 確保切換 ticket 時 useState 重置 */}
+      <EditTicketTypeDialog
+        key={editDialog?.id ?? "none"}
+        ticket={editDialog}
+        open={!!editDialog}
+        stations={stations}
+        onSubmit={(req) => editDialog && handleUpdate(editDialog.id, req)}
+        onCancel={() => setEditDialog(null)}
+      />
+
+      <CreateTicketTypeDialog
+        stations={stations}
+        open={createDialog}
+        onSubmit={handleCreate}
+        onCancel={() => setCreateDialog(false)}
+      />
+
+      {/* 刪除確認 Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              删除「{deleteTarget?.name}」票据类型后不可恢复，确认继续？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={() => deleteTarget && handleDelete(deleteTarget.id)}>
+              删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -268,17 +301,17 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>新建票據類型</DialogTitle>
+          <DialogTitle>新建票据类型</DialogTitle>
           <DialogDescription>创建新的打印票据类型配置</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>編碼</Label>
+              <Label>编码</Label>
               <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="如: receipt, kitchen, label" />
             </div>
             <div className="space-y-2">
-              <Label>名稱</Label>
+              <Label>名称</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如: 出餐单" />
             </div>
           </div>
@@ -288,7 +321,7 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>紙寬</Label>
+              <Label>纸宽</Label>
               <Select value={paperWidth} onValueChange={setPaperWidth}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -314,12 +347,12 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
             <Label>配置选项</Label>
             <div className="flex flex-wrap gap-4">
               <div className="flex items-center gap-2">
-                <Checkbox id="showPrice" checked={showPrice} onCheckedChange={(v) => setShowPrice(!!v)} />
-                <Label htmlFor="showPrice">显示单价</Label>
+                <Checkbox id="create-showPrice" checked={showPrice} onCheckedChange={(v) => setShowPrice(!!v)} />
+                <Label htmlFor="create-showPrice">显示单价</Label>
               </div>
               <div className="flex items-center gap-2">
-                <Checkbox id="showSeq" checked={showSeq} onCheckedChange={(v) => setShowSeq(!!v)} />
-                <Label htmlFor="showSeq">显示序号</Label>
+                <Checkbox id="create-showSeq" checked={showSeq} onCheckedChange={(v) => setShowSeq(!!v)} />
+                <Label htmlFor="create-showSeq">显示序号</Label>
               </div>
             </div>
           </div>
@@ -390,129 +423,98 @@ function EditTicketTypeDialog({ ticket, open, stations, onSubmit, onCancel }: { 
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>编辑票据类型 - {ticket.name}</DialogTitle>
+          <DialogTitle>编辑票据类型 — {ticket.name}</DialogTitle>
         </DialogHeader>
-      <div className="grid gap-4 py-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>名稱</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+        <div className="grid gap-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>名称</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>描述</Label>
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>纸宽</Label>
+              <Select value={paperWidth} onValueChange={setPaperWidth}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="58mm">58mm</SelectItem>
+                  <SelectItem value="80mm">80mm</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>字体</Label>
+              <Select value={fontSize} onValueChange={setFontSize}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">小</SelectItem>
+                  <SelectItem value="medium">中</SelectItem>
+                  <SelectItem value="large">大</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>切割</Label>
+              <Select value={cutMode} onValueChange={setCutMode}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">全切</SelectItem>
+                  <SelectItem value="half">半切</SelectItem>
+                  <SelectItem value="none">不切</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="space-y-2">
-            <Label>描述</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>紙寬</Label>
-            <Select value={paperWidth} onValueChange={setPaperWidth}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+            <Label>工作站绑定</Label>
+            <Select value={stationId} onValueChange={setStationId}>
+              <SelectTrigger><SelectValue placeholder="全部工作站" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="58mm">58mm</SelectItem>
-                <SelectItem value="80mm">80mm</SelectItem>
+                <SelectItem value="">全部工作站</SelectItem>
+                {stations.map(s => (
+                  <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>字體</Label>
-            <Select value={fontSize} onValueChange={setFontSize}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="small">小</SelectItem>
-                <SelectItem value="medium">中</SelectItem>
-                <SelectItem value="large">大</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>切割</Label>
-            <Select value={cutMode} onValueChange={setCutMode}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="full">全切</SelectItem>
-                <SelectItem value="half">半切</SelectItem>
-                <SelectItem value="none">不切</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label>工作站綁定</Label>
-          <Select value={stationId} onValueChange={setStationId}>
-            <SelectTrigger><SelectValue placeholder="全部工作站" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">全部工作站</SelectItem>
-              {stations.map(s => (
-                <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+            <Label>显示配置</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { id: "edit-showPrice", label: "单价", val: showPrice, set: setShowPrice },
+                { id: "edit-showSeq", label: "序号", val: showSeq, set: setShowSeq },
+                { id: "edit-showOrderNo", label: "订单号", val: showOrderNo, set: setShowOrderNo },
+                { id: "edit-showTableNo", label: "桌号", val: showTableNo, set: setShowTableNo },
+                { id: "edit-showDineType", label: "用餐类型", val: showDineType, set: setShowDineType },
+                { id: "edit-showItemName", label: "菜品名", val: showItemName, set: setShowItemName },
+                { id: "edit-showItemQty", label: "数量", val: showItemQty, set: setShowItemQty },
+                { id: "edit-showItemPrice", label: "小计单价", val: showItemPrice, set: setShowItemPrice },
+                { id: "edit-showItemSubtotal", label: "小计", val: showItemSubtotal, set: setShowItemSubtotal },
+                { id: "edit-showItemSpec", label: "规格", val: showItemSpec, set: setShowItemSpec },
+                { id: "edit-showItemNote", label: "备注", val: showItemNote, set: setShowItemNote },
+                { id: "edit-showTotalAmount", label: "合计", val: showTotalAmount, set: setShowTotalAmount },
+              ].map(({ id, label, val, set }) => (
+                <div key={id} className="flex items-center gap-2">
+                  <Checkbox id={id} checked={val} onCheckedChange={(v) => set(!!v)} />
+                  <Label htmlFor={id}>{label}</Label>
+                </div>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>显示配置</Label>
-          <div className="grid grid-cols-4 gap-2">
-            <div className="flex items-center gap-2">
-              <Checkbox id="showPrice" checked={showPrice} onCheckedChange={(v) => setShowPrice(!!v)} />
-              <Label htmlFor="showPrice">单价</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showSeq" checked={showSeq} onCheckedChange={(v) => setShowSeq(!!v)} />
-              <Label htmlFor="showSeq">序号</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showOrderNo" checked={showOrderNo} onCheckedChange={(v) => setShowOrderNo(!!v)} />
-              <Label htmlFor="showOrderNo">订单号</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showTableNo" checked={showTableNo} onCheckedChange={(v) => setShowTableNo(!!v)} />
-              <Label htmlFor="showTableNo">桌号</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showDineType" checked={showDineType} onCheckedChange={(v) => setShowDineType(!!v)} />
-              <Label htmlFor="showDineType">用餐类型</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showItemName" checked={showItemName} onCheckedChange={(v) => setShowItemName(!!v)} />
-              <Label htmlFor="showItemName">菜品名</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showItemQty" checked={showItemQty} onCheckedChange={(v) => setShowItemQty(!!v)} />
-              <Label htmlFor="showItemQty">数量</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showItemPrice" checked={showItemPrice} onCheckedChange={(v) => setShowItemPrice(!!v)} />
-              <Label htmlFor="showItemPrice">小计单价</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showItemSubtotal" checked={showItemSubtotal} onCheckedChange={(v) => setShowItemSubtotal(!!v)} />
-              <Label htmlFor="showItemSubtotal">小计</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showItemSpec" checked={showItemSpec} onCheckedChange={(v) => setShowItemSpec(!!v)} />
-              <Label htmlFor="showItemSpec">规格</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showItemNote" checked={showItemNote} onCheckedChange={(v) => setShowItemNote(!!v)} />
-              <Label htmlFor="showItemNote">备注</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="showTotalAmount" checked={showTotalAmount} onCheckedChange={(v) => setShowTotalAmount(!!v)} />
-              <Label htmlFor="showTotalAmount">合计</Label>
             </div>
           </div>
-        </div>
-        <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Checkbox id="isActive" checked={isActive} onCheckedChange={(v) => setIsActive(!!v)} />
-            <Label htmlFor="isActive">启用状态</Label>
+            <Checkbox id="edit-isActive" checked={isActive} onCheckedChange={(v) => setIsActive(!!v)} />
+            <Label htmlFor="edit-isActive">启用状态</Label>
           </div>
         </div>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onCancel}>取消</Button>
-        <Button onClick={handleSubmit}>保存</Button>
-      </DialogFooter>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>取消</Button>
+          <Button onClick={handleSubmit}>保存</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

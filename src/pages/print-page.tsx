@@ -710,7 +710,7 @@ export function PrintPage() {
                 <CardTitle>即时预览</CardTitle>
                 <CardDescription>热敏纸效果</CardDescription>
               </CardHeader>
-              <CardContent className="flex justify-center bg-gray-100 p-4 rounded-lg min-h-[300px]">
+              <CardContent className="flex justify-center bg-muted p-4 rounded-lg min-h-[300px]">
                 {selectedTemplate ? renderMockup() : <div className="text-muted-foreground">请选择打印模板</div>}
               </CardContent>
             </Card>

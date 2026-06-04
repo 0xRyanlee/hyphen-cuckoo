@@ -9,7 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash2,
          ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2, ShieldCheck, Eye, EyeOff,
-         Radio, ServerCrash, Link2, Smartphone } from "lucide-react";
+         Radio, ServerCrash, Link2, Smartphone, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePinStatuses, saveRolePin } from "@/lib/roles";
 import { toast } from "sonner";
@@ -17,6 +18,7 @@ import { appLogger, type LogEntry, type ErrorCategory } from "@/lib/logger";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import type { UpdateInfo } from "@/components/UpdateDialog";
 import { PENDING_KEY } from "@/hooks/useAutoUpdate";
+import { open } from "@tauri-apps/plugin-dialog";
 
 const AUTO_UPDATE_KEY = "cuckoo_auto_update";
 const SKIP_KEY = "cuckoo_skipped_version";
@@ -196,7 +198,7 @@ function PendingUpdateCard() {
 
 // ── Error log panel ──────────────────────────────────────────────────────────
 
-function ErrorLogPanel() {
+function ErrorLogPanel({ appVersion }: { appVersion: string }) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [filter, setFilter] = useState<ErrorCategory | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -224,7 +226,7 @@ function ErrorLogPanel() {
     const lines = [
       "=== Cuckoo 错误报告 ===",
       `生成时间: ${new Date().toISOString()}`,
-      `版本: 1.2.2`,
+      `版本: ${appVersion}`,
       `平台: ${navigator.platform}`,
       `UA: ${navigator.userAgent}`,
       `URL: ${location.href}`,
@@ -803,8 +805,16 @@ export function SettingsPage({ connected }: SettingsPageProps) {
   const [autoBackup, setAutoBackup] = useState(
     localStorage.getItem("cuckoo_auto_backup") === "true"
   );
-  const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [backupLoading, setBackupLoading] = useState(false);
+  const [backupPath, setBackupPath] = useState<string | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreConfirmPath, setRestoreConfirmPath] = useState<string | null>(null);
+  const [paymentQr, setPaymentQr] = useState<string | null>(null);
+  const [paymentQrLoading, setPaymentQrLoading] = useState(false);
+
+  useEffect(() => {
+    invoke<string | null>("get_payment_qr").then((d) => setPaymentQr(d ?? null)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     invoke<string>("health_check")
@@ -814,6 +824,76 @@ export function SettingsPage({ connected }: SettingsPageProps) {
       .then(setAppVersion)
       .catch(() => {});
   }, []);
+
+  async function handleBackup() {
+    setBackupLoading(true);
+    try {
+      const path = await invoke<string>("backup_database");
+      setBackupPath(path);
+      toast.success("備份成功");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBackupLoading(false);
+    }
+  }
+
+  async function handleRestore() {
+    const selected = await open({
+      title: "選擇備份文件",
+      filters: [{ name: "Cuckoo 備份", extensions: ["db"] }],
+      multiple: false,
+      directory: false,
+    });
+    if (!selected || typeof selected !== "string") return;
+    setRestoreConfirmPath(selected);
+  }
+
+  async function confirmRestore() {
+    if (!restoreConfirmPath) return;
+    setRestoreConfirmPath(null);
+    setRestoreLoading(true);
+    try {
+      const msg = await invoke<string>("restore_database", { path: restoreConfirmPath });
+      toast.success(msg + " — 請重啟應用生效");
+    } catch (e) {
+      toast.error("恢復失敗", { description: String(e) });
+    } finally {
+      setRestoreLoading(false);
+    }
+  }
+
+  async function handlePaymentQrUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPaymentQrLoading(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await invoke("set_payment_qr", { data: base64 });
+      setPaymentQr(base64);
+      toast.success("收款碼已保存");
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setPaymentQrLoading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleClearPaymentQr() {
+    try {
+      await invoke("set_payment_qr", { data: null });
+      setPaymentQr(null);
+      toast.success("收款碼已清除");
+    } catch (e) {
+      toast.error(String(e));
+    }
+  }
 
   function handleAutoUpdateToggle(val: boolean) {
     setAutoUpdate(val);
@@ -883,6 +963,111 @@ export function SettingsPage({ connected }: SettingsPageProps) {
       {/* Pending update card (shown when user dismissed the banner) */}
       <PendingUpdateCard />
 
+      {/* 數據備份與恢復（合併為單一 Card） */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <HardDrive className="h-4 w-4" />
+            数据备份与恢复
+          </CardTitle>
+          <CardDescription>备份文件保存至 Documents/Cuckoo 备份/，恢复前自动创建当前备份</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="auto-backup-switch" className="flex flex-col gap-0.5 cursor-pointer">
+              <span className="text-sm font-medium">启动时自动备份</span>
+              <span className="text-xs text-muted-foreground">每次打开应用时自动创建带时间戳的备份</span>
+            </Label>
+            <Switch
+              id="auto-backup-switch"
+              checked={autoBackup}
+              onCheckedChange={(val) => {
+                setAutoBackup(val);
+                localStorage.setItem("cuckoo_auto_backup", val ? "true" : "false");
+              }}
+            />
+          </div>
+          <Separator />
+          <div className="flex gap-2">
+            <Button onClick={handleBackup} disabled={backupLoading} className="flex-1" variant="outline">
+              {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <HardDrive className="h-4 w-4 mr-2" />}
+              立即备份
+            </Button>
+            <Button onClick={handleRestore} disabled={restoreLoading} className="flex-1" variant="outline">
+              {restoreLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              从备份恢复
+            </Button>
+          </div>
+          {backupPath && (
+            <div className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground break-all">
+              已备份：{backupPath}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 恢復確認 Dialog */}
+      <Dialog open={!!restoreConfirmPath} onOpenChange={(v) => !v && setRestoreConfirmPath(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              确认恢复数据库
+            </DialogTitle>
+            <DialogDescription className="space-y-1 pt-1">
+              <span className="block">将从以下文件恢复：</span>
+              <span className="block font-mono text-xs break-all text-foreground">{restoreConfirmPath}</span>
+              <span className="block pt-1 text-destructive">当前数据将被替换，操作不可撤销。恢复前会自动备份一次。</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreConfirmPath(null)}>取消</Button>
+            <Button variant="destructive" onClick={confirmRestore}>确认恢复</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PAY 收款碼設定 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Smartphone className="h-4 w-4" />
+            自助點單收款碼
+          </CardTitle>
+          <CardDescription>顧客下單後顯示此碼，引導掃碼付款</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {paymentQr ? (
+            <div className="flex items-center gap-4">
+              <img
+                src={`data:image/png;base64,${paymentQr}`}
+                alt="收款碼"
+                className="h-24 w-24 rounded-lg border object-contain"
+              />
+              <div className="flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground">當前收款碼</p>
+                <label className="cursor-pointer">
+                  <Button variant="outline" size="sm" type="button" onClick={(e) => { e.preventDefault(); (e.currentTarget.nextElementSibling as HTMLInputElement)?.click(); }}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />更換圖片
+                  </Button>
+                  <input type="file" accept="image/*" className="hidden" onChange={handlePaymentQrUpload} disabled={paymentQrLoading} />
+                </label>
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleClearPaymentQr}>
+                  移除收款碼
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <label className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed py-6 gap-2 cursor-pointer hover:bg-muted/50 transition-colors">
+              <Smartphone className="h-8 w-8 text-muted-foreground/50" />
+              <span className="text-sm text-muted-foreground">點擊上傳微信/支付寶收款碼</span>
+              <span className="text-xs text-muted-foreground/70">支援 PNG/JPG</span>
+              <input type="file" accept="image/*" className="hidden" onChange={handlePaymentQrUpload} disabled={paymentQrLoading} />
+            </label>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Auto-update settings */}
       <Card>
         <CardHeader>
@@ -903,64 +1088,6 @@ export function SettingsPage({ connected }: SettingsPageProps) {
               checked={autoUpdate}
               onCheckedChange={handleAutoUpdateToggle}
             />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Backup */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <HardDrive className="h-4 w-4" />
-            数据备份
-          </CardTitle>
-          <CardDescription>备份文件保存至 Documents/Cuckoo 备份/</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="auto-backup-switch" className="flex flex-col gap-0.5 cursor-pointer">
-              <span className="text-sm font-medium">启动时自动备份</span>
-              <span className="text-xs text-muted-foreground">每次打开应用时自动创建一份带时间戳的备份</span>
-            </Label>
-            <Switch
-              id="auto-backup-switch"
-              checked={autoBackup}
-              onCheckedChange={(val) => {
-                setAutoBackup(val);
-                localStorage.setItem("cuckoo_auto_backup", val ? "true" : "false");
-              }}
-            />
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">立即备份</p>
-              {backupStatus && (
-                <p className="text-xs text-muted-foreground mt-0.5 max-w-xs truncate">{backupStatus}</p>
-              )}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={backupLoading}
-              onClick={async () => {
-                setBackupLoading(true);
-                setBackupStatus(null);
-                try {
-                  const path = await invoke<string>("backup_database", { destDir: null });
-                  setBackupStatus(`已备份到: ${path}`);
-                  toast.success("备份成功");
-                } catch (e) {
-                  setBackupStatus(String(e));
-                  toast.error("备份失败", { description: String(e) });
-                } finally {
-                  setBackupLoading(false);
-                }
-              }}
-            >
-              {backupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <HardDrive className="h-4 w-4" />}
-              <span className="ml-2">立即备份</span>
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -986,7 +1113,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ErrorLogPanel />
+          <ErrorLogPanel appVersion={appVersion} />
         </CardContent>
       </Card>
     </div>

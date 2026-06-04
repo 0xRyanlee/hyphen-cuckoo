@@ -58,9 +58,9 @@ const navGroups = [
     ],
   },
   {
-    label: "行銷",
+    label: "营销",
     items: [
-      { id: "marketing", label: "行銷中心", icon: Monitor },
+      { id: "marketing", label: "营销中心", icon: Monitor },
     ],
   },
   {
@@ -135,7 +135,7 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
                             </span>
                           )}
                           {showNotificationBadge && (
-                            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-medium text-white">
+                            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
                               {notificationCount > 99 ? "99+" : notificationCount}
                             </span>
                           )}

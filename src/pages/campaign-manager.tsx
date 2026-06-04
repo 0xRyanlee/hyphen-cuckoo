@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Plus, QrCode, Trash2, Download } from "lucide-react";
 import { StyledQR } from "@/components/styled-qr";
@@ -101,6 +101,7 @@ export function CampaignManager() {
   const [validDays, setValidDays] = useState("30");
   const [dailyLimit, setDailyLimit] = useState("0");
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
 
   const load = () => {
     invoke<Campaign[]>("list_campaigns", {}).then(setCampaigns).catch(console.error);
@@ -146,10 +147,12 @@ export function CampaignManager() {
     } catch (e) { toast.error(String(e)); }
   }
 
-  async function handleDelete(c: Campaign) {
-    if (!confirm(`确定删除活动「${c.name}」？已发出的券将无法核销。`)) return;
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
     try {
-      await invoke("delete_campaign", { id: c.id });
+      await invoke("delete_campaign", { id: target.id });
       toast.success("已删除");
       load();
     } catch (e) { toast.error(String(e)); }
@@ -224,7 +227,7 @@ export function CampaignManager() {
                   <Button size="icon" variant="ghost" className="h-7 w-7" title="活动码" disabled={!baseUrl} onClick={() => setPoster(c)}>
                     <QrCode className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(c)}>
+                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(c)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -237,6 +240,21 @@ export function CampaignManager() {
       {poster && baseUrl && (
         <CampaignPosterDialog campaign={poster} baseUrl={baseUrl} onClose={() => setPoster(null)} />
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>删除活动</DialogTitle>
+            <DialogDescription>
+              确定删除活动「{deleteTarget?.name}」？已发出的券将无法核销，此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={confirmDelete}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

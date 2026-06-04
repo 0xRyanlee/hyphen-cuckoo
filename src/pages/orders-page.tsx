@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, ShoppingCart, Eye, Send, X, Search, Filter, MinusCircle, PlusCircle, Package, CreditCard, CheckCircle, CalendarDays, Printer, Download } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -141,6 +142,10 @@ export function OrdersPage({
   const [paymentAmountPaid, setPaymentAmountPaid] = useState("");
 
   const [itemModifiers, setItemModifiers] = useState<Record<number, OrderItemModifier[]>>({});
+  const [refundConfirmItemId, setRefundConfirmItemId] = useState<number | null>(null);
+  const refundConfirmItem = refundConfirmItemId !== null
+    ? selectedOrder?.items.find((i) => i.id === refundConfirmItemId)
+    : null;
 
   useEffect(() => {
     if (cancelTargetOrder && cancelTargetOrder.payment_status !== "unpaid") {
@@ -341,31 +346,31 @@ export function OrdersPage({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={async () => { onViewOrder(order.id); const { orderData } = await onViewOrderWithModifiers(order.id); const mods: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { mods[item.id] = await onLoadModifiers(item.id); } catch { mods[item.id] = []; } } setItemModifiers(mods); }}>
+                          <Button variant="ghost" size="icon" className="h-10 w-10" onClick={async () => { onViewOrder(order.id); const { orderData } = await onViewOrderWithModifiers(order.id); const mods: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { mods[item.id] = await onLoadModifiers(item.id); } catch { mods[item.id] = []; } } setItemModifiers(mods); }}>
                             <Eye className="h-4 w-4" />
                           </Button>
                           {order.status === "pending" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => onSubmitOrder(order.id)}>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground" onClick={() => onSubmitOrder(order.id)}>
                               <Send className="h-4 w-4" />
                             </Button>
                           )}
                           {order.status === "submitted" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="標記出餐" onClick={() => onMarkReady(order.id)}>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground" title="標記出餐" onClick={() => onMarkReady(order.id)}>
                               <CheckCircle className="h-4 w-4" />
                             </Button>
                           )}
                           {(order.status === "submitted" || order.status === "ready") && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => { setPaymentTargetOrder(order); setPaymentStatus(order.payment_status === "paid" ? "paid" : "paid"); setPaymentMethod(order.payment_method || "cash"); setPaymentAmountPaid(order.amount_total.toFixed(2)); setPaymentDialogOpen(true); }}>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground" onClick={() => { setPaymentTargetOrder(order); setPaymentStatus(order.payment_status); setPaymentMethod(order.payment_method || "cash"); setPaymentAmountPaid(order.amount_total.toFixed(2)); setPaymentDialogOpen(true); }}>
                               <CreditCard className="h-4 w-4" />
                             </Button>
                           )}
                           {order.payment_status === "paid" && onPrintReceipt && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="打印收据" onClick={() => onPrintReceipt(order.id)}>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground" title="打印收据" onClick={() => onPrintReceipt(order.id)}>
                               <Printer className="h-4 w-4" />
                             </Button>
                           )}
                           {order.status !== "cancelled" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => { setCancelTargetOrder(order); setCancelIsServed(order.status === "ready"); setCancelDialogOpen(true); }}>
+                            <Button variant="ghost" size="icon" className="h-10 w-10 text-destructive" onClick={() => { setCancelTargetOrder(order); setCancelIsServed(order.status === "ready"); setCancelDialogOpen(true); }}>
                               <X className="h-4 w-4" />
                             </Button>
                           )}
@@ -485,15 +490,8 @@ export function OrdersPage({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-5 px-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
-                              onClick={async () => {
-                                try {
-                                  const amt = await onRefundOrderItem(selectedOrder.order.id, item.id);
-                                  toast.success(`已退款 ¥${amt.toFixed(2)}`);
-                                } catch (e) {
-                                  toast.error(String(e));
-                                }
-                              }}
+                              className="h-8 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => setRefundConfirmItemId(item.id)}
                             >
                               <X className="h-3 w-3 mr-1" />退单
                             </Button>
@@ -538,9 +536,10 @@ export function OrdersPage({
                     type="number"
                     step="0.01"
                     min="0"
+                    max={cancelTargetOrder?.amount_paid}
                     value={refundAmount}
                     onChange={(e) => setRefundAmount(e.target.value)}
-                    placeholder="输入实际退款金额"
+                    placeholder={`输入实际退款金额（最多 ¥${cancelTargetOrder?.amount_paid.toFixed(2)}）`}
                   />
                 </div>
               </>
@@ -582,7 +581,15 @@ export function OrdersPage({
                 onCancelOrder(cancelTargetOrder.id, cancelIsServed, cancelReason);
                 const amt = parseFloat(refundAmount);
                 if (!isNaN(amt) && amt > 0 && cancelTargetOrder.payment_status !== "unpaid") {
-                  try { await invoke("record_order_refund", { orderId: cancelTargetOrder.id, refundAmount: amt }); } catch {}
+                  if (amt > cancelTargetOrder.amount_paid) {
+                    toast.error("退款金额不能超过实收金额");
+                    return;
+                  }
+                  try {
+                    await invoke("record_order_refund", { orderId: cancelTargetOrder.id, refundAmount: amt });
+                  } catch (e) {
+                    toast.error("退款记录失败", { description: String(e) });
+                  }
                 }
               }
               setCancelDialogOpen(false);
@@ -693,6 +700,39 @@ export function OrdersPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {refundConfirmItemId !== null && (
+        <AlertDialog open onOpenChange={(o: boolean) => { if (!o) setRefundConfirmItemId(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>確認退款？</AlertDialogTitle>
+              <AlertDialogDescription>
+                {refundConfirmItem
+                  ? `退款「${menuItems[refundConfirmItem.menu_item_id] || "此商品"}」，已收金額將扣除。此操作不可撤銷。`
+                  : "確認退款此商品？此操作不可撤銷。"}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setRefundConfirmItemId(null)}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={async () => {
+                  const id = refundConfirmItemId!;
+                  setRefundConfirmItemId(null);
+                  try {
+                    const amt = await onRefundOrderItem!(selectedOrder!.order.id, id);
+                    toast.success(`已退款 ¥${amt.toFixed(2)}`);
+                  } catch (e) {
+                    toast.error(String(e));
+                  }
+                }}
+              >
+                確認退款
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

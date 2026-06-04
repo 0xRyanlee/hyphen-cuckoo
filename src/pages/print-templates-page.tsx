@@ -37,7 +37,7 @@ export const ELEMENT_CATEGORIES = [
     ]
   },
   {
-    label: "行销", items: [
+    label: "营销", items: [
       { type: "discount_coupon", label: "折价券", defaultConfig: { type: "discount_coupon", discount_type: "percent", value: 9, condition: "", valid_days: 30, label: "下次消费享折扣" } },
       { type: "product_spotlight", label: "新品介绍", defaultConfig: { type: "product_spotlight", title: "本周新品", name: "", description: "", price: 0, badge: "NEW" } },
       { type: "qr_code", label: "QR码", defaultConfig: { type: "qr_code", url: "", label: "扫码加入VIP群", size: 5 } },
@@ -63,9 +63,9 @@ export function getElementLabel(type: string): string {
 export function getElementBadgeColor(type: string): string {
   const creative = ["fortune", "quote", "art", "image_block"];
   const marketing = ["discount_coupon", "product_spotlight", "qr_code", "character_collect", "rich_text"];
-  if (creative.includes(type)) return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
-  if (marketing.includes(type)) return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
-  return "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  if (creative.includes(type)) return "bg-primary/10 text-primary";
+  if (marketing.includes(type)) return "bg-accent text-accent-foreground";
+  return "bg-muted text-muted-foreground";
 }
 
 export function getElementSummary(elem: PrintElement): string {
@@ -382,6 +382,8 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
       case "kitchen_ticket": return "厨房单";
       case "batch_label": return "批次标签";
       case "cup_label": return "杯贴";
+      case "receipt": return "收据";
+      case "marketing_popup": return "营销弹窗";
       default: return type;
     }
   };
@@ -404,6 +406,8 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
             <SelectItem value="kitchen_ticket">厨房单</SelectItem>
             <SelectItem value="batch_label">批次标签</SelectItem>
             <SelectItem value="cup_label">杯贴</SelectItem>
+            <SelectItem value="receipt">收据</SelectItem>
+            <SelectItem value="marketing_popup">营销弹窗</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -427,15 +431,25 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
                 <Badge variant="secondary">{tpl.paper_size}</Badge>
                 {tpl.label_width_mm && <Badge variant="outline">{tpl.label_width_mm}x{tpl.label_height_mm}mm</Badge>}
               </div>
+              {tpl.template_type === "marketing_popup" && (
+                <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  由营销中心管理，此处仅预览
+                </p>
+              )}
               <div className="flex gap-1">
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => previewTemplate(tpl)}>
                   <Eye className="h-3.5 w-3.5 mr-1" />预览
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => openEdit(tpl)}><Pencil className="h-3.5 w-3.5" /></Button>
-                {!tpl.is_default && (
-                  <Button variant="outline" size="sm" onClick={() => setDefault(tpl.id, tpl.template_type)}><Star className="h-3.5 w-3.5" /></Button>
+                {tpl.template_type !== "marketing_popup" && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => openEdit(tpl)}><Pencil className="h-3.5 w-3.5" /></Button>
+                    {!tpl.is_default && (
+                      <Button variant="outline" size="sm" onClick={() => setDefault(tpl.id, tpl.template_type)}><Star className="h-3.5 w-3.5" /></Button>
+                    )}
+                    <Button variant="outline" size="sm" onClick={() => deleteTemplate(tpl.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
+                  </>
                 )}
-                <Button variant="outline" size="sm" onClick={() => deleteTemplate(tpl.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
               </div>
             </CardContent>
           </Card>

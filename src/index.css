@@ -46,6 +46,14 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* PAD touch optimisation */
+html, body, * {
+  -webkit-tap-highlight-color: transparent;
+}
+button, a, [role="button"], input, select, label {
+  touch-action: manipulation;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -169,11 +177,12 @@
   text-shadow: 0 0 1px rgba(0, 0, 0, 0.3);
   /* Padding like real thermal paper edge */
   padding: 8px;
-  /* Slight aging/yellowing at edges */
-  box-shadow: 
+  /* Paper sitting on surface — outer drop shadow + inner aging */
+  box-shadow:
     inset 0 0 30px rgba(139, 119, 101, 0.08),
-    /* Torn edge effect at bottom */
-    inset 0 -3px 8px -3px rgba(0, 0, 0, 0.1);
+    inset 0 -3px 8px -3px rgba(0, 0, 0, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.18),
+    0 1px 4px rgba(0, 0, 0, 0.10);
   /* Prevent overflow */
   overflow: hidden;
   word-wrap: break-word;

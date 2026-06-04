@@ -414,34 +414,34 @@ loading = false,
         </Card>
       )}
 
-      {/* 行销效果日报 */}
+      {/* 营销效果日报 */}
       {marketingStats && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-amber-500" />今日行销效果
+              <Zap className="h-4 w-4 text-amber-500" />今日营销效果
             </CardTitle>
             <CardDescription>兑奖次数与折价券核销</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border p-3 text-center">
-                <div className="text-2xl font-bold text-amber-600">{marketingStats.redemptions_today}</div>
+                <div className="text-2xl font-bold text-foreground">{marketingStats.redemptions_today}</div>
                 <div className="text-xs text-muted-foreground mt-1">今日兑奖次数</div>
               </div>
               <div className="rounded-lg border p-3 text-center">
-                <div className="text-2xl font-bold text-blue-600">{marketingStats.coupons_issued_today}</div>
+                <div className="text-2xl font-bold text-foreground">{marketingStats.coupons_issued_today}</div>
                 <div className="text-xs text-muted-foreground mt-1">折价券发放</div>
               </div>
               <div className="rounded-lg border p-3 text-center">
-                <div className="text-2xl font-bold text-green-600">{marketingStats.coupons_redeemed_today}</div>
+                <div className="text-2xl font-bold text-foreground">{marketingStats.coupons_redeemed_today}</div>
                 <div className="text-xs text-muted-foreground mt-1">折价券核销</div>
               </div>
             </div>
             {marketingStats.coupons_issued_today > 0 && (
               <div className="mt-3 text-xs text-muted-foreground text-center">
                 核销率 {Math.round(marketingStats.coupons_redeemed_today / marketingStats.coupons_issued_today * 100)}%
-                　·　前往<a href="#/marketing" className="text-primary underline ml-1">行销中心</a>查看兑奖记录
+                　·　前往<a href="#/marketing" className="text-primary underline ml-1">营销中心</a>查看兑奖记录
               </div>
             )}
           </CardContent>

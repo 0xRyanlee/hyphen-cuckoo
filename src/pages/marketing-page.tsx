@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { call as invoke } from "@/lib/transport";
 import DOMPurify from "dompurify";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,8 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search, BarChart3 } from "lucide-react";
+import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search, BarChart3, Pencil, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSummary, type PrintElement } from "./print-templates-page";
 import { CampaignManager } from "./campaign-manager";
@@ -30,22 +34,182 @@ const DEFAULT_RECEIPT_ELEMENTS: PrintElement[] = [
   { type: "quote", language: "multilingual" },
 ];
 
+// ── Inline element editor fields ──────────────────────────────────────────
+
+function ElementEditorFields({ elem, onChange }: { elem: PrintElement; onChange: (e: PrintElement) => void }) {
+  return (
+    <div className="space-y-3 pt-2">
+      {elem.type === "text" && (<>
+        <div><Label className="text-xs">文字内容</Label><Textarea value={String(elem.content ?? "")} onChange={e => onChange({ ...elem, content: e.target.value })} rows={3} className="font-mono text-xs mt-1" /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="text-xs">对齐</Label>
+            <Select value={String(elem.align ?? "left")} onValueChange={v => onChange({ ...elem, align: v })}>
+              <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="left">左对齐</SelectItem><SelectItem value="center">居中</SelectItem><SelectItem value="right">右对齐</SelectItem></SelectContent>
+            </Select>
+          </div>
+          <div><Label className="text-xs">大小</Label>
+            <Select value={String(elem.size ?? "normal")} onValueChange={v => onChange({ ...elem, size: v })}>
+              <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="small">小</SelectItem><SelectItem value="normal">正常</SelectItem><SelectItem value="large">大</SelectItem></SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2"><Checkbox id="mkt-bold" checked={!!elem.bold} onCheckedChange={v => onChange({ ...elem, bold: !!v })} /><Label htmlFor="mkt-bold" className="text-xs">粗体</Label></div>
+      </>)}
+      {elem.type === "blank_lines" && (
+        <div><Label className="text-xs">空行数量</Label><Input type="number" min={1} max={10} value={Number(elem.count ?? 1)} onChange={e => onChange({ ...elem, count: parseInt(e.target.value) || 1 })} className="h-8 text-xs mt-1 w-24" /></div>
+      )}
+      {elem.type === "fortune" && (
+        <div><Label className="text-xs">种子策略</Label>
+          <Select value={String(elem.seed_strategy ?? "daily")} onValueChange={v => onChange({ ...elem, seed_strategy: v })}>
+            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="daily">全店同日</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="per_order">每单唯一</SelectItem></SelectContent>
+          </Select>
+        </div>
+      )}
+      {elem.type === "quote" && (
+        <div><Label className="text-xs">语言</Label>
+          <Select value={String(elem.language ?? "multilingual")} onValueChange={v => onChange({ ...elem, language: v })}>
+            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="multilingual">多语轮替</SelectItem><SelectItem value="zh">中文</SelectItem><SelectItem value="en">英文</SelectItem><SelectItem value="ja">日文</SelectItem></SelectContent>
+          </Select>
+        </div>
+      )}
+      {elem.type === "discount_coupon" && (<>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="text-xs">折扣类型</Label>
+            <Select value={String(elem.discount_type ?? "percent")} onValueChange={v => onChange({ ...elem, discount_type: v })}>
+              <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="percent">百分比折扣</SelectItem><SelectItem value="amount">固定金额</SelectItem><SelectItem value="free_item">指定免费</SelectItem></SelectContent>
+            </Select>
+          </div>
+          <div><Label className="text-xs">折扣值 (%或元)</Label><Input type="number" value={Number(elem.value ?? 0)} onChange={e => onChange({ ...elem, value: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1" /></div>
+        </div>
+        <div><Label className="text-xs">使用条件</Label><Input value={String(elem.condition ?? "")} onChange={e => onChange({ ...elem, condition: e.target.value })} className="h-8 text-xs mt-1" placeholder="消费满100元" /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="text-xs">有效天数</Label><Input type="number" value={Number(elem.valid_days ?? 30)} onChange={e => onChange({ ...elem, valid_days: parseInt(e.target.value) || 30 })} className="h-8 text-xs mt-1" /></div>
+          <div><Label className="text-xs">标题文字</Label><Input value={String(elem.label ?? "")} onChange={e => onChange({ ...elem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
+        </div>
+      </>)}
+      {elem.type === "product_spotlight" && (<>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="text-xs">标题</Label><Input value={String(elem.title ?? "")} onChange={e => onChange({ ...elem, title: e.target.value })} className="h-8 text-xs mt-1" /></div>
+          <div><Label className="text-xs">徽章</Label><Input value={String(elem.badge ?? "NEW")} onChange={e => onChange({ ...elem, badge: e.target.value })} className="h-8 text-xs mt-1" /></div>
+        </div>
+        <div><Label className="text-xs">商品名称</Label><Input value={String(elem.name ?? "")} onChange={e => onChange({ ...elem, name: e.target.value })} className="h-8 text-xs mt-1" /></div>
+        <div><Label className="text-xs">描述</Label><Textarea value={String(elem.description ?? "")} onChange={e => onChange({ ...elem, description: e.target.value })} rows={2} className="text-xs mt-1" /></div>
+        <div><Label className="text-xs">定价 (0=不显示)</Label><Input type="number" value={Number(elem.price ?? 0)} onChange={e => onChange({ ...elem, price: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1 w-32" /></div>
+      </>)}
+      {elem.type === "qr_code" && (<>
+        <div><Label className="text-xs">URL</Label><Input value={String(elem.url ?? "")} onChange={e => onChange({ ...elem, url: e.target.value })} className="h-8 text-xs mt-1" placeholder="https://..." /></div>
+        <div><Label className="text-xs">说明文字</Label><Input value={String(elem.label ?? "")} onChange={e => onChange({ ...elem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
+        <div><Label className="text-xs">尺寸 (1-8)</Label><Input type="number" min={1} max={8} value={Number(elem.size ?? 5)} onChange={e => onChange({ ...elem, size: parseInt(e.target.value) || 5 })} className="h-8 text-xs mt-1 w-24" /></div>
+      </>)}
+      {elem.type === "character_collect" && (<>
+        <div className="grid grid-cols-2 gap-2">
+          <div><Label className="text-xs">游戏名称</Label><Input value={String(elem.game_name ?? "")} onChange={e => onChange({ ...elem, game_name: e.target.value })} className="h-8 text-xs mt-1" /></div>
+          <div><Label className="text-xs">样式</Label>
+            <Select value={String(elem.style ?? "box")} onValueChange={v => onChange({ ...elem, style: v })}>
+              <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="box">方框</SelectItem><SelectItem value="mahjong">麻将</SelectItem></SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs">集字组合（逗号分隔）</Label>
+          <Input value={(elem.characters as string[] | undefined)?.join(",") ?? ""} onChange={e => onChange({ ...elem, characters: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} className="h-8 text-xs mt-1" placeholder="恭,喜,发,财" />
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {[
+              { label: "福禄寿喜", val: "福,禄,寿,喜" },
+              { label: "🌸四季", val: "🌸,☀️,🍂,❄️" },
+              { label: "🍤海鲜", val: "🍤,🦐,🦞,🦀" },
+            ].map(p => (
+              <button key={p.label} type="button" className="text-[10px] px-1.5 py-0.5 rounded border border-muted-foreground/30 text-muted-foreground hover:bg-muted"
+                onClick={() => onChange({ ...elem, characters: p.val.split(",") })}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div><Label className="text-xs">兑奖说明</Label><Input value={String(elem.prize ?? "")} onChange={e => onChange({ ...elem, prize: e.target.value })} className="h-8 text-xs mt-1" /></div>
+        <div><Label className="text-xs">种子策略</Label>
+          <Select value={String(elem.seed_strategy ?? "per_order")} onValueChange={v => onChange({ ...elem, seed_strategy: v })}>
+            <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="per_order">每单唯一</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="daily">全店同日</SelectItem></SelectContent>
+          </Select>
+        </div>
+      </>)}
+      {elem.type === "rich_text" && (
+        <div><Label className="text-xs">Markdown 内容</Label><Textarea value={String(elem.content ?? "")} onChange={e => onChange({ ...elem, content: e.target.value })} rows={6} className="font-mono text-xs mt-1" placeholder={"## 标题\n- 项目一\n- 项目二\n> 引用文字"} /></div>
+      )}
+      {elem.type === "solar_term" && (<>
+        <p className="text-xs text-muted-foreground">节气期间（前后约7天）自动显示对应主题文案。</p>
+        <div className="flex items-center gap-2"><input type="checkbox" checked={!!elem.show_all} onChange={e => onChange({ ...elem, show_all: e.target.checked })} id="solar-show-all" /><Label htmlFor="solar-show-all" className="text-xs">不在节气期间时也显示"下一个节气"提示</Label></div>
+      </>)}
+      {elem.type === "chef_message" && (<>
+        <div><Label className="text-xs">标题</Label><Input value={String(elem.title ?? "厨师寄语")} onChange={e => onChange({ ...elem, title: e.target.value })} className="h-8 text-xs mt-1" /></div>
+        <div><Label className="text-xs">署名</Label><Input value={String(elem.author ?? "本店厨师")} onChange={e => onChange({ ...elem, author: e.target.value })} className="h-8 text-xs mt-1" placeholder="例：张师傅" /></div>
+        <div><Label className="text-xs">每日消息（每行一条，最多7条）</Label>
+          <Textarea value={(elem.messages as string[] | undefined)?.join("\n") ?? ""} onChange={e => onChange({ ...elem, messages: e.target.value.split("\n").map(s => s.trim()).filter(Boolean) })} rows={5} className="text-xs mt-1" placeholder={"周一：今天的食材格外新鲜...\n周二：感谢光临，用心烹饪..."} /></div>
+      </>)}
+      {elem.type === "riddle" && (<>
+        <p className="text-xs text-muted-foreground">留空使用内置谜语库（每日随机），或自定义谜题。</p>
+        <div><Label className="text-xs">自定义谜题（选填）</Label><Textarea value={String(elem.question ?? "")} onChange={e => onChange({ ...elem, question: e.target.value || undefined })} rows={2} className="text-xs mt-1" /></div>
+        <div><Label className="text-xs">答案（收据上不显示）</Label><Input value={String(elem.answer ?? "")} onChange={e => onChange({ ...elem, answer: e.target.value || undefined })} className="h-8 text-xs mt-1" /></div>
+        <div><Label className="text-xs">兑奖说明</Label><Input value={String(elem.prize ?? "")} onChange={e => onChange({ ...elem, prize: e.target.value })} className="h-8 text-xs mt-1" /></div>
+      </>)}
+      {["separator", "items", "art", "image_block"].includes(elem.type) && (
+        <p className="text-xs text-muted-foreground py-1">此元件无需额外配置。</p>
+      )}
+    </div>
+  );
+}
+
 // ── Element toggle card ────────────────────────────────────────────────────
 
 function ElementToggleCard({
-  elem, onRemove
+  elem, onRemove, expanded, onToggleExpand, onUpdate, readOnly
 }: {
   elem: PrintElement;
   onRemove: () => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onUpdate: (e: PrintElement) => void;
+  readOnly?: boolean;
 }) {
+  const [draft, setDraft] = useState<PrintElement>(elem);
+  useEffect(() => { setDraft(elem); }, [elem]);
+
+  function handleToggleExpand() {
+    if (expanded) onUpdate(draft);
+    onToggleExpand();
+  }
+
   return (
-    <div className="flex items-center gap-2 border rounded-lg px-3 py-2 bg-background text-xs">
-      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${getElementBadgeColor(elem.type)}`}>
-        {getElementLabel(elem.type)}
-      </span>
-      <span className="flex-1 text-muted-foreground truncate">{getElementSummary(elem)}</span>
-      <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-        onClick={onRemove}>✕</Button>
+    <div className="border rounded-lg bg-background overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 text-xs">
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${getElementBadgeColor(elem.type)}`}>
+          {getElementLabel(elem.type)}
+        </span>
+        <span className="flex-1 text-muted-foreground truncate min-w-0">{getElementSummary(draft)}</span>
+        {!readOnly && (
+          <>
+            <Button variant="ghost" size="sm"
+              className={`h-9 w-9 p-0 shrink-0 ${expanded ? "text-primary" : "text-muted-foreground"}`}
+              onClick={handleToggleExpand}>
+              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+            </Button>
+            <Button variant="ghost" size="sm" className="h-9 w-9 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={onRemove}>✕</Button>
+          </>
+        )}
+      </div>
+      {!readOnly && expanded && (
+        <div className="border-t px-3 pb-3 bg-muted/20">
+          <ElementEditorFields elem={draft} onChange={e => { setDraft(e); onUpdate(e); }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -53,19 +217,22 @@ function ElementToggleCard({
 // ── Surface config panel ───────────────────────────────────────────────────
 
 function SurfacePanel({
-  title, icon, description, elements, enabled, onToggleEnabled, onAddElement, onRemoveElement, previewHtml
+  title, icon, description, elements, enabled, onToggleEnabled, onAddElement, onRemoveElement, onUpdateElement, previewHtml, readOnly
 }: {
   title: string;
   icon: React.ReactNode;
   description: string;
   elements: PrintElement[];
   enabled: boolean;
-  onToggleEnabled: (v: boolean) => void;
-  onAddElement: (elem: PrintElement) => void;
-  onRemoveElement: (idx: number) => void;
+  onToggleEnabled?: (v: boolean) => void;
+  onAddElement?: (elem: PrintElement) => void;
+  onRemoveElement?: (idx: number) => void;
+  onUpdateElement?: (idx: number, elem: PrintElement) => void;
   previewHtml: string;
+  readOnly?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
   return (
     <div className="space-y-4">
@@ -77,39 +244,51 @@ function SurfacePanel({
             <p className="text-xs text-muted-foreground">{description}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground">{enabled ? "启用" : "停用"}</Label>
-          <Switch checked={enabled} onCheckedChange={onToggleEnabled} />
-        </div>
+        {!readOnly && onToggleEnabled && (
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">{enabled ? "启用" : "停用"}</Label>
+            <Switch checked={enabled} onCheckedChange={onToggleEnabled} />
+          </div>
+        )}
       </div>
 
       {enabled && (
         <>
           <div className="space-y-1.5">
             {elements.length === 0 && (
-              <p className="text-xs text-muted-foreground py-2 text-center border rounded-md">
-                暂无行销元件 — 点击下方添加
+              <p className="text-xs text-muted-foreground py-3 text-center border rounded-lg border-dashed">
+                暂无营销元件
               </p>
             )}
             {elements.map((elem, idx) => (
-              <ElementToggleCard key={idx} elem={elem} onRemove={() => onRemoveElement(idx)} />
+              <ElementToggleCard
+                key={idx}
+                elem={elem}
+                expanded={expandedIdx === idx}
+                onToggleExpand={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+                onUpdate={e => onUpdateElement?.(idx, e)}
+                onRemove={() => { if (expandedIdx === idx) setExpandedIdx(null); onRemoveElement?.(idx); }}
+                readOnly={readOnly}
+              />
             ))}
-            <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1 mt-1"
-              onClick={() => setPickerOpen(!pickerOpen)}>
-              <Sparkles className="h-3 w-3" />添加行销元件
-            </Button>
+            {!readOnly && (
+              <Button variant="outline" size="sm" className="w-full h-9 text-xs gap-1.5 mt-1 border-dashed"
+                onClick={() => setPickerOpen(!pickerOpen)}>
+                <Sparkles className="h-3.5 w-3.5" />添加营销元件
+              </Button>
+            )}
           </div>
 
-          {pickerOpen && (
-            <div className="border rounded-lg p-3 bg-muted/20 space-y-2">
+          {!readOnly && pickerOpen && (
+            <div className="border rounded-lg p-3 bg-muted/30 space-y-2.5">
               {ELEMENT_CATEGORIES.filter(c => c.label !== "基本").map(cat => (
                 <div key={cat.label}>
-                  <p className="text-[10px] font-medium text-muted-foreground mb-1.5">{cat.label}</p>
-                  <div className="flex flex-wrap gap-1">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">{cat.label}</p>
+                  <div className="flex flex-wrap gap-1.5">
                     {cat.items.map(it => (
                       <Button key={it.type} variant="secondary" size="sm"
-                        className="h-6 text-xs px-2"
-                        onClick={() => { onAddElement({ ...it.defaultConfig }); setPickerOpen(false); }}>
+                        className="h-7 text-xs px-2.5 rounded-full"
+                        onClick={() => { onAddElement?.({ ...it.defaultConfig }); setPickerOpen(false); }}>
                         {it.label}
                       </Button>
                     ))}
@@ -179,10 +358,11 @@ const COMPONENT_LABELS: Record<string, string> = {
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export function MarketingPage() {
+  const navigate = useNavigate();
   const [popupEnabled, setPopupEnabled] = useState(true);
-  const [receiptEnabled, setReceiptEnabled] = useState(true);
+  const [receiptEnabled] = useState(true);
   const [popupElements, setPopupElements] = useState<PrintElement[]>(DEFAULT_POPUP_ELEMENTS);
-  const [receiptElements, setReceiptElements] = useState<PrintElement[]>(DEFAULT_RECEIPT_ELEMENTS);
+  const [receiptElements] = useState<PrintElement[]>(DEFAULT_RECEIPT_ELEMENTS);
   const [popupPreview, setPopupPreview] = useState("");
   const [receiptPreview, setReceiptPreview] = useState("");
   const [saving, setSaving] = useState(false);
@@ -366,7 +546,7 @@ export function MarketingPage() {
       } else {
         await invoke("create_print_template", {
           req: {
-            name: "自助点单行销弹窗",
+            name: "自助点单营销弹窗",
             template_type: "marketing_popup",
             paper_size: "58mm",
             content,
@@ -374,7 +554,7 @@ export function MarketingPage() {
           }
         });
       }
-      toast.success("行銷彈窗设定已保存");
+      toast.success("营销弹窗设定已保存");
     } catch (e) {
       toast.error("保存失敗", { description: String(e) });
     } finally {
@@ -387,10 +567,10 @@ export function MarketingPage() {
       <div className="border-b px-6 py-4 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold flex items-center gap-2">
-            <Zap className="h-5 w-5 text-amber-500" />行銷中心
+            <Zap className="h-5 w-5 text-primary" />营销中心
           </h1>
           <p className="text-sm text-muted-foreground">
-            統一管理收据、厨房单、自助点单确认页的行销元件
+            统一管理收据、厨房单、自助点单确认页的营销元件
           </p>
         </div>
         <Button onClick={savePopupTemplate} disabled={saving} size="sm">
@@ -413,7 +593,7 @@ export function MarketingPage() {
             <TabsTrigger value="redeem" className="gap-1.5">
               <ClipboardCheck className="h-3.5 w-3.5" />兑奖核销
               {redemptions.length > 0 && (
-                <span className="ml-1 bg-green-100 text-green-700 text-[10px] px-1.5 rounded-full">{redemptions.length}</span>
+                <span className="ml-1 bg-primary text-primary-foreground text-[10px] px-1.5 rounded-full">{redemptions.length}</span>
               )}
             </TabsTrigger>
             <TabsTrigger value="analytics" className="gap-1.5">
@@ -427,21 +607,22 @@ export function MarketingPage() {
           <TabsContent value="popup">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">自助點單确认頁彈窗</CardTitle>
+                <CardTitle className="text-base">自助点单确认页弹窗</CardTitle>
                 <CardDescription>
-                  顧客下單後全屏彈出，截圖可見订单號與時間，集字/运势一單一次，截圖後廢棄兑奖
+                  顾客下单后全屏弹出，截图可见订单号与时间，集字/运势一单一次，截图后废弃兑奖
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <SurfacePanel
-                  title="自助点单行销弹窗"
-                  icon={<Smartphone className="h-4 w-4 text-blue-500" />}
-                  description="顧客下單成功後彈出，截圖友善，支援 Web Share API 分享"
+                  title="自助点单营销弹窗"
+                  icon={<Smartphone className="h-4 w-4 text-muted-foreground" />}
+                  description="顾客下单成功后弹出，截图友善，支持 Web Share API 分享"
                   elements={popupElements}
                   enabled={popupEnabled}
                   onToggleEnabled={setPopupEnabled}
                   onAddElement={e => setPopupElements(prev => [...prev, e])}
                   onRemoveElement={idx => setPopupElements(prev => prev.filter((_, i) => i !== idx))}
+                  onUpdateElement={(idx, e) => setPopupElements(prev => prev.map((el, i) => i === idx ? e : el))}
                   previewHtml={popupPreview}
                 />
               </CardContent>
@@ -451,26 +632,32 @@ export function MarketingPage() {
           <TabsContent value="receipt">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">收据 / 厨房单行銷元件</CardTitle>
-                <CardDescription>
-                  在「打印中心」的模板中新增行銷元件；此頁提供快速预览與常用配置
-                </CardDescription>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">收据营销元件预览</CardTitle>
+                    <CardDescription className="mt-1">
+                      收据模板由打印中心统一管理，此处仅供预览
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" className="shrink-0 h-9"
+                    onClick={() => navigate("/print")}>
+                    <Printer className="h-3.5 w-3.5 mr-1.5" />前往打印中心
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted border text-sm text-muted-foreground">
                   <Sparkles className="h-4 w-4 shrink-0" />
-                  <span>收据行銷元件在「打印中心 → 模板 → 元素列表」中管理。此處僅预览效果。</span>
+                  <span>收据营销元件在「打印中心 → 模板 → 元素列表」中添加与调整，此处仅预览效果。</span>
                 </div>
                 <SurfacePanel
-                  title="收据行销预览"
-                  icon={<Printer className="h-4 w-4 text-gray-500" />}
-                  description="预览組合效果，實際修改请至打印中心"
+                  title="收据营销预览"
+                  icon={<Printer className="h-4 w-4 text-muted-foreground" />}
+                  description="当前收据模板中的营销元件列表"
                   elements={receiptElements}
                   enabled={receiptEnabled}
-                  onToggleEnabled={setReceiptEnabled}
-                  onAddElement={e => setReceiptElements(prev => [...prev, e])}
-                  onRemoveElement={idx => setReceiptElements(prev => prev.filter((_, i) => i !== idx))}
                   previewHtml={receiptPreview}
+                  readOnly
                 />
               </CardContent>
             </Card>
@@ -509,9 +696,9 @@ export function MarketingPage() {
             {/* 验码区 */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">验证订单行销内容</CardTitle>
+                <CardTitle className="text-base">验证订单营销内容</CardTitle>
                 <CardDescription>
-                  顾客出示截图时，输入订单号或ID，系统重新渲染该单的行销内容供核对
+                  顾客出示截图时，输入订单号或ID，系统重新渲染该单的营销内容供核对
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -543,7 +730,7 @@ export function MarketingPage() {
                 </div>
                 {verifyResult && (
                   <div className="border rounded-lg overflow-hidden">
-                    <div className={`flex items-center justify-between px-4 py-2 text-sm font-medium ${verifyResult.already_redeemed ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-800"}`}>
+                    <div className={`flex items-center justify-between px-4 py-2 text-sm font-medium ${verifyResult.already_redeemed ? "bg-muted text-foreground" : "bg-primary/10 text-primary"}`}>
                       <span>订单：{verifyResult.order_no}</span>
                       <span>{verifyResult.already_redeemed ? "✅ 已兑奖" : "⏳ 未兑奖"}</span>
                     </div>
@@ -614,7 +801,7 @@ export function MarketingPage() {
                     {redemptions.map(r => (
                       <div key={r.id} className="flex items-center gap-3 text-xs border rounded px-3 py-2">
                         <span className="font-mono text-muted-foreground shrink-0">{r.order_no || `#${r.order_id}`}</span>
-                        <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="bg-muted text-muted-foreground px-1.5 py-0.5 rounded shrink-0">
                           {COMPONENT_LABELS[r.component_type] ?? r.component_type}
                         </span>
                         <span className="flex-1 text-muted-foreground truncate">{r.note ?? ""}</span>
@@ -642,21 +829,21 @@ export function MarketingPage() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-3">
                       <div className="rounded-lg border p-3 text-center">
-                        <div className="text-2xl font-bold text-blue-600">{funnel.scans}</div>
+                        <div className="text-2xl font-bold text-foreground">{funnel.scans}</div>
                         <div className="text-xs text-muted-foreground mt-1">扫码进店</div>
                       </div>
                       <div className="rounded-lg border p-3 text-center">
-                        <div className="text-2xl font-bold text-orange-600">{funnel.self_orders}</div>
+                        <div className="text-2xl font-bold text-foreground">{funnel.self_orders}</div>
                         <div className="text-xs text-muted-foreground mt-1">自助下单</div>
                       </div>
                       <div className="rounded-lg border p-3 text-center">
-                        <div className="text-2xl font-bold text-green-600">{funnel.redemptions}</div>
+                        <div className="text-2xl font-bold text-foreground">{funnel.redemptions}</div>
                         <div className="text-xs text-muted-foreground mt-1">营销核销</div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-sm px-1">
                       <span className="text-muted-foreground">扫码 → 下单转化率</span>
-                      <span className="font-bold text-gray-900">{(funnel.scan_to_order * 100).toFixed(0)}%</span>
+                      <span className="font-bold text-foreground">{(funnel.scan_to_order * 100).toFixed(0)}%</span>
                     </div>
                     <div className="flex items-center justify-between text-sm px-1">
                       <span className="text-muted-foreground">折价券促销成本</span>
@@ -675,8 +862,8 @@ export function MarketingPage() {
                                 <span className="text-xs w-20 shrink-0 text-muted-foreground">
                                   {COMPONENT_LABELS[c.component] ?? c.component}
                                 </span>
-                                <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
-                                  <div className="bg-green-400 h-full rounded-full" style={{ width: `${(c.count / max) * 100}%` }} />
+                                <div className="flex-1 bg-muted rounded-full h-4 overflow-hidden">
+                                  <div className="bg-primary h-full rounded-full" style={{ width: `${(c.count / max) * 100}%` }} />
                                 </div>
                                 <span className="text-xs font-medium w-8 text-right">{c.count}</span>
                               </div>
