@@ -769,7 +769,7 @@ impl Database {
     pub fn list_campaigns(&self) -> Result<Vec<serde_json::Value>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.name, c.discount_type, c.discount_value, c.condition_text, c.valid_days, c.is_active, c.created_at, c.daily_limit,
+            "SELECT c.id, c.name, c.discount_type, c.discount_value, c.condition_text, c.valid_days, c.is_active, c.created_at, c.daily_limit, c.cover_image,
                     (SELECT COUNT(*) FROM marketing_qr_tokens t WHERE t.order_id = c.id AND t.component = 'campaign_coupon') AS claimed,
                     (SELECT COUNT(*) FROM marketing_qr_tokens t WHERE t.order_id = c.id AND t.component = 'campaign_coupon' AND t.void = 1) AS redeemed
              FROM campaigns c ORDER BY c.id DESC"
@@ -784,10 +784,17 @@ impl Database {
             "is_active": r.get::<_, i64>(6)? == 1,
             "created_at": r.get::<_, String>(7)?,
             "daily_limit": r.get::<_, i64>(8)?,
-            "claimed": r.get::<_, i64>(9)?,
-            "redeemed": r.get::<_, i64>(10)?,
+            "cover_image": r.get::<_, Option<String>>(9)?,
+            "claimed": r.get::<_, i64>(10)?,
+            "redeemed": r.get::<_, i64>(11)?,
         })))?.collect::<Result<Vec<_>>>()?;
         Ok(rows)
+    }
+
+    pub fn update_campaign_cover(&self, id: i64, cover_image: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE campaigns SET cover_image = ?2 WHERE id = ?1", params![id, cover_image])?;
+        Ok(())
     }
 
     pub fn set_campaign_active(&self, id: i64, active: bool) -> Result<()> {
@@ -808,12 +815,12 @@ impl Database {
     /// existing `redeem_marketing_qr_token` loop (component = campaign_coupon).
     pub fn issue_campaign_coupon(&self, campaign_id: i64) -> Result<serde_json::Value> {
         let conn = self.conn.lock().unwrap();
-        let camp: Option<(String, String, f64, Option<String>, i64, i64, i64)> = conn.query_row(
-            "SELECT name, discount_type, discount_value, condition_text, valid_days, is_active, daily_limit FROM campaigns WHERE id = ?1",
+        let camp: Option<(String, String, f64, Option<String>, i64, i64, i64, Option<String>)> = conn.query_row(
+            "SELECT name, discount_type, discount_value, condition_text, valid_days, is_active, daily_limit, cover_image FROM campaigns WHERE id = ?1",
             params![campaign_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
         ).ok();
-        let (name, dtype, dval, cond, valid_days, is_active, daily_limit) = match camp {
+        let (name, dtype, dval, cond, valid_days, is_active, daily_limit, cover_image) = match camp {
             Some(c) => c,
             None => return Ok(serde_json::json!({ "valid": false })),
         };
@@ -845,6 +852,7 @@ impl Database {
             "campaign": {
                 "id": campaign_id, "name": name, "discount_type": dtype,
                 "discount_value": dval, "condition_text": cond, "valid_days": valid_days,
+                "cover_image": cover_image,
             },
         }))
     }

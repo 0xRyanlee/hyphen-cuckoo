@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, QrCode, Trash2, Download } from "lucide-react";
+import { Plus, QrCode, Trash2, Download, ImagePlus, X } from "lucide-react";
 import { StyledQR } from "@/components/styled-qr";
 
 interface Campaign {
@@ -19,6 +19,7 @@ interface Campaign {
   condition_text: string | null;
   valid_days: number;
   is_active: boolean;
+  cover_image?: string | null;
   claimed?: number;
   redeemed?: number;
 }
@@ -69,6 +70,13 @@ function CampaignPosterDialog({ campaign, baseUrl, onClose }: { campaign: Campai
         </DialogHeader>
         <div className="flex flex-col items-center gap-4 py-2">
           <div ref={posterRef} className="w-full rounded-2xl border-2 border-red-200 bg-white p-5 flex flex-col items-center gap-3">
+            {campaign.cover_image && (
+              <img
+                src={`data:image/jpeg;base64,${campaign.cover_image}`}
+                alt="活动封面"
+                className="w-full rounded-xl object-cover max-h-32"
+              />
+            )}
             <div className="text-center">
               <div className="text-[11px] text-gray-400 tracking-[0.3em]">扫码领券</div>
               <div className="text-xl font-extrabold text-red-700 mt-1">{campaign.name}</div>
@@ -158,6 +166,33 @@ export function CampaignManager() {
     } catch (e) { toast.error(String(e)); }
   }
 
+  async function handleCoverUpload(c: Campaign, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await invoke("update_campaign_cover", { id: c.id, coverImage: base64 });
+      toast.success("封面已更新");
+      load();
+    } catch (err) {
+      toast.error("上传失败", { description: String(err) });
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  async function handleCoverRemove(c: Campaign) {
+    try {
+      await invoke("update_campaign_cover", { id: c.id, coverImage: null });
+      load();
+    } catch (err) { toast.error(String(err)); }
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -215,6 +250,26 @@ export function CampaignManager() {
             <div className="space-y-2">
               {campaigns.map((c) => (
                 <div key={c.id} className={`flex items-center gap-3 border rounded-lg px-3 py-2 ${c.is_active ? "" : "opacity-50"}`}>
+                  {/* Cover image thumbnail */}
+                  <label className="relative shrink-0 cursor-pointer group">
+                    {c.cover_image ? (
+                      <>
+                        <img src={`data:image/jpeg;base64,${c.cover_image}`} alt="封面" className="h-12 w-12 rounded-md object-cover border" />
+                        <button
+                          type="button"
+                          className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => { e.preventDefault(); handleCoverRemove(c); }}
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="h-12 w-12 rounded-md border-2 border-dashed flex items-center justify-center bg-muted/30 hover:bg-muted/60 transition-colors">
+                        <ImagePlus className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleCoverUpload(c, e)} />
+                  </label>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{c.name}</p>
                     <p className="text-xs text-muted-foreground">{discountText(c.discount_type, c.discount_value)} · {c.valid_days}天{c.condition_text ? ` · ${c.condition_text}` : ""}</p>

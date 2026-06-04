@@ -10,6 +10,7 @@ interface CampaignInfo {
   discount_value: number;
   condition_text: string | null;
   valid_days: number;
+  cover_image?: string | null;
 }
 
 interface ResolveResult {
@@ -78,8 +79,15 @@ export function CampaignPage() {
   const c = data.campaign;
   return (
     <div className="min-h-screen bg-gradient-to-b from-red-50 to-orange-50 flex flex-col items-center justify-start pt-10 px-6 gap-4 pb-10">
+      {c.cover_image ? (
+        <img
+          src={`data:image/jpeg;base64,${c.cover_image}`}
+          alt={c.name}
+          className="w-full max-w-sm rounded-2xl object-cover shadow-md"
+        />
+      ) : null}
       <div className="text-center">
-        <div className="text-5xl mb-2">🎁</div>
+        {!c.cover_image && <div className="text-5xl mb-2">🎁</div>}
         <p className="text-xl font-bold text-red-700">{c.name}</p>
         <p className="text-sm text-red-500 mt-1">恭喜获得专属优惠券</p>
       </div>

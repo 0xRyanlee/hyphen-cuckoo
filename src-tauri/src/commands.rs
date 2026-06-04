@@ -2638,6 +2638,12 @@ pub fn list_campaigns(state: State<AppState>) -> Result<Vec<serde_json::Value>, 
 }
 
 #[tauri::command]
+pub fn update_campaign_cover(state: State<AppState>, id: i64, cover_image: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "更新活动封面")?;
+    state.db.update_campaign_cover(id, cover_image.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn set_campaign_active(state: State<AppState>, id: i64, active: bool) -> Result<(), String> {
     state.db.set_campaign_active(id, active).map_err(|e| e.to_string())
 }

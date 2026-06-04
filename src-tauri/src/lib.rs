@@ -420,6 +420,7 @@ pub fn run() {
             commands::list_campaigns,
             commands::set_campaign_active,
             commands::delete_campaign,
+            commands::update_campaign_cover,
             commands::resolve_campaign,
             commands::peek_marketing_qr_token,
             commands::find_collect_token_by_order_no,

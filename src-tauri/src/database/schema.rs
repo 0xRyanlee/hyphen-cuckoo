@@ -923,6 +923,12 @@ impl Database {
             // campaigns table may not exist on very old DBs; ignore failure there.
             let _ = conn.execute_batch("ALTER TABLE campaigns ADD COLUMN daily_limit INTEGER NOT NULL DEFAULT 0");
         }
+        let has_cover_image: bool = conn
+            .prepare("SELECT 1 FROM pragma_table_info('campaigns') WHERE name='cover_image'")?
+            .exists([])?;
+        if !has_cover_image {
+            let _ = conn.execute_batch("ALTER TABLE campaigns ADD COLUMN cover_image TEXT");
+        }
         let has_cancel_reason: bool = conn
             .prepare("SELECT 1 FROM pragma_table_info('orders') WHERE name='cancel_reason'")?
             .exists([])?;
