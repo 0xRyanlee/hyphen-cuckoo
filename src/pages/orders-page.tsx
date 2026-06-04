@@ -433,7 +433,7 @@ export function OrdersPage({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">毛利</span>
-                      <span className={`font-medium ${selectedOrder.order.amount_total - orderCost >= 0 ? "text-emerald-600" : "text-destructive"}`}>
+                      <span className={`font-medium ${selectedOrder.order.amount_total - orderCost >= 0 ? "text-primary" : "text-destructive"}`}>
                         ¥{(selectedOrder.order.amount_total - orderCost).toFixed(2)}
                         {selectedOrder.order.amount_total > 0 && (
                           <span className="text-xs ml-1 opacity-70">

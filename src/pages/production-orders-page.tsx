@@ -178,7 +178,7 @@ export function ProductionOrdersPage({
                   {materialCheck.map(([name, needed, available]) => {
                     const ok = available >= needed - 1e-9;
                     return (
-                      <div key={name} className={`flex justify-between text-xs rounded px-2 py-1 ${ok ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
+                      <div key={name} className={`flex justify-between text-xs rounded px-2 py-1 ${ok ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
                         <span>{name}</span>
                         <span>{ok ? "✓" : "✗"} 需 {needed.toFixed(2)} / 有 {available.toFixed(2)}</span>
                       </div>

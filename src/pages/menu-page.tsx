@@ -266,7 +266,7 @@ export function MenuPage({
                       <TableCell><Checkbox checked={selectedItems.includes(item.id)} onClick={() => toggleSelect(item.id)} /></TableCell>
                       <TableCell className="font-medium">{item.name}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{menuCategories.find((c) => c.id === item.category_id)?.name || "-"}</TableCell>
-                      <TableCell className="text-xs">{item.recipe_id ? (<div className="flex items-center gap-1"><Link className="h-3 w-3 text-emerald-500" /><span className="text-emerald-500">{recipes.find((r) => r.id === item.recipe_id)?.name || `配方 #${item.recipe_id}`}</span></div>) : (<span className="text-muted-foreground">未绑定</span>)}</TableCell>
+                      <TableCell className="text-xs">{item.recipe_id ? (<div className="flex items-center gap-1"><Link className="h-3 w-3 text-primary" /><span className="text-primary">{recipes.find((r) => r.id === item.recipe_id)?.name || `配方 #${item.recipe_id}`}</span></div>) : (<span className="text-muted-foreground">未绑定</span>)}</TableCell>
                       <TableCell className="text-right">¥{item.sales_price.toFixed(2)}</TableCell>
                       <TableCell><Badge variant={item.is_available ? "default" : "secondary"}>{item.is_available ? "可售" : "停售"}</Badge></TableCell>
                       <TableCell className="text-right">
@@ -279,7 +279,7 @@ export function MenuPage({
                               <Star className={`h-4 w-4 ${item.is_favorite ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
                             </Button>
                           )}
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggleAvailability(item.id, !item.is_available)}>{item.is_available ? <ToggleRight className="h-4 w-4 text-emerald-500" /> : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}</Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggleAvailability(item.id, !item.is_available)}>{item.is_available ? <ToggleRight className="h-4 w-4 text-primary" /> : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}</Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openSpecDialog(item)}><Tag className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditItem(item)}><Pencil className="h-4 w-4" /></Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => confirmDelete('item', item.id, item.name)}><Trash2 className="h-4 w-4" /></Button>
@@ -379,7 +379,7 @@ export function MenuPage({
                         <TableCell className="text-right">
                           {editingSpec?.id === spec.id ? (
                             <Input type="number" value={editingSpec.price_delta} onChange={(e) => { const v = parseSafeFloat(e.target.value); setEditingSpec({ ...editingSpec, price_delta: v ?? editingSpec.price_delta }); }} className="h-8 w-20 ml-auto" />
-                          ) : (<span className={spec.price_delta > 0 ? "text-destructive" : spec.price_delta < 0 ? "text-emerald-500" : ""}>{spec.price_delta > 0 ? "+" : ""}¥{spec.price_delta.toFixed(2)}</span>)}
+                          ) : (<span className={spec.price_delta > 0 ? "text-destructive" : spec.price_delta < 0 ? "text-primary" : ""}>{spec.price_delta > 0 ? "+" : ""}¥{spec.price_delta.toFixed(2)}</span>)}
                         </TableCell>
                         <TableCell className="text-right">
                           {editingSpec?.id === spec.id ? (

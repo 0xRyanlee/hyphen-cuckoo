@@ -404,7 +404,7 @@ export function POSPage({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 flex-shrink-0"
+                      className="h-10 w-10 flex-shrink-0"
                       onClick={() => removeFromCart(index)}
                     >
                       <X className="h-3 w-3" />
@@ -415,7 +415,7 @@ export function POSPage({
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-10 w-10"
                         onClick={() => updateQty(index, -1)}
                       >
                         <Minus className="h-3 w-3" />
@@ -424,7 +424,7 @@ export function POSPage({
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-7 w-7"
+                        className="h-10 w-10"
                         onClick={() => updateQty(index, 1)}
                       >
                         <Plus className="h-3 w-3" />
@@ -437,7 +437,7 @@ export function POSPage({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground"
+                        className="h-10 w-10 text-muted-foreground"
                         onClick={() => openNoteDialog(index)}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
@@ -445,7 +445,7 @@ export function POSPage({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground"
+                        className="h-10 w-10 text-muted-foreground"
                         onClick={() => openModifierDialog(index)}
                       >
                         <Tag className="h-3.5 w-3.5" />
@@ -493,8 +493,8 @@ export function POSPage({
               className="h-9"
             />
           )}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="h-12" onClick={async () => {
+          <div className="grid grid-cols-3 gap-2">
+            <Button variant="outline" className="h-12 col-span-1" onClick={async () => {
               if (isSubmitting) return;
               setIsSubmitting(true);
               try { const ok = await onCreateOrder(cart, dineType, tableNo || null); if (ok) clearCart(); }
@@ -502,7 +502,7 @@ export function POSPage({
             }} disabled={cart.length === 0 || isSubmitting}>
               暂存
             </Button>
-            <Button className="h-12 text-base" size="lg" onClick={async () => {
+            <Button className="h-12 col-span-2 text-base" onClick={async () => {
               if (isSubmitting) return;
               setIsSubmitting(true);
               try { const ok = await onCreateAndSubmit(cart, dineType, tableNo || null); if (ok) clearCart(); }
@@ -586,22 +586,22 @@ export function POSPage({
                           {formatPriceMini(getItemPrice(item) * item.qty)}
                         </span>
                         <div className="flex items-center gap-1">
-                          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => updateQty(index, -1)}>
+                          <Button variant="outline" size="icon" className="h-10 w-10" onClick={() => updateQty(index, -1)}>
                             <Minus className="h-3 w-3" />
                           </Button>
                           <span className="w-5 text-center text-sm font-medium">{item.qty}</span>
-                          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => updateQty(index, 1)}>
+                          <Button variant="outline" size="icon" className="h-10 w-10" onClick={() => updateQty(index, 1)}>
                             <Plus className="h-3 w-3" />
                           </Button>
                         </div>
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openNoteDialog(index)}>
+                          <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openNoteDialog(index)}>
                             <MessageSquare className="h-3 w-3" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openModifierDialog(index)}>
+                          <Button variant="ghost" size="icon" className="h-10 w-10" onClick={() => openModifierDialog(index)}>
                             <Tag className="h-3 w-3" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeFromCart(index)}>
+                          <Button variant="ghost" size="icon" className="h-10 w-10 text-destructive" onClick={() => removeFromCart(index)}>
                             <X className="h-3 w-3" />
                           </Button>
                         </div>
@@ -636,8 +636,8 @@ export function POSPage({
                 className="h-9"
               />
             )}
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className="h-12" onClick={async () => {
+            <div className="grid grid-cols-3 gap-2">
+              <Button variant="outline" className="h-12 col-span-1" onClick={async () => {
                 if (isSubmitting) return;
                 setIsSubmitting(true);
                 try { const ok = await onCreateOrder(cart, dineType, tableNo || null); if (ok) { clearCart(); setCartSheetOpen(false); } }
@@ -645,7 +645,7 @@ export function POSPage({
               }} disabled={cart.length === 0 || isSubmitting}>
                 暂存
               </Button>
-              <Button className="h-12 text-base" size="lg" onClick={async () => {
+              <Button className="h-12 col-span-2 text-base" onClick={async () => {
                 if (isSubmitting) return;
                 setIsSubmitting(true);
                 try { const ok = await onCreateAndSubmit(cart, dineType, tableNo || null); if (ok) { clearCart(); setCartSheetOpen(false); } }
@@ -686,7 +686,7 @@ export function POSPage({
                 <span className="font-medium">{spec.spec_name}</span>
                 <div className="flex items-center gap-3">
                   {spec.price_delta !== 0 && (
-                    <span className={`text-sm ${spec.price_delta > 0 ? "text-destructive" : "text-emerald-500"}`}>
+                    <span className={`text-sm ${spec.price_delta > 0 ? "text-destructive" : "text-primary"}`}>
                       {spec.price_delta > 0 ? "+" : ""}{formatPrice(spec.price_delta)}
                     </span>
                   )}

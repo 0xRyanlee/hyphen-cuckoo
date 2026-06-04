@@ -137,7 +137,7 @@ export function ReportsPage() {
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">实收</CardTitle></CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-500">¥{totalCollected.toFixed(2)}</div>
-            {totalSales > 0 && totalCollected < totalSales && <div className="text-xs text-amber-500 mt-0.5">未收 ¥{(totalSales - totalCollected).toFixed(2)}</div>}
+            {totalSales > 0 && totalCollected < totalSales && <div className="text-xs text-muted-foreground mt-0.5">未收 ¥{(totalSales - totalCollected).toFixed(2)}</div>}
           </CardContent>
         </Card>
         <Card>
@@ -146,15 +146,15 @@ export function ReportsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">毛利</CardTitle></CardHeader>
-          <CardContent><div className={`text-2xl font-bold ${totalGrossProfit >= 0 ? "text-emerald-500" : "text-destructive"}`}>¥{totalGrossProfit.toFixed(2)}</div><div className="text-xs text-muted-foreground mt-0.5">{grossMargin}%</div></CardContent>
+          <CardContent><div className={`text-2xl font-bold ${totalGrossProfit >= 0 ? "text-primary" : "text-destructive"}`}>¥{totalGrossProfit.toFixed(2)}</div><div className="text-xs text-muted-foreground mt-0.5">{grossMargin}%</div></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">支出</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold text-amber-500">¥{totalExpenses.toFixed(2)}</div></CardContent>
+          <CardContent><div className="text-2xl font-bold text-foreground">¥{totalExpenses.toFixed(2)}</div></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">净利</CardTitle></CardHeader>
-          <CardContent><div className={`text-2xl font-bold ${totalNetProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}>¥{totalNetProfit.toFixed(2)}</div><div className="text-xs text-muted-foreground mt-0.5">{netMargin}%</div></CardContent>
+          <CardContent><div className={`text-2xl font-bold ${totalNetProfit >= 0 ? "text-primary" : "text-destructive"}`}>¥{totalNetProfit.toFixed(2)}</div><div className="text-xs text-muted-foreground mt-0.5">{netMargin}%</div></CardContent>
         </Card>
       </div>
 
@@ -257,9 +257,9 @@ export function ReportsPage() {
                             <TableCell className="font-mono text-xs">{date}</TableCell>
                             <TableCell className="text-right">¥{revenue.toFixed(2)}</TableCell>
                             <TableCell className="text-right text-muted-foreground">¥{cost.toFixed(2)}</TableCell>
-                            <TableCell className={`text-right font-medium ${grossProfit >= 0 ? "text-emerald-500" : "text-destructive"}`}>¥{grossProfit.toFixed(2)} <span className="text-xs opacity-60">({gm}%)</span></TableCell>
-                            <TableCell className="text-right text-amber-500">¥{expenses.toFixed(2)}</TableCell>
-                            <TableCell className={`text-right font-bold ${netProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}>¥{netProfit.toFixed(2)}</TableCell>
+                            <TableCell className={`text-right font-medium ${grossProfit >= 0 ? "text-primary" : "text-destructive"}`}>¥{grossProfit.toFixed(2)} <span className="text-xs opacity-60">({gm}%)</span></TableCell>
+                            <TableCell className="text-right text-foreground">¥{expenses.toFixed(2)}</TableCell>
+                            <TableCell className={`text-right font-bold ${netProfit >= 0 ? "text-primary" : "text-destructive"}`}>¥{netProfit.toFixed(2)}</TableCell>
                           </TableRow>
                         );
                       })}

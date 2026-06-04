@@ -409,7 +409,7 @@ function handleAdjust() {
                       <TableRow key={summary.material_id}>
                         <TableCell className="font-medium">{summary.material_name}</TableCell>
                         <TableCell className="text-right">{summary.total_qty.toFixed(2)}</TableCell>
-                        <TableCell className={`text-right font-medium ${summary.available_qty < getMinQty(summary.material_id) ? "text-destructive" : "text-emerald-500"}`}>
+                        <TableCell className={`text-right font-medium ${summary.available_qty < getMinQty(summary.material_id) ? "text-destructive" : "text-primary"}`}>
                           {summary.available_qty.toFixed(2)}
                         </TableCell>
                       </TableRow>
@@ -526,7 +526,7 @@ function handleAdjust() {
                       <TableCell className="font-mono text-xs">{txn.txn_no}</TableCell>
                       <TableCell>{getTxnTypeBadge(txn.txn_type)}</TableCell>
                       <TableCell className="text-xs">{getMaterialName(txn.material_id)}</TableCell>
-                      <TableCell className={`text-right font-medium ${txn.qty_delta < 0 ? "text-destructive" : "text-emerald-500"}`}>
+                      <TableCell className={`text-right font-medium ${txn.qty_delta < 0 ? "text-destructive" : "text-primary"}`}>
                         {txn.qty_delta > 0 ? "+" : ""}{txn.qty_delta.toFixed(2)}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-xs">{txn.created_at}</TableCell>
