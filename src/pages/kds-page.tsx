@@ -112,7 +112,7 @@ export function KDSPage({
 
   const getElapsedMinutes = (createdAt: string): number => {
     const ts = createdAt.includes("T") ? createdAt : createdAt.replace(" ", "T");
-    return Math.floor((Date.now() - new Date(ts + "Z").getTime()) / 60000);
+    return Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
   };
 
   const formatElapsed = (mins: number): string => {
@@ -227,17 +227,17 @@ export function KDSPage({
                   </ScrollArea>
                   <div className="flex gap-2">
                     {ticket.status === "pending" && (
-                      <Button size="sm" className="flex-1" onClick={() => onStartTicket(ticket.id)}>
+                      <Button className="flex-1 h-12 text-sm" onClick={() => onStartTicket(ticket.id)}>
                         <Play className="mr-2 h-3 w-3" />开始制作
                       </Button>
                     )}
                     {ticket.status === "started" && (
-                      <Button size="sm" className="flex-1" onClick={() => onFinishTicket(ticket.id)}>
+                      <Button className="flex-1 h-12 text-sm" onClick={() => onFinishTicket(ticket.id)}>
                         <Check className="mr-2 h-3 w-3" />完成出餐
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" onClick={() => onReprintTicket(ticket)} title="补打印">
-                      <Printer className="h-3 w-3" />
+                    <Button size="sm" variant="outline" className="h-9 px-3 gap-1.5 text-xs" onClick={() => onReprintTicket(ticket)} title="补打印">
+                      <Printer className="h-3 w-3" /><span>补印</span>
                     </Button>
                   </div>
                 </CardContent>

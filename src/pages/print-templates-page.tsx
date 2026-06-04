@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2, Eye, Save, Printer, Star, FileBox, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ElementEditorFields } from "@/components/print-element-editor";
 import { toast } from "sonner";
 
 // ── Element types for visual card layer ──────────────────────────────────────
@@ -657,152 +658,10 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
       {/* Element Editor Dialog */}
       <Dialog open={elementEditorOpen} onOpenChange={(o) => { if (!o) { setElementEditorOpen(false); setEditingElem(null); setEditingIdx(null); } }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>編輯元件 — {editingElem ? getElementLabel(editingElem.type) : ""}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>编辑元件 — {editingElem ? getElementLabel(editingElem.type) : ""}</DialogTitle></DialogHeader>
           {editingElem && (
-            <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
-              {editingElem.type === "text" && (<>
-                <div><Label className="text-xs">文字内容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={3} className="font-mono text-xs mt-1" /></div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><Label className="text-xs">對齊</Label>
-                    <Select value={String(editingElem.align ?? "left")} onValueChange={v => setEditingElem({ ...editingElem, align: v })}>
-                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="left">左對齊</SelectItem><SelectItem value="center">置中</SelectItem><SelectItem value="right">右對齊</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  <div><Label className="text-xs">大小</Label>
-                    <Select value={String(editingElem.size ?? "normal")} onValueChange={v => setEditingElem({ ...editingElem, size: v })}>
-                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="small">小</SelectItem><SelectItem value="normal">正常</SelectItem><SelectItem value="large">大</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2"><Checkbox id="elem-bold" checked={!!editingElem.bold} onCheckedChange={v => setEditingElem({ ...editingElem, bold: !!v })} /><Label htmlFor="elem-bold" className="text-xs">粗體</Label></div>
-              </>)}
-              {editingElem.type === "blank_lines" && (
-                <div><Label className="text-xs">空行數量</Label><Input type="number" min={1} max={10} value={Number(editingElem.count ?? 1)} onChange={e => setEditingElem({ ...editingElem, count: parseInt(e.target.value) || 1 })} className="h-8 text-xs mt-1 w-24" /></div>
-              )}
-              {editingElem.type === "fortune" && (
-                <div><Label className="text-xs">种子策略</Label>
-                  <Select value={String(editingElem.seed_strategy ?? "daily")} onValueChange={v => setEditingElem({ ...editingElem, seed_strategy: v })}>
-                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="daily">全店同日</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="per_order">每單唯一</SelectItem></SelectContent>
-                  </Select>
-                </div>
-              )}
-              {editingElem.type === "quote" && (
-                <div><Label className="text-xs">语言</Label>
-                  <Select value={String(editingElem.language ?? "multilingual")} onValueChange={v => setEditingElem({ ...editingElem, language: v })}>
-                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="multilingual">多語輪替</SelectItem><SelectItem value="zh">中文</SelectItem><SelectItem value="en">英文</SelectItem><SelectItem value="ja">日文</SelectItem></SelectContent>
-                  </Select>
-                </div>
-              )}
-              {editingElem.type === "discount_coupon" && (<>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><Label className="text-xs">折扣類型</Label>
-                    <Select value={String(editingElem.discount_type ?? "percent")} onValueChange={v => setEditingElem({ ...editingElem, discount_type: v })}>
-                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="percent">百分比折扣</SelectItem><SelectItem value="amount">固定金額</SelectItem><SelectItem value="free_item">指定免費</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  <div><Label className="text-xs">折扣值 (%或元)</Label><Input type="number" value={Number(editingElem.value ?? 0)} onChange={e => setEditingElem({ ...editingElem, value: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1" /></div>
-                </div>
-                <div><Label className="text-xs">使用条件</Label><Input value={String(editingElem.condition ?? "")} onChange={e => setEditingElem({ ...editingElem, condition: e.target.value })} className="h-8 text-xs mt-1" placeholder="消費滿100元" /></div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><Label className="text-xs">有效天數</Label><Input type="number" value={Number(editingElem.valid_days ?? 30)} onChange={e => setEditingElem({ ...editingElem, valid_days: parseInt(e.target.value) || 30 })} className="h-8 text-xs mt-1" /></div>
-                  <div><Label className="text-xs">標題文字</Label><Input value={String(editingElem.label ?? "")} onChange={e => setEditingElem({ ...editingElem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                </div>
-              </>)}
-              {editingElem.type === "product_spotlight" && (<>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><Label className="text-xs">標題</Label><Input value={String(editingElem.title ?? "")} onChange={e => setEditingElem({ ...editingElem, title: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                  <div><Label className="text-xs">徽章</Label><Input value={String(editingElem.badge ?? "NEW")} onChange={e => setEditingElem({ ...editingElem, badge: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                </div>
-                <div><Label className="text-xs">商品名稱</Label><Input value={String(editingElem.name ?? "")} onChange={e => setEditingElem({ ...editingElem, name: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                <div><Label className="text-xs">描述</Label><Textarea value={String(editingElem.description ?? "")} onChange={e => setEditingElem({ ...editingElem, description: e.target.value })} rows={2} className="text-xs mt-1" /></div>
-                <div><Label className="text-xs">定價 (0=不显示)</Label><Input type="number" value={Number(editingElem.price ?? 0)} onChange={e => setEditingElem({ ...editingElem, price: parseFloat(e.target.value) || 0 })} className="h-8 text-xs mt-1 w-32" /></div>
-              </>)}
-              {editingElem.type === "qr_code" && (<>
-                <div><Label className="text-xs">URL</Label><Input value={String(editingElem.url ?? "")} onChange={e => setEditingElem({ ...editingElem, url: e.target.value })} className="h-8 text-xs mt-1" placeholder="https://..." /></div>
-                <div><Label className="text-xs">說明文字</Label><Input value={String(editingElem.label ?? "")} onChange={e => setEditingElem({ ...editingElem, label: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                <div><Label className="text-xs">尺寸 (1-8)</Label><Input type="number" min={1} max={8} value={Number(editingElem.size ?? 5)} onChange={e => setEditingElem({ ...editingElem, size: parseInt(e.target.value) || 5 })} className="h-8 text-xs mt-1 w-24" /></div>
-              </>)}
-              {editingElem.type === "character_collect" && (<>
-                <div className="grid grid-cols-2 gap-2">
-                  <div><Label className="text-xs">遊戲名稱</Label><Input value={String(editingElem.game_name ?? "")} onChange={e => setEditingElem({ ...editingElem, game_name: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                  <div><Label className="text-xs">樣式</Label>
-                    <Select value={String(editingElem.style ?? "box")} onValueChange={v => setEditingElem({ ...editingElem, style: v })}>
-                      <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="box">方框</SelectItem><SelectItem value="mahjong">麻將</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-xs">集字/集章组合（逗号分隔，支持汉字、emoji、符号）</Label>
-                  <Input value={(editingElem.characters as string[] | undefined)?.join(",") ?? ""} onChange={e => setEditingElem({ ...editingElem, characters: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} className="h-8 text-xs mt-1" placeholder="恭,喜,发,财" />
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {[
-                      { label: "🀄 麻将", val: "🀇,🀈,🀉,🀊" },
-                      { label: "🍤 海鲜", val: "🍤,🦐,🦞,🦀" },
-                      { label: "🌸 四季", val: "🌸,☀️,🍂,❄️" },
-                      { label: "福禄寿喜", val: "福,禄,寿,喜" },
-                    ].map(p => (
-                      <button key={p.label} type="button" className="text-[10px] px-1.5 py-0.5 rounded border border-muted-foreground/30 text-muted-foreground hover:bg-muted"
-                        onClick={() => setEditingElem({ ...editingElem, characters: p.val.split(",") })}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">每张小票抽一个，顾客集齐所有才可兑奖</p>
-                </div>
-                <div><Label className="text-xs">兑奖说明</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                <div><Label className="text-xs">种子策略</Label>
-                  <Select value={String(editingElem.seed_strategy ?? "per_order")} onValueChange={v => setEditingElem({ ...editingElem, seed_strategy: v })}>
-                    <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectItem value="per_order">每單唯一</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="daily">全店同日</SelectItem></SelectContent>
-                  </Select>
-                </div>
-              </>)}
-              {editingElem.type === "rich_text" && (
-                <div><Label className="text-xs">Markdown内容</Label><Textarea value={String(editingElem.content ?? "")} onChange={e => setEditingElem({ ...editingElem, content: e.target.value })} rows={8} className="font-mono text-xs mt-1" placeholder={"## 标题\n- 项目一\n- 项目二\n> 引用文字"} /></div>
-              )}
-              {editingElem.type === "solar_term" && (<>
-                <p className="text-xs text-muted-foreground">节气期间（前后约7天）自动显示对应主题文案，不在节气期间时不显示。</p>
-                <div className="flex items-center gap-2"><input type="checkbox" checked={!!editingElem.show_all} onChange={e => setEditingElem({ ...editingElem, show_all: e.target.checked })} id="solar-show-all" /><Label htmlFor="solar-show-all" className="text-xs">不在节气期间时也显示"下一个节气"提示</Label></div>
-              </>)}
-              {editingElem.type === "chef_message" && (<>
-                <div><Label className="text-xs">标题</Label><Input value={String(editingElem.title ?? "厨师寄语")} onChange={e => setEditingElem({ ...editingElem, title: e.target.value })} className="h-8 text-xs mt-1" /></div>
-                <div><Label className="text-xs">署名（显示在消息末尾）</Label><Input value={String(editingElem.author ?? "本店厨师")} onChange={e => setEditingElem({ ...editingElem, author: e.target.value })} className="h-8 text-xs mt-1" placeholder="例：张师傅" /></div>
-                <div><Label className="text-xs">每日消息（每行一条，留空使用内置默认，按星期循环最多7条）</Label>
-                  <Textarea value={(editingElem.messages as string[] | undefined)?.join("\n") ?? ""} onChange={e => setEditingElem({ ...editingElem, messages: e.target.value.split("\n").map(s => s.trim()).filter(Boolean) })} rows={7} className="text-xs mt-1" placeholder={"周一：今天的食材格外新鲜...\n周二：感谢光临，用心烹饪...\n（最多7条，按星期轮播）"} /></div>
-              </>)}
-              {editingElem.type === "riddle" && (<>
-                <p className="text-xs text-muted-foreground">留空使用内置谜语库（每日随机），或自定义谜题和答案。</p>
-                <div><Label className="text-xs">自定义谜题（选填，留空用内置库）</Label><Textarea value={String(editingElem.question ?? "")} onChange={e => setEditingElem({ ...editingElem, question: e.target.value || undefined })} rows={2} className="text-xs mt-1" placeholder="输入谜题..." /></div>
-                <div><Label className="text-xs">答案（收据上不显示，仅供核对）</Label><Input value={String(editingElem.answer ?? "")} onChange={e => setEditingElem({ ...editingElem, answer: e.target.value || undefined })} className="h-8 text-xs mt-1" placeholder="谜底..." /></div>
-                <div><Label className="text-xs">兑奖说明（显示在谜题下方）</Label><Input value={String(editingElem.prize ?? "")} onChange={e => setEditingElem({ ...editingElem, prize: e.target.value })} className="h-8 text-xs mt-1" placeholder="下次来店说出答案，赢取小惊喜！" /></div>
-              </>)}
-              {editingElem.type === "dish_easter_egg" && (<>
-                <p className="text-xs text-muted-foreground">当订单中包含指定关键词菜品时，显示隐藏彩蛋消息。每条规则一个关键词。</p>
-                {((editingElem.eggs as { keyword: string; message: string }[] | undefined) ?? []).map((egg, idx) => (
-                  <div key={idx} className="flex gap-1 items-start">
-                    <div className="flex-1 space-y-1">
-                      <Input value={egg.keyword} placeholder="菜品关键词（如：虾）" className="h-7 text-xs"
-                        onChange={e => { const eggs = [...((editingElem.eggs as typeof egg[]) ?? [])]; eggs[idx] = { ...egg, keyword: e.target.value }; setEditingElem({ ...editingElem, eggs }); }} />
-                      <Input value={egg.message} placeholder="彩蛋消息（如：解锁：海鲜达人！享95折）" className="h-7 text-xs"
-                        onChange={e => { const eggs = [...((editingElem.eggs as typeof egg[]) ?? [])]; eggs[idx] = { ...egg, message: e.target.value }; setEditingElem({ ...editingElem, eggs }); }} />
-                    </div>
-                    <button type="button" className="text-xs text-destructive px-1 pt-1" onClick={() => { const eggs = ((editingElem.eggs as typeof egg[]) ?? []).filter((_, i) => i !== idx); setEditingElem({ ...editingElem, eggs }); }}>✕</button>
-                  </div>
-                ))}
-                <Button type="button" variant="outline" size="sm" className="w-full h-7 text-xs"
-                  onClick={() => { const eggs = [...((editingElem.eggs as { keyword: string; message: string }[]) ?? []), { keyword: "", message: "" }]; setEditingElem({ ...editingElem, eggs }); }}>
-                  + 添加触发规则
-                </Button>
-              </>)}
-              {["separator", "items", "art", "image_block"].includes(editingElem.type) && (
-                <p className="text-sm text-muted-foreground py-2">此元件无需额外配置。</p>
-              )}
+            <div className="py-2 max-h-[60vh] overflow-y-auto pr-1">
+              <ElementEditorFields elem={editingElem} onChange={setEditingElem} />
             </div>
           )}
           <DialogFooter>
