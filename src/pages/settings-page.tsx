@@ -423,7 +423,7 @@ function WebServerCard() {
         {status.running && status.url && (
           <>
             <div className="flex items-center gap-2 rounded-lg bg-muted p-2.5">
-              <span className="text-xs font-mono flex-1 text-emerald-600 dark:text-emerald-400 break-all">
+              <span className="text-xs font-mono flex-1 text-primary break-all">
                 {status.url}
               </span>
               <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => {
@@ -599,7 +599,7 @@ function LanSyncCard() {
           </div>
           {serverRunning && serverUrl && (
             <div className="flex items-center gap-2 rounded-lg bg-muted p-2.5">
-              <span className="text-xs font-mono flex-1 text-emerald-600 dark:text-emerald-400 break-all">
+              <span className="text-xs font-mono flex-1 text-primary break-all">
                 {serverUrl}
               </span>
               <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => {

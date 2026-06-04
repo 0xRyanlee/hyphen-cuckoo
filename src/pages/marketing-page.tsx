@@ -689,7 +689,7 @@ export function MarketingPage() {
                           {COMPONENT_LABELS[r.component_type] ?? r.component_type}
                         </span>
                         <span className="flex-1 text-muted-foreground truncate">{r.note ?? ""}</span>
-                        {r.amount > 0 && <span className="text-rose-600 shrink-0">-¥{r.amount.toFixed(2)}</span>}
+                        {r.amount > 0 && <span className="text-destructive shrink-0">-¥{r.amount.toFixed(2)}</span>}
                         <span className="text-muted-foreground shrink-0">{r.redeemed_at.slice(0, 16)}</span>
                       </div>
                     ))}
@@ -731,7 +731,7 @@ export function MarketingPage() {
                     </div>
                     <div className="flex items-center justify-between text-sm px-1">
                       <span className="text-muted-foreground">折价券促销成本</span>
-                      <span className="font-bold text-rose-600">¥{(funnel.coupon_discount ?? 0).toFixed(2)}</span>
+                      <span className="font-bold text-destructive">¥{(funnel.coupon_discount ?? 0).toFixed(2)}</span>
                     </div>
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2">各组件核销分布</p>

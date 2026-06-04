@@ -138,11 +138,11 @@ loading = false,
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loading ? <Skeleton className="h-8 w-24 mb-1" /> : <div className="text-2xl font-bold text-emerald-600">¥{totalOrderValue.toFixed(2)}</div>}
+            {loading ? <Skeleton className="h-8 w-24 mb-1" /> : <div className="text-2xl font-bold text-primary">¥{totalOrderValue.toFixed(2)}</div>}
             <p className="text-xs text-muted-foreground">
               均值 ¥{loading ? "-" : avgOrderValue.toFixed(2)} · {activeOrders.length} 笔
               {timeRange === "week" && weekChangePercent !== null && (
-                <span className={`ml-2 font-medium ${weekChangePercent >= 0 ? "text-emerald-500" : "text-destructive"}`}>
+                <span className={`ml-2 font-medium ${weekChangePercent >= 0 ? "text-primary" : "text-destructive"}`}>
                   {weekChangePercent >= 0 ? "▲" : "▼"}{Math.abs(weekChangePercent).toFixed(1)}% vs 上周
                 </span>
               )}
@@ -426,7 +426,7 @@ loading = false,
           <CardContent>
             <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border p-3 text-center">
-                <div className="text-2xl font-bold text-foreground">{marketingStats.redemptions_today}</div>
+                <div className="text-2xl font-bold text-muted-foreground">{marketingStats.redemptions_today}</div>
                 <div className="text-xs text-muted-foreground mt-1">今日兑奖次数</div>
               </div>
               <div className="rounded-lg border p-3 text-center">
@@ -434,7 +434,7 @@ loading = false,
                 <div className="text-xs text-muted-foreground mt-1">折价券发放</div>
               </div>
               <div className="rounded-lg border p-3 text-center">
-                <div className="text-2xl font-bold text-foreground">{marketingStats.coupons_redeemed_today}</div>
+                <div className="text-2xl font-bold text-primary">{marketingStats.coupons_redeemed_today}</div>
                 <div className="text-xs text-muted-foreground mt-1">折价券核销</div>
               </div>
             </div>

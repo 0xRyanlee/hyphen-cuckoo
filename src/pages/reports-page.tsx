@@ -205,7 +205,7 @@ export function ReportsPage() {
                         <TableRow key={date}>
                           <TableCell className="font-mono text-xs">{date}</TableCell>
                           <TableCell className="text-right font-medium">¥{amount.toFixed(2)}</TableCell>
-                          <TableCell className={`text-right font-medium ${collected < amount ? "text-amber-500" : "text-emerald-600"}`}>¥{collected.toFixed(2)}</TableCell>
+                          <TableCell className={`text-right font-medium ${collected < amount ? "text-destructive" : "text-primary"}`}>¥{collected.toFixed(2)}</TableCell>
                           <TableCell className="text-right">{count}</TableCell>
                         </TableRow>
                       ))}
