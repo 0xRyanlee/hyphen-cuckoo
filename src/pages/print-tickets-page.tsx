@@ -12,6 +12,12 @@ import { Printer, Tag, FileText, Plus, Edit, Trash2, Settings } from "lucide-rea
 import { toast } from "sonner";
 import type { PrintTicketType, KitchenStation } from "../types";
 
+const CODE_LABELS: Record<string, string> = {
+  kitchen: "厨房单",
+  receipt: "收据",
+  label: "标签",
+};
+
 export function PrintTicketsPage() {
   const [ticketTypes, setTicketTypes] = useState<PrintTicketType[]>([]);
   const [stations, setStations] = useState<KitchenStation[]>([]);
@@ -116,7 +122,7 @@ export function PrintTicketsPage() {
                   {ticket.code === "label" && <Tag className="h-5 w-5" />}
                   <div>
                     <CardTitle className="text-lg">{ticket.name}</CardTitle>
-                    <CardDescription>{ticket.description || ticket.code}</CardDescription>
+                    <CardDescription>{ticket.description || CODE_LABELS[ticket.code] || ticket.code}</CardDescription>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

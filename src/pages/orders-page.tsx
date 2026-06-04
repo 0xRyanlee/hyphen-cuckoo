@@ -587,6 +587,7 @@ export function OrdersPage({
                   }
                   try {
                     await invoke("record_order_refund", { orderId: cancelTargetOrder.id, refundAmount: amt });
+                    onViewOrder(cancelTargetOrder.id);
                   } catch (e) {
                     toast.error("退款记录失败", { description: String(e) });
                   }
