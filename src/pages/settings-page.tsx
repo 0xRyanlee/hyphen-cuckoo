@@ -636,7 +636,7 @@ function LanSyncCard() {
             </Button>
           </div>
           {clientStatus === "ok" && (
-            <p className="text-xs text-emerald-600 flex items-center gap-1"><Wifi className="w-3 h-3" />连接正常</p>
+            <p className="text-xs text-primary flex items-center gap-1"><Wifi className="w-3 h-3" />连接正常</p>
           )}
           {clientStatus === "error" && (
             <p className="text-xs text-destructive flex items-center gap-1"><WifiOff className="w-3 h-3" />连接失败，请检查地址与网络</p>
@@ -944,7 +944,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-3">
               {connected ? (
-                <Wifi className="h-4 w-4 text-emerald-500" />
+                <Wifi className="h-4 w-4 text-primary" />
               ) : (
                 <WifiOff className="h-4 w-4 text-destructive" />
               )}
@@ -953,7 +953,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
                 <p className="text-xs text-muted-foreground">Tauri IPC 状态</p>
               </div>
             </div>
-            <span className={`text-sm font-medium ${connected ? "text-emerald-500" : "text-destructive"}`}>
+            <span className={`text-sm font-medium ${connected ? "text-primary" : "text-destructive"}`}>
               {connected ? "已连线" : "未连线"}
             </span>
           </div>

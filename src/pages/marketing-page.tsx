@@ -170,7 +170,7 @@ function SurfacePanel({
                 <Eye className="h-3 w-3 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">预览</span>
               </div>
-              <div className="p-3 max-h-64 overflow-y-auto"
+              <div className="p-3 max-h-64 overflow-y-auto thermal-paper"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(previewHtml) }} />
             </div>
           )}

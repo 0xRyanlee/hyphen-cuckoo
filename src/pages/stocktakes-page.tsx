@@ -68,7 +68,7 @@ export function StocktakesPage({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft": return <Badge variant="outline">草稿</Badge>;
-      case "completed": return <Badge className="bg-emerald-600">已完成</Badge>;
+      case "completed": return <Badge variant="default">已完成</Badge>;
       case "cancelled": return <Badge variant="destructive">已取消</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
     }
@@ -114,7 +114,7 @@ export function StocktakesPage({
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewStocktake(st.id)}><Eye className="h-4 w-4" /></Button>
                           {st.status === "draft" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={() => onCompleteStocktake(st.id)}><CheckCircle className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => onCompleteStocktake(st.id)}><CheckCircle className="h-4 w-4" /></Button>
                           )}
                           {st.status === "draft" && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onDeleteStocktake(st.id)}><Trash2 className="h-4 w-4" /></Button>
@@ -173,7 +173,7 @@ export function StocktakesPage({
                       <h4 className="text-sm font-medium mb-2 flex items-center gap-1">
                         <AlertTriangle className="h-3 w-3" />
                         盘点明细
-                        <span className={`ml-auto text-xs font-normal ${counted === selectedStocktake.items.length ? "text-emerald-600" : "text-amber-500"}`}>
+                        <span className={`ml-auto text-xs font-normal ${counted === selectedStocktake.items.length ? "text-primary" : "text-muted-foreground"}`}>
                           {counted}/{selectedStocktake.items.length} 已盘
                         </span>
                       </h4>
@@ -194,7 +194,7 @@ export function StocktakesPage({
                               {!item.is_counted && <span className="ml-1 text-xs text-muted-foreground font-normal">未盘</span>}
                             </span>
                             {item.is_counted && item.diff_qty !== null && Math.abs(item.diff_qty) > 0.001 && (
-                              <span className="text-xs text-amber-500">差異: {item.diff_qty > 0 ? "+" : ""}{item.diff_qty.toFixed(2)}</span>
+                              <span className="text-xs text-muted-foreground">差異: {item.diff_qty > 0 ? "+" : ""}{item.diff_qty.toFixed(2)}</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-xs">

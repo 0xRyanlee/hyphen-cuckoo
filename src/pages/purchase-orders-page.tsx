@@ -89,7 +89,7 @@ export function PurchaseOrdersPage({
     switch (status) {
       case "draft": return <Badge variant="outline">草稿</Badge>;
       case "confirmed": return <Badge className="bg-blue-600">已确认</Badge>;
-      case "received": return <Badge className="bg-emerald-600">已收貨</Badge>;
+      case "received": return <Badge variant="default">已收貨</Badge>;
       case "partial": return <Badge className="bg-amber-500">部分收貨</Badge>;
       case "cancelled": return <Badge variant="destructive">已取消</Badge>;
       default: return <Badge variant="secondary">{status}</Badge>;
@@ -139,7 +139,7 @@ export function PurchaseOrdersPage({
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => { setAddItemPoId(order.id); setAddItemMaterialId(""); setAddItemQty("1"); setAddItemCost("0"); }}><Plus className="h-4 w-4" /></Button>
                           )}
                           {(order.status === "draft" || order.status === "partial") && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-500" onClick={async () => {
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={async () => {
                               setReceivePoId(order.id);
                               setReceiveExpiryDate("");
                               try {

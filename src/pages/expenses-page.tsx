@@ -222,7 +222,7 @@ export function ExpensesPage({
             <CardTitle className="text-sm font-medium text-muted-foreground">环比变化</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${monthDelta > 0 ? "text-amber-600" : monthDelta < 0 ? "text-emerald-600" : "text-foreground"}`}>
+            <div className={`text-2xl font-bold ${monthDelta > 0 ? "text-destructive" : monthDelta < 0 ? "text-primary" : "text-foreground"}`}>
               {monthDelta >= 0 ? "+" : ""}{monthDeltaLabel}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">基于当前筛选条件对比上月</p>

@@ -258,8 +258,8 @@ function SetupWizard({ open, onClose, onDone }: {
                   onClick={() => { setMode("lan"); setStep(2); }}
                   className="group flex flex-col items-center gap-3 rounded-xl border-2 border-transparent bg-muted p-6 text-center transition-all hover:border-primary hover:bg-primary/5"
                 >
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10">
-                    <Wifi className="h-7 w-7 text-emerald-500" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+                    <Wifi className="h-7 w-7 text-primary" />
                   </div>
                   <div>
                     <p className="font-semibold">局域网直连</p>
@@ -389,14 +389,14 @@ function SetupWizard({ open, onClose, onDone }: {
               {testResult && (
                 <div className="w-full space-y-4">
                   {testResult.ok ? (
-                    <CheckCircle2 className="h-14 w-14 text-emerald-500 mx-auto" />
+                    <CheckCircle2 className="h-14 w-14 text-primary mx-auto" />
                   ) : (
                     <XCircle className="h-14 w-14 text-destructive mx-auto" />
                   )}
-                  <p className={`text-sm font-medium ${testResult.ok ? "text-emerald-600" : "text-destructive"}`}>
+                  <p className={`text-sm font-medium ${testResult.ok ? "text-primary" : "text-destructive"}`}>
                     {testResult.ok ? "连接成功！" : "连接失败"}
                   </p>
-                  <div className={`rounded-lg p-3 text-xs text-left ${testResult.ok ? "bg-emerald-500/10 text-emerald-700" : "bg-destructive/10 text-destructive"}`}>
+                  <div className={`rounded-lg p-3 text-xs text-left ${testResult.ok ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
                     {testResult.msg}
                   </div>
                   {testResult.ok ? (
@@ -421,7 +421,7 @@ function SetupWizard({ open, onClose, onDone }: {
           {/* ── LAN Step 2: Scan or manual ── */}
           {step === 2 && mode === "lan" && (
             <div className="space-y-4">
-              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+              <div className="rounded-lg bg-primary/10 border border-primary/20 p-3 text-sm text-primary">
                 请确保打印机已通过 Wi-Fi 连接到与本设备<strong>相同的路由器</strong>，然后点击「扫描」自动查找打印机。
               </div>
 
@@ -505,8 +505,8 @@ function SetupWizard({ open, onClose, onDone }: {
             <div className="flex flex-col items-center justify-center gap-6 text-center">
               {!testResult && !isWorking && (
                 <div className="space-y-3">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 mx-auto">
-                    <Printer className="h-8 w-8 text-emerald-600" />
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mx-auto">
+                    <Printer className="h-8 w-8 text-primary" />
                   </div>
                   <p className="text-sm text-muted-foreground">
                     即将连接到 <span className="font-mono font-medium">{lanIp}:9100</span><br />
@@ -530,14 +530,14 @@ function SetupWizard({ open, onClose, onDone }: {
               {testResult && (
                 <div className="w-full space-y-4">
                   {testResult.ok ? (
-                    <CheckCircle2 className="h-14 w-14 text-emerald-500 mx-auto" />
+                    <CheckCircle2 className="h-14 w-14 text-primary mx-auto" />
                   ) : (
                     <XCircle className="h-14 w-14 text-destructive mx-auto" />
                   )}
-                  <p className={`text-sm font-medium ${testResult.ok ? "text-emerald-600" : "text-destructive"}`}>
+                  <p className={`text-sm font-medium ${testResult.ok ? "text-primary" : "text-destructive"}`}>
                     {testResult.ok ? "连接成功！" : "连接失败"}
                   </p>
-                  <div className={`rounded-lg p-3 text-xs text-left ${testResult.ok ? "bg-emerald-500/10 text-emerald-700" : "bg-destructive/10 text-destructive"}`}>
+                  <div className={`rounded-lg p-3 text-xs text-left ${testResult.ok ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
                     {testResult.msg}
                   </div>
                   {testResult.ok ? (
@@ -1286,7 +1286,7 @@ export function PrintSettingsPage() {
               将发送测试页到 {testPrinter?.connection_type === "feie" ? `飞鹅云 (${testPrinter?.feie_sn})` : `局域网 (${testPrinter?.lan_ip}:${testPrinter?.lan_port})`}
             </p>
             {testResult && (
-              <div className={`rounded-md p-3 text-sm ${testResult.includes("ok") || testResult.includes("成功") ? "bg-emerald-500/10 text-emerald-500" : "bg-destructive/10 text-destructive"}`}>
+              <div className={`rounded-md p-3 text-sm ${testResult.includes("ok") || testResult.includes("成功") ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`}>
                 {testResult}
               </div>
             )}
