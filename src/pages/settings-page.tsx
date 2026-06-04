@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash2,
          ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2, ShieldCheck, Eye, EyeOff,
-         Radio, ServerCrash, Link2, Smartphone, AlertTriangle } from "lucide-react";
+         Radio, ServerCrash, Link2, Smartphone, AlertTriangle, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePinStatuses, saveRolePin } from "@/lib/roles";
@@ -18,7 +18,7 @@ import { appLogger, type LogEntry, type ErrorCategory } from "@/lib/logger";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import type { UpdateInfo } from "@/components/UpdateDialog";
 import { PENDING_KEY } from "@/hooks/useAutoUpdate";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 
 const AUTO_UPDATE_KEY = "cuckoo_auto_update";
 const SKIP_KEY = "cuckoo_skipped_version";
@@ -838,6 +838,25 @@ export function SettingsPage({ connected }: SettingsPageProps) {
     }
   }
 
+  async function handleExportBackup() {
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
+    const destPath = await save({
+      title: "导出备份到外部位置",
+      defaultPath: `cuckoo_${ts}.db`,
+      filters: [{ name: "Cuckoo 备份", extensions: ["db"] }],
+    });
+    if (!destPath) return;
+    setBackupLoading(true);
+    try {
+      await invoke<string>("export_backup", { destPath });
+      toast.success("已导出到: " + destPath);
+    } catch (e) {
+      toast.error("导出失败", { description: String(e) });
+    } finally {
+      setBackupLoading(false);
+    }
+  }
+
   async function handleRestore() {
     const selected = await open({
       title: "選擇備份文件",
@@ -988,16 +1007,21 @@ export function SettingsPage({ connected }: SettingsPageProps) {
             />
           </div>
           <Separator />
-          <div className="flex gap-2">
-            <Button onClick={handleBackup} disabled={backupLoading} className="flex-1" variant="outline">
+          <div className="grid grid-cols-3 gap-2">
+            <Button onClick={handleBackup} disabled={backupLoading} variant="outline">
               {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <HardDrive className="h-4 w-4 mr-2" />}
               立即备份
             </Button>
-            <Button onClick={handleRestore} disabled={restoreLoading} className="flex-1" variant="outline">
+            <Button onClick={handleExportBackup} disabled={backupLoading} variant="outline">
+              {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+              导出至外部
+            </Button>
+            <Button onClick={handleRestore} disabled={restoreLoading} variant="outline">
               {restoreLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               从备份恢复
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground">「导出至外部」可另存至 iCloud Drive、USB 磁盘或其他位置，换机时使用「从备份恢复」载入</p>
           {backupPath && (
             <div className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground break-all">
               已备份：{backupPath}

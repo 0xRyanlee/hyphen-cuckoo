@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Package, ChefHat, ShoppingCart, TrendingUp, AlertTriangle, BarChart3, Calendar, Trophy, Clock, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AreaChart, Area, CartesianGrid, XAxis, YAxis, PieChart, Pie, Cell } from "recharts";
+import { SetupWizard, useSetupWizard } from "@/components/setup-wizard";
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
 
@@ -17,6 +18,7 @@ interface DashboardProps {
   recipesCount: number;
   ordersCount: number;
   batchesCount: number;
+  menuItemCount?: number;
   orders: Array<{
     id: number;
     order_no: string;
@@ -37,10 +39,12 @@ export function DashboardPage({
   recipesCount,
   ordersCount: _ordersCount,
   batchesCount,
+  menuItemCount = 0,
   orders,
   inventorySummary,
 loading = false,
 }: DashboardProps) {
+  const wizard = useSetupWizard(menuItemCount);
   const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "all">("today");
   const [todayTopItems, setTodayTopItems] = useState<[string, number, number, number][]>([]);
   const [marketingStats, setMarketingStats] = useState<{ redemptions_today: number; coupons_issued_today: number; coupons_redeemed_today: number } | null>(null);
@@ -116,6 +120,7 @@ loading = false,
 
   return (
     <div className="space-y-6">
+      {wizard.show && <SetupWizard onDismiss={wizard.dismiss} />}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">仪表板</h2>

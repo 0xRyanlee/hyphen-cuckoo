@@ -1395,6 +1395,73 @@ pub fn backup_database(state: State<AppState>, dest_dir: Option<String>) -> Resu
     Ok(dest.to_string_lossy().to_string())
 }
 
+/// Export a backup to a specific user-chosen full file path (for off-device backup).
+#[tauri::command]
+pub fn export_backup(state: State<AppState>, dest_path: String) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner], "导出备份")?;
+    let dest = std::path::Path::new(&dest_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+    state.db.backup_to(dest.to_str().ok_or("路径含非法字符")?)
+        .map_err(|e| format!("导出失败: {}", e))?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn restore_database(state: State<AppState>, path: String) -> Result<String, String> {
+    require_roles(&state, &[UserRole::Owner], "恢复数据库")?;
+    let src = std::path::Path::new(&path);
+    if !src.exists() {
+        return Err("备份文件不存在".to_string());
+    }
+    // Validate SQLite magic bytes
+    let magic = {
+        let mut f = std::fs::File::open(src).map_err(|e| format!("无法读取文件: {}", e))?;
+        let mut buf = [0u8; 16];
+        use std::io::Read;
+        f.read_exact(&mut buf).map_err(|e| format!("读取文件失败: {}", e))?;
+        buf
+    };
+    if &magic[..15] != b"SQLite format 3" {
+        return Err("所选文件不是有效的 SQLite 数据库".to_string());
+    }
+    // Safety backup of current DB first
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    if let Some(parent) = state.db_path.parent() {
+        let safety = parent.join(format!("cuckoo_pre_restore_{}.db", ts));
+        let _ = state.db.backup_to(safety.to_str().unwrap_or("pre_restore.db"));
+    }
+    // Stage restore file next to DB for startup swap
+    let pending = state.db_path.with_file_name("pending_restore.db");
+    std::fs::copy(src, &pending).map_err(|e| format!("复制文件失败: {}", e))?;
+    Ok("备份已暂存，请重启应用完成恢复".to_string())
+}
+
+fn payment_config_path(db_path: &std::path::Path) -> std::path::PathBuf {
+    db_path.with_file_name("payment-config.json")
+}
+
+#[tauri::command]
+pub fn get_payment_qr(state: State<AppState>) -> Result<Option<String>, String> {
+    let path = payment_config_path(&state.db_path);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
+    let v: serde_json::Value = serde_json::from_str(&content).unwrap_or(serde_json::Value::Null);
+    Ok(v["data"].as_str().map(|s| s.to_string()))
+}
+
+#[tauri::command]
+pub fn set_payment_qr(state: State<AppState>, data: Option<String>) -> Result<(), String> {
+    require_roles(&state, &[UserRole::Owner], "设置收款码")?;
+    let path = payment_config_path(&state.db_path);
+    let content = serde_json::json!({ "data": data }).to_string();
+    std::fs::write(&path, content).map_err(|e| format!("写入失败: {}", e))?;
+    Ok(())
+}
+
 // ==================== 打印機 API ====================
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2265,14 +2332,19 @@ pub async fn check_for_update(app: tauri::AppHandle) -> Result<Option<crate::upd
 
 #[tauri::command]
 pub fn download_and_open_update(url: String, app: tauri::AppHandle) -> Result<(), String> {
-    require_roles(&app.state::<AppState>(), &[UserRole::Owner], "安装更新")?;
-    if !url.starts_with("https://github.com/0xRyanlee/Cuckoo/releases/") {
-        return Err("更新下载地址无效".to_string());
+    #[cfg(target_os = "android")]
+    { let _ = (url, app); return Err("Android 不支持此操作".to_string()); }
+    #[cfg(not(target_os = "android"))]
+    {
+        require_roles(&app.state::<AppState>(), &[UserRole::Owner], "安装更新")?;
+        if !url.starts_with("https://github.com/0xRyanlee/Cuckoo/releases/") {
+            return Err("更新下载地址无效".to_string());
+        }
+        std::thread::spawn(move || {
+            crate::updater_check::download_and_open(&url, app);
+        });
+        Ok(())
     }
-    std::thread::spawn(move || {
-        crate::updater_check::download_and_open(&url, app);
-    });
-    Ok(())
 }
 
 // ==================== 局域网同步命令 ====================

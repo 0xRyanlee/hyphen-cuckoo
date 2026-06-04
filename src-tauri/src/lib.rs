@@ -61,12 +61,17 @@ pub fn run() {
     // Early hook: stderr only (visible in Android logcat) until the data dir is known.
     panic::set_hook(Box::new(|info| eprintln!("[Cuckoo] PANIC: {}", info)));
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(move |app| {
+        .plugin(tauri_plugin_fs::init());
+
+    // tauri-plugin-updater uses reqwest 0.13 which panics inside Android JNI
+    // shouldInterceptRequest callback — exclude entirely on Android.
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder.setup(move |app| {
             // All filesystem init happens here (app handle available → Android-safe path).
             let data_dir = resolve_data_dir(app);
             if let Err(e) = fs::create_dir_all(&data_dir) {
@@ -77,6 +82,23 @@ pub fn run() {
 
             // Persist the QR HMAC secret under the same dir (Android-safe).
             qr_token::set_secret_dir(data_dir.clone());
+
+            // Swap in pending restore file if present (staged by restore_database command)
+            let pending_restore = data_dir.join("pending_restore.db");
+            if pending_restore.exists() {
+                let db_path_tmp = data_dir.join("cuckoo.db");
+                let bak = data_dir.join("cuckoo.db.pre_restore_bak");
+                if db_path_tmp.exists() {
+                    let _ = std::fs::rename(&db_path_tmp, &bak);
+                }
+                if let Err(e) = std::fs::rename(&pending_restore, &db_path_tmp) {
+                    eprintln!("[Cuckoo] Failed to apply pending restore: {}", e);
+                    // Rollback
+                    if bak.exists() { let _ = std::fs::rename(&bak, &db_path_tmp); }
+                } else {
+                    eprintln!("[Cuckoo] Pending restore applied successfully");
+                }
+            }
 
             let db_path = data_dir.join("cuckoo.db");
             eprintln!("[Cuckoo] Database path: {:?}", db_path);
@@ -102,16 +124,24 @@ pub fn run() {
             // Locate the frontend dist — several candidates so it works in dev,
             // the desktop bundle, and the Android asset dir.
             let resource_dist = app.path().resource_dir().ok().map(|r| r.join("dist"));
-            let exe_dist = std::env::current_exe()
-                .ok()
-                .and_then(|e| e.parent().map(|p| p.to_path_buf()))
-                .map(|p| p.join("dist"));
-            let cwd_dist = std::env::current_dir().ok().map(|d| d.join("dist"));
 
-            let dist_dir = [resource_dist, exe_dist, cwd_dist]
-                .into_iter()
-                .flatten()
-                .find(|p| p.join("index.html").exists());
+            // On Android the APK asset dir (resource_dir) is the only valid path.
+            // current_exe/current_dir return junk paths inside the Android sandbox.
+            #[cfg(target_os = "android")]
+            let dist_dir = resource_dist.filter(|p| p.join("index.html").exists());
+
+            #[cfg(not(target_os = "android"))]
+            let dist_dir = {
+                let exe_dist = std::env::current_exe()
+                    .ok()
+                    .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+                    .map(|p| p.join("dist"));
+                let cwd_dist = std::env::current_dir().ok().map(|d| d.join("dist"));
+                [resource_dist, exe_dist, cwd_dist]
+                    .into_iter()
+                    .flatten()
+                    .find(|p| p.join("index.html").exists())
+            };
 
             if let Some(ref d) = dist_dir {
                 eprintln!("[WebServer] Serving frontend from {:?}", d);
@@ -119,6 +149,8 @@ pub fn run() {
                 eprintln!("[WebServer] No dist/ found — API-only mode");
             }
 
+            // Android sandbox does not permit arbitrary TCP listener ports.
+            #[cfg(not(target_os = "android"))]
             match web_server::start_web_server(db.clone(), dist_dir, role_auth_path, 9001) {
                 Ok(handle) => {
                     let ip = sync_server::get_local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
@@ -133,6 +165,7 @@ pub fn run() {
             // 健康檢查
             commands::health_check,
             commands::backup_database,
+            commands::export_backup,
             commands::check_expiry_alerts,
             commands::report_telemetry,
             // 角色權限
@@ -395,6 +428,9 @@ pub fn run() {
             commands::set_require_token,
             commands::redeem_coupon,
             commands::redeem_discount_coupon,
+            commands::restore_database,
+            commands::get_payment_qr,
+            commands::set_payment_qr,
             // Web 伺服器
             commands::get_web_server_status,
             commands::stop_web_server,

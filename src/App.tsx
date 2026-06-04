@@ -520,7 +520,7 @@ function App() {
                 </div>
               ) : (
               <Routes>
-                <Route path="/dashboard" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
+                <Route path="/dashboard" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} menuItemCount={menuItems.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
                 <Route path="/materials" element={<MaterialsPage materials={materials} recipes={recipes} categories={categories} tags={tags} units={units} onCreateMaterial={handleCreateMaterial} onUpdateMaterial={handleUpdateMaterial} onDeleteMaterial={handleDeleteMaterial} onRemoveMaterialTag={handleRemoveMaterialTag} onCreateCategory={handleCreateCategory} onDeleteCategory={handleDeleteCategory} onCreateTag={handleCreateTag} onDeleteTag={handleDeleteTag} searchQuery={searchQuery} />} />
                 <Route path="/recipes" element={<RecipesPage recipes={recipes} recipeTypes={recipeTypes} selectedRecipe={selectedRecipe} recipeCost={recipeCost} materials={materials} menuItems={menuItems} units={units} onCreateRecipe={handleCreateRecipe} onViewRecipe={handleViewRecipe} onDeleteRecipe={handleDeleteRecipe} onUpdateRecipe={handleUpdateRecipe} onCreateRecipeType={handleCreateRecipeType} onUpdateRecipeType={handleUpdateRecipeType} onDeleteRecipeType={handleDeleteRecipeType} onSeedSampleRecipes={handleSeedSampleRecipes} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onBindMenuItemToRecipe={handleBindMenuItemToRecipe} onAddRecipeItem={handleAddRecipeItem} onDeleteRecipeItem={handleDeleteRecipeItem} onUpdateRecipeItem={handleUpdateRecipeItem} onRecalculateCost={handleRecalculateCost} searchQuery={searchQuery} />} />
                 <Route path="/inventory" element={<InventoryPage inventorySummary={inventorySummary} inventoryBatches={inventoryBatches} inventoryTxns={inventoryTxns} materials={materials} recipes={recipes} suppliers={suppliers} onCreateBatch={handleCreateBatch} onAdjustInventory={handleAdjustInventory} onRecordWastage={handleRecordWastage} onDeleteBatch={handleDeleteBatch} onUpdateMaterial={handleUpdateMaterial} searchQuery={searchQuery} />} />
@@ -543,7 +543,7 @@ function App() {
                 <Route path="/print" element={<PrintPage />} />
                 <Route path="/print-templates" element={<PrintTemplatesPage />} />
                 <Route path="/print-settings" element={<PrintSettingsPage />} />
-                <Route path="*" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
+                <Route path="*" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} menuItemCount={menuItems.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
               </Routes>
               )}
             </main>
