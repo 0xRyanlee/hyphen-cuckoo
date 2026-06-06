@@ -268,7 +268,7 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [stationId, setStationId] = useState<string>("");
+  const [stationId, setStationId] = useState<string>("__none__");
   const [paperWidth, setPaperWidth] = useState("58mm");
   const [showPrice, setShowPrice] = useState(false);
   const [showSeq, setShowSeq] = useState(true);
@@ -283,7 +283,7 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
       show_price: showPrice,
       show_seq: showSeq,
       show_note_field: true,
-      station_id: stationId ? parseInt(stationId) : null,
+      station_id: stationId && stationId !== "__none__" ? parseInt(stationId) : null,
       paper_width: paperWidth,
       font_size: "medium",
       cut_mode: "full",
@@ -341,7 +341,7 @@ function CreateTicketTypeDialog({ stations, open, onSubmit, onCancel }: { statio
               <Select value={stationId} onValueChange={setStationId}>
                 <SelectTrigger><SelectValue placeholder="全部" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">全部工作站</SelectItem>
+                  <SelectItem value="__none__">全部工作站</SelectItem>
                   {stations.map(s => (
                     <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                   ))}
@@ -377,7 +377,7 @@ function EditTicketTypeDialog({ ticket, open, stations, onSubmit, onCancel }: { 
 
   const [name, setName] = useState(ticket.name);
   const [description, setDescription] = useState(ticket.description || "");
-  const [stationId, setStationId] = useState(ticket.station_id ? String(ticket.station_id) : "");
+  const [stationId, setStationId] = useState(ticket.station_id ? String(ticket.station_id) : "__none__");
   const [paperWidth, setPaperWidth] = useState(ticket.paper_width);
   const [fontSize, setFontSize] = useState(ticket.font_size);
   const [cutMode, setCutMode] = useState(ticket.cut_mode);
@@ -405,7 +405,7 @@ function EditTicketTypeDialog({ ticket, open, stations, onSubmit, onCancel }: { 
       show_price: showPrice,
       show_seq: showSeq,
       show_note_field: ticket.show_note_field,
-      station_id: stationId ? parseInt(stationId) : null,
+      station_id: stationId && stationId !== "__none__" ? parseInt(stationId) : null,
       paper_width: paperWidth,
       font_size: fontSize,
       cut_mode: cutMode,

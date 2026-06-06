@@ -1,4 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from "react";
+
+declare const __APP_VERSION__: string;
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, Copy, RefreshCw } from "lucide-react";
@@ -61,7 +63,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const report = [
       "=== Cuckoo 崩潰報告 ===",
       `時間: ${new Date().toISOString()}`,
-      `版本: 1.2.2`,
+      `版本: ${__APP_VERSION__ ?? "unknown"}`,
       `平台: ${navigator.platform}`,
       `URL: ${location.href}`,
       "",

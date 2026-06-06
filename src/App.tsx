@@ -25,6 +25,7 @@ import { OrdersPage } from "@/pages/orders-page";
 import { PrintPage } from "@/pages/print-page";
 import { PrintSettingsPage } from "@/pages/print-settings-page";
 import { PrintTemplatesPage } from "@/pages/print-templates-page";
+import { PrintTicketsPage } from "@/pages/print-tickets-page";
 import { ExpensesPage } from "@/pages/expenses-page";
 import { CustomersPage } from "@/pages/customers-page";
 // E1: customer-facing pages are lazy-loaded so the scanned-QR first paint only
@@ -44,6 +45,7 @@ import type { OrderWithItems, OrderItemModifier, TicketWithItems } from "./types
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { listen } from "@tauri-apps/api/event";
+import { isTauri } from "@/lib/transport";
 import { RoleSwitchDialog } from "@/components/role-switch-dialog";
 import { type Role, checkAccess, getCurrentRole } from "@/lib/roles";
 
@@ -89,14 +91,15 @@ function App() {
     return () => window.removeEventListener("cuckoo:logged", handler);
   }, []);
 
-  // Show toast on background print failure
+  // Show toast on background print failure (Tauri-only)
   useEffect(() => {
+    if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
     listen<{ taskId: number; success: boolean; error?: string }>("print-result", (e) => {
       if (!e.payload.success) {
         toast.error(`打印失败: ${e.payload.error ?? "未知错误"}`);
       }
-    }).then((fn) => { unlisten = fn; });
+    }).then((fn) => { unlisten = fn; }).catch(() => {});
     return () => { unlisten?.(); };
   }, []);
 
@@ -505,7 +508,7 @@ function App() {
     <TooltipProvider>
       <SidebarProvider>
         <div className="flex h-screen w-full bg-background">
-          <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} notificationCount={unreadNotificationCount} currentRole={currentRole} onOpenRoleSwitch={() => setRoleSwitchOpen(true)} />
+          <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} notificationCount={unreadNotificationCount} currentRole={currentRole} onOpenRoleSwitch={() => setRoleSwitchOpen(true)} onLogout={() => setRoleSwitchOpen(true)} />
           <SidebarInset className="flex flex-col">
             <AppHeader searchQuery={searchQuery} onSearchChange={setSearchQuery} onRefresh={loadData} refreshing={loading} />
             <main className="flex-1 overflow-auto p-6">
@@ -527,7 +530,7 @@ function App() {
                 <Route path="/menu" element={<MenuPage menuCategories={menuCategories} menuItems={menuItems} recipes={recipes} onCreateMenuCategory={handleCreateMenuCategory} onCreateMenuItem={handleCreateMenuItemFull} onCreatePendingRecipeForMenu={handleCreatePendingRecipeForMenu} onToggleAvailability={handleToggleMenuItem} onBatchToggleAvailability={handleBatchToggleMenuItem} onBatchUpdatePrices={handleBatchUpdateMenuItemPrices} onToggleFavorite={handleToggleFavorite} onUpdateMenuItem={handleUpdateMenuItem} onDeleteMenuItem={handleDeleteMenuItem} onUpdateMenuCategory={handleUpdateMenuCategory} onDeleteMenuCategory={handleDeleteMenuCategory} onGetSpecs={handleGetSpecs} onCreateSpec={handleCreateSpec} onUpdateSpec={handleUpdateSpec} onDeleteSpec={handleDeleteSpec} searchQuery={searchQuery} />} />
                 <Route path="/pos" element={<POSPage menuCategories={menuCategories} menuItems={menuItems} onCreateOrder={handlePOSOrder} onCreateAndSubmit={handlePOSAndSubmit} onGetSpecs={handleGetSpecs} searchQuery={searchQuery} loading={loading} />} />
                 <Route path="/suppliers" element={<SuppliersPage suppliers={suppliers} supplierProducts={supplierProducts} onCreateSupplier={handleCreateSupplier} onUpdateSupplier={handleUpdateSupplier} onDeleteSupplier={handleDeleteSupplier} onCreateSupplierProduct={handleCreateSupplierProduct} onUpdateSupplierProduct={handleUpdateSupplierProduct} onDeleteSupplierProduct={handleDeleteSupplierProduct} searchQuery={searchQuery} />} />
-                <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onMarkReady={handleMarkOrderReady} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onPrintReceipt={handlePrintReceipt} onRefundOrderItem={handleRefundOrderItem} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} />} />
+                <Route path="/orders" element={<OrdersPage orders={orders} selectedOrder={selectedOrder} menuItems={Object.fromEntries(menuItems.map((item) => [item.id, item.name]))} materials={materials} onCreateOrder={handleCreateOrder} onSubmitOrder={handleSubmitOrder} onCancelOrder={handleCancelOrder} onMarkReady={handleMarkOrderReady} onBatchCancelOrder={handleBatchCancelOrder} onViewOrder={handleViewOrder} onViewOrderWithModifiers={async (id: number) => { const orderData = await invoke<OrderWithItems>("get_order_with_items", { orderId: id }); const modifiers: Record<number, OrderItemModifier[]> = {}; for (const item of orderData.items) { try { modifiers[item.id] = await handleLoadModifiers(item.id); } catch { modifiers[item.id] = []; } } return { orderData, modifiers }; }} onAddModifier={handleAddModifier} onDeleteModifier={handleDeleteModifier} onLoadModifiers={handleLoadModifiers} onUpdatePayment={handleUpdateOrderPayment} onPrintReceipt={handlePrintReceipt} onRefundOrderItem={handleRefundOrderItem} onLoadMore={handleLoadMoreOrders} hasMore={ordersHasMore} searchQuery={searchQuery} customers={customers} onAddLoyaltyPoints={async (customerId, orderId, delta, reason) => { await handleAddLoyaltyPoints(customerId, orderId, delta, reason); }} />} />
                 <Route path="/kds" element={<KDSPage allTickets={kdsTickets} stations={stations} menuItemNames={Object.fromEntries(menuItems.map((m) => [m.id, m.name]))} onStartTicket={handleStartTicketWithSync} onFinishTicket={handleFinishTicketWithSync} onReprintTicket={handleReprintTicket} onRefresh={handleRefreshKds} />} />
                 <Route path="/attributes" element={<AttributesPage attributeTemplates={attributeTemplates} onRefresh={loadData} />} />
                 <Route path="/settings" element={<SettingsPage connected={connected} />} />
@@ -543,6 +546,7 @@ function App() {
                 <Route path="/print" element={<PrintPage />} />
                 <Route path="/print-templates" element={<PrintTemplatesPage />} />
                 <Route path="/print-settings" element={<PrintSettingsPage />} />
+                <Route path="/print-tickets" element={<PrintTicketsPage />} />
                 <Route path="*" element={<DashboardPage materialsCount={materials.length} recipesCount={recipes.length} ordersCount={orders.length} batchesCount={inventoryBatches.length} menuItemCount={menuItems.length} orders={orders} inventorySummary={inventorySummary} loading={loading} />} />
               </Routes>
               )}

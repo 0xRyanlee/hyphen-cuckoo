@@ -5,9 +5,11 @@ import tailwindcss from "@tailwindcss/vite";
 import fs from "fs";
 
 const host = process.env.TAURI_DEV_HOST;
+const pkg = JSON.parse(fs.readFileSync("package.json", "utf-8"));
 
 export default defineConfig(async () => ({
   base: "./",
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
