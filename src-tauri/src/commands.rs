@@ -1493,6 +1493,42 @@ pub fn set_payment_qr(state: State<AppState>, data: Option<String>) -> Result<()
     Ok(())
 }
 
+// ==================== 自動打印設置 ====================
+
+fn auto_print_config_path(db_path: &std::path::Path) -> std::path::PathBuf {
+    db_path.with_file_name("auto-print-config.json")
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AutoPrintSettings {
+    pub kitchen: bool,
+    pub po: bool,
+    pub receipt: bool,
+}
+
+#[tauri::command]
+pub fn get_auto_print_settings(state: State<AppState>) -> Result<AutoPrintSettings, String> {
+    let path = auto_print_config_path(&state.db_path);
+    if !path.exists() {
+        return Ok(AutoPrintSettings { kitchen: false, po: false, receipt: false });
+    }
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))?;
+    let v: serde_json::Value = serde_json::from_str(&content).unwrap_or(serde_json::Value::Null);
+    Ok(AutoPrintSettings {
+        kitchen: v["kitchen"].as_bool().unwrap_or(false),
+        po: v["po"].as_bool().unwrap_or(false),
+        receipt: v["receipt"].as_bool().unwrap_or(false),
+    })
+}
+
+#[tauri::command]
+pub fn set_auto_print_settings(state: State<AppState>, kitchen: bool, po: bool, receipt: bool) -> Result<(), String> {
+    let path = auto_print_config_path(&state.db_path);
+    let content = serde_json::json!({ "kitchen": kitchen, "po": po, "receipt": receipt }).to_string();
+    std::fs::write(&path, content).map_err(|e| format!("写入失败: {}", e))?;
+    Ok(())
+}
+
 // ==================== 打印機 API ====================
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -603,6 +603,19 @@ export function PrintSettingsPage() {
   const [autoPrint, setAutoPrint] = useState(() => localStorage.getItem("auto_print_kitchen") === "true");
   const [autoPrintPO, setAutoPrintPO] = useState(() => localStorage.getItem("auto_print_po") === "true");
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(() => localStorage.getItem("auto_print_receipt") === "true");
+
+  useEffect(() => {
+    invoke<{ kitchen: boolean; po: boolean; receipt: boolean }>("get_auto_print_settings")
+      .then((s) => {
+        setAutoPrint(s.kitchen);
+        setAutoPrintPO(s.po);
+        setAutoPrintReceipt(s.receipt);
+        localStorage.setItem("auto_print_kitchen", s.kitchen ? "true" : "false");
+        localStorage.setItem("auto_print_po", s.po ? "true" : "false");
+        localStorage.setItem("auto_print_receipt", s.receipt ? "true" : "false");
+      })
+      .catch(() => {});
+  }, []);
   const [stations, setStations] = useState<{ id: number; name: string; printer_id: number | null }[]>([]);
 
   useEffect(() => {
@@ -788,6 +801,7 @@ export function PrintSettingsPage() {
               const next = !!v;
               setAutoPrint(next);
               localStorage.setItem("auto_print_kitchen", next ? "true" : "false");
+              invoke("set_auto_print_settings", { kitchen: next, po: autoPrintPO, receipt: autoPrintReceipt }).catch(() => {});
             }}
           />
         </CardContent>
@@ -811,6 +825,7 @@ export function PrintSettingsPage() {
               const next = !!v;
               setAutoPrintPO(next);
               localStorage.setItem("auto_print_po", next ? "true" : "false");
+              invoke("set_auto_print_settings", { kitchen: autoPrint, po: next, receipt: autoPrintReceipt }).catch(() => {});
             }}
           />
         </CardContent>
@@ -834,6 +849,7 @@ export function PrintSettingsPage() {
               const next = !!v;
               setAutoPrintReceipt(next);
               localStorage.setItem("auto_print_receipt", next ? "true" : "false");
+              invoke("set_auto_print_settings", { kitchen: autoPrint, po: autoPrintPO, receipt: next }).catch(() => {});
             }}
           />
         </CardContent>

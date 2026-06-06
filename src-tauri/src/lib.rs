@@ -434,6 +434,8 @@ pub fn run() {
             commands::redeem_coupon,
             commands::redeem_discount_coupon,
             commands::restore_database,
+            commands::get_auto_print_settings,
+            commands::set_auto_print_settings,
             commands::get_payment_qr,
             commands::set_payment_qr,
             // Web 伺服器

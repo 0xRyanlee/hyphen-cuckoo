@@ -181,7 +181,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
     try {
       const type = selectedType === "all" ? undefined : selectedType;
       const result = await invoke<PrintTemplate[]>("get_print_templates", { templateType: type });
-      setTemplates(result);
+      setTemplates(result.filter(t => t.template_type !== "marketing_popup"));
     } catch (e) {
       console.error("载入模板失败:", e);
       toast.error("载入模板失败", { description: String(e) });
@@ -408,7 +408,6 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
             <SelectItem value="batch_label">批次标签</SelectItem>
             <SelectItem value="cup_label">杯贴</SelectItem>
             <SelectItem value="receipt">收据</SelectItem>
-            <SelectItem value="marketing_popup">营销弹窗</SelectItem>
           </SelectContent>
         </Select>
       </div>
