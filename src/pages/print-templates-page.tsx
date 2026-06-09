@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { call as invoke } from "@/lib/transport";
 import DOMPurify from "dompurify";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -35,6 +36,7 @@ export const ELEMENT_CATEGORIES = [
       { type: "quote", label: "今日语录", defaultConfig: { type: "quote", language: "multilingual" } },
       { type: "art", label: "艺术图块", defaultConfig: { type: "art", variant: "random" } },
       { type: "image_block", label: "图像占位", defaultConfig: { type: "image_block" } },
+      { type: "marketing_image", label: "营销图片", defaultConfig: { type: "marketing_image", url: "", image_data: "", alt: "" } },
     ]
   },
   {
@@ -62,7 +64,7 @@ export function getElementLabel(type: string): string {
 }
 
 export function getElementBadgeColor(type: string): string {
-  const creative = ["fortune", "quote", "art", "image_block"];
+  const creative = ["fortune", "quote", "art", "image_block", "marketing_image"];
   const marketing = ["discount_coupon", "product_spotlight", "qr_code", "character_collect", "rich_text"];
   if (creative.includes(type)) return "bg-primary/10 text-primary";
   if (marketing.includes(type)) return "bg-accent text-accent-foreground";
@@ -79,6 +81,7 @@ export function getElementSummary(elem: PrintElement): string {
     case "quote": return `语录 (${elem.language ?? "multilingual"})`;
     case "art": return `ASCII 艺术 (${elem.variant ?? "random"})`;
     case "image_block": return "图像占位";
+    case "marketing_image": return String(elem.alt || elem.url || "营销图片");
     case "discount_coupon": return `${elem.discount_type === "amount" ? `立減${elem.value}元` : `${elem.value}% off`}，${elem.valid_days}天有效`;
     case "product_spotlight": return String(elem.name || elem.title || "新品介绍");
     case "qr_code": return String(elem.label || elem.url || "QR Code");
@@ -389,6 +392,7 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
     }
   };
 
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -397,6 +401,10 @@ export function PrintTemplatesPage(_props: PrintTemplatesPageProps) {
           <p className="text-sm text-muted-foreground">管理厨房单、标签等打印模板</p>
         </div>
         <Button onClick={openNew}><Plus className="mr-2 h-4 w-4" />新增模板</Button>
+      </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/print")}>打印中心</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">票据格式</button>
       </div>
 
       <div className="flex items-center gap-2">

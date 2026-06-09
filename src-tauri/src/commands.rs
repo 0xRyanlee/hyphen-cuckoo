@@ -2844,3 +2844,59 @@ pub fn restart_web_server(state: State<AppState>, app: tauri::AppHandle) -> Resu
         Err(e) => Err(format!("啟動失敗: {e}")),
     }
 }
+
+fn encode_base64(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((n >> 18) & 63) as usize] as char);
+        out.push(CHARS[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { CHARS[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { CHARS[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
+fn mime_from_ext(path: &str) -> &'static str {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".jpg") || lower.ends_with(".jpeg") { "image/jpeg" }
+    else if lower.ends_with(".png") { "image/png" }
+    else if lower.ends_with(".gif") { "image/gif" }
+    else if lower.ends_with(".webp") { "image/webp" }
+    else if lower.ends_with(".svg") { "image/svg+xml" }
+    else { "image/jpeg" }
+}
+
+#[tauri::command]
+pub async fn load_image_as_data_url(source: String) -> Result<String, String> {
+    if source.starts_with("http://") || source.starts_with("https://") {
+        let url = source.clone();
+        let (mime, data) = tauri::async_runtime::spawn_blocking(move || -> Result<(String, Vec<u8>), String> {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .map_err(|e| e.to_string())?;
+            let resp = client.get(&url).send().map_err(|e| e.to_string())?;
+            let mime = resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|ct| ct.split(';').next())
+                .unwrap_or("image/jpeg")
+                .to_string();
+            let bytes = resp.bytes().map_err(|e| e.to_string())?;
+            Ok((mime, bytes.to_vec()))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e)?;
+        Ok(format!("data:{};base64,{}", mime, encode_base64(&data)))
+    } else {
+        let data = std::fs::read(&source).map_err(|e| e.to_string())?;
+        let mime = mime_from_ext(&source);
+        Ok(format!("data:{};base64,{}", mime, encode_base64(&data)))
+    }
+}

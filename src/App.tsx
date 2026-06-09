@@ -65,6 +65,8 @@ function App() {
   const [appStartTime] = useState(Date.now());
   const [currentRole, setCurrentRole] = useState<Role>("owner");
   const [roleSwitchOpen, setRoleSwitchOpen] = useState(false);
+  // PAD(<1024) 預設收成圖標模式，避免 256px 側欄擠壓內容；controlled 確保不被 session toggle 永久殘留
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1024);
 
   // LAN client sync state — reads from localStorage, updated via custom event
   const [syncClientUrl, setSyncClientUrl] = useState(
@@ -506,12 +508,12 @@ function App() {
 
   return (
     <TooltipProvider>
-      <SidebarProvider>
+      <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <div className="flex h-screen w-full bg-background">
           <AppSidebar activeTab={activeTab} onTabChange={(tab) => navigate("/" + tab)} connected={connected} errorCount={unseenErrorCount} notificationCount={unreadNotificationCount} currentRole={currentRole} onOpenRoleSwitch={() => setRoleSwitchOpen(true)} onLogout={() => setRoleSwitchOpen(true)} />
           <SidebarInset className="flex flex-col">
             <AppHeader searchQuery={searchQuery} onSearchChange={setSearchQuery} onRefresh={loadData} refreshing={loading} />
-            <main className="flex-1 overflow-auto p-6">
+            <main className="flex-1 overflow-auto p-4 lg:p-6">
               {!checkAccess(currentRole, activeTab) ? (
                 <div className="flex flex-col items-center justify-center h-full gap-4">
                   <div className="rounded-full bg-muted p-6">

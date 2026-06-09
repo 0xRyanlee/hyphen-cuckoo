@@ -152,6 +152,10 @@ export function MaterialsPage({
           <p className="text-sm text-muted-foreground">管理所有原材料、分类和标签</p>
         </div>
       </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">材料管理</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/recipes")}>配方</button>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">

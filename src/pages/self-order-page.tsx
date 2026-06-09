@@ -162,14 +162,14 @@ function ItemCard({
                 <>
                   <button
                     onClick={() => onRemove(item, null)}
-                    className="w-7 h-7 rounded-full border-2 border-orange-400 text-orange-400 flex items-center justify-center font-bold text-lg leading-none"
+                    className="w-11 h-11 rounded-full border-2 border-orange-400 text-orange-400 flex items-center justify-center font-bold text-lg leading-none"
                   >−</button>
                   <span className="text-sm font-semibold w-4 text-center">{cartQty}</span>
                 </>
               )}
               <button
                 onClick={openSheet}
-                className="w-7 h-7 rounded-full bg-orange-400 text-white flex items-center justify-center font-bold text-lg leading-none shadow-sm"
+                className="w-11 h-11 rounded-full bg-orange-400 text-white flex items-center justify-center font-bold text-lg leading-none shadow-sm"
               >+</button>
             </div>
           </div>
@@ -208,7 +208,7 @@ function ItemCard({
                 <button
                   key={o.label}
                   onClick={() => toggleMod(o.label)}
-                  className={`px-3 py-1.5 rounded-full text-xs border ${
+                  className={`px-4 py-3 rounded-full text-xs border ${
                     mods.includes(o.label) ? "border-orange-400 bg-orange-50 text-orange-600" : "border-gray-200 text-gray-600"
                   }`}
                 >{o.label}{o.price > 0 && <span className="ml-0.5 text-orange-400">+{o.price}</span>}</button>
@@ -219,10 +219,10 @@ function ItemCard({
               <span className="text-sm text-gray-500">数量</span>
               <div className="flex items-center gap-3">
                 <button onClick={() => setQty((q) => Math.max(1, q - 1))}
-                  className="w-8 h-8 rounded-full border-2 border-orange-400 text-orange-400 font-bold text-lg flex items-center justify-center">−</button>
+                  className="w-11 h-11 rounded-full border-2 border-orange-400 text-orange-400 font-bold text-lg flex items-center justify-center">−</button>
                 <span className="w-6 text-center font-semibold">{qty}</span>
                 <button onClick={() => setQty((q) => q + 1)}
-                  className="w-8 h-8 rounded-full bg-orange-400 text-white font-bold text-lg flex items-center justify-center">+</button>
+                  className="w-11 h-11 rounded-full bg-orange-400 text-white font-bold text-lg flex items-center justify-center">+</button>
               </div>
             </div>
 
@@ -252,6 +252,7 @@ function CartSheet({
   onSubmit: () => void;
   submitting: boolean;
 }) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const total = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
 
   return (
@@ -280,10 +281,10 @@ function CartSheet({
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button onClick={() => onQtyChange(key, -1)}
-                      className="w-7 h-7 rounded-full border-2 border-orange-400 text-orange-400 font-bold text-lg flex items-center justify-center">−</button>
+                      className="w-11 h-11 rounded-full border-2 border-orange-400 text-orange-400 font-bold text-lg flex items-center justify-center">−</button>
                     <span className="w-4 text-center text-sm font-semibold">{item.qty}</span>
                     <button onClick={() => onQtyChange(key, 1)}
-                      className="w-7 h-7 rounded-full bg-orange-400 text-white font-bold text-lg flex items-center justify-center">+</button>
+                      className="w-11 h-11 rounded-full bg-orange-400 text-white font-bold text-lg flex items-center justify-center">+</button>
                   </div>
                 </div>
                 <input
@@ -302,7 +303,7 @@ function CartSheet({
             <span className="font-bold text-base text-gray-900">¥{fmt(total)}</span>
           </div>
           <button
-            onClick={onSubmit}
+            onClick={() => setConfirmOpen(true)}
             disabled={submitting}
             className="w-full py-4 rounded-2xl bg-orange-400 text-white font-bold text-base disabled:opacity-50"
           >
@@ -310,6 +311,26 @@ function CartSheet({
           </button>
         </div>
       </div>
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setConfirmOpen(false)}>
+          <div className="bg-white rounded-2xl p-6 mx-5 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-base font-bold text-center mb-1">確認下單？</p>
+            <p className="text-center text-orange-500 font-bold text-xl mb-5">¥{fmt(total)}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmOpen(false)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium">
+                返回
+              </button>
+              <button
+                onClick={() => { setConfirmOpen(false); onSubmit(); }}
+                disabled={submitting}
+                className="flex-1 py-3 rounded-xl bg-orange-400 text-white font-bold disabled:opacity-50"
+              >
+                {submitting ? "提交中..." : "確認下單"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -359,6 +380,16 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
         const seed = getSeed((elem.seed_strategy as string) ?? "per_order", popup.order_id, popup.table_no);
 
         if (elem.type === "fortune") {
+          const customTexts = (elem.custom_texts as string[] | undefined)?.filter(Boolean) ?? [];
+          if (customTexts.length > 0) {
+            const text = customTexts[seed % customTexts.length];
+            return (
+              <div key={i} className="w-full rounded-2xl bg-white border-2 border-amber-300 p-5 text-center shadow-sm">
+                <div className="text-xs text-amber-500 mb-1 tracking-widest">今日运势</div>
+                <div className="text-sm text-amber-700 leading-relaxed">{text}</div>
+              </div>
+            );
+          }
           const pct = seed % 100;
           const key = pct < 20 ? "小吉" : pct < 70 ? "中吉" : "大吉";
           const f = FORTUNE_TEXTS[key];
@@ -406,15 +437,32 @@ function MarketingCard({ popup }: { popup: MarketingPopupData }) {
         }
 
         if (elem.type === "quote") {
-          const lang = (elem.language as string) ?? "multilingual";
-          const pool = lang === "en" ? QUOTES_EN : lang === "ja" ? QUOTES_JA :
-            lang === "zh" ? QUOTES_ZH : [QUOTES_ZH, QUOTES_EN, QUOTES_JA][seed % 3];
-          const quotes = Array.isArray(pool) ? pool : QUOTES_ZH;
-          const quote = quotes[seed % quotes.length];
+          const customTexts = (elem.custom_texts as string[] | undefined)?.filter(Boolean) ?? [];
+          let quote: string;
+          if (customTexts.length > 0) {
+            quote = customTexts[seed % customTexts.length];
+          } else {
+            const lang = (elem.language as string) ?? "multilingual";
+            const pool = lang === "en" ? QUOTES_EN : lang === "ja" ? QUOTES_JA :
+              lang === "zh" ? QUOTES_ZH : [QUOTES_ZH, QUOTES_EN, QUOTES_JA][seed % 3];
+            const quotes = Array.isArray(pool) ? pool : QUOTES_ZH;
+            quote = quotes[seed % quotes.length];
+          }
           return (
             <div key={i} className="w-full rounded-2xl bg-white border border-gray-200 p-4 text-center shadow-sm">
               <div className="text-xs text-gray-400 mb-1">今日语录</div>
               <div className="text-sm text-gray-600 italic leading-relaxed">&ldquo;{quote}&rdquo;</div>
+            </div>
+          );
+        }
+
+        if (elem.type === "marketing_image") {
+          const src = (elem.image_data as string | undefined) || (elem.url as string | undefined);
+          const alt = (elem.alt as string | undefined) ?? "";
+          if (!src) return null;
+          return (
+            <div key={i} className="w-full rounded-2xl overflow-hidden shadow-sm">
+              <img src={src} alt={alt} className="w-full object-contain max-h-64" />
             </div>
           );
         }
@@ -562,6 +610,7 @@ export function SelfOrderPage() {
   const [successOrder, setSuccessOrder] = useState<{ id: number; order_no: string } | null>(null);
   const [marketingPopup, setMarketingPopup] = useState<MarketingPopupData | null>(null);
   const [pastOrders, setPastOrders] = useState<TableOrderSummary[]>([]);
+  const [paymentOverlay, setPaymentOverlay] = useState<{ qr: string; total: number } | null>(null);
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -652,6 +701,36 @@ export function SelfOrderPage() {
     setCart((prev) => prev.map((c) => cartKey(c) === key ? { ...c, note } : c));
   }
 
+  async function fetchAndShowMarketingPopup(orderId: number, orderNo: string) {
+    const DEFAULT_POPUP_CONTENT = JSON.stringify({ elements: [
+      { type: "fortune", seed_strategy: "per_order" },
+      { type: "character_collect", game_name: "集字兑奖", characters: ["恭","喜","发","财"], prize: "集齐四字兑换免费饮品", seed_strategy: "per_order", style: "box" },
+      { type: "quote", language: "multilingual" },
+    ]});
+    const fallbackPopup: MarketingPopupData = {
+      order_id: orderId, order_no: orderNo,
+      table_no: tableNo ?? "", created_at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+      amount_total: 0, template_content: DEFAULT_POPUP_CONTENT,
+    };
+    try {
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 3000)
+      );
+      const popup = await Promise.race([
+        call<MarketingPopupData>("get_marketing_popup", { orderId, tableNo: tableNo }),
+        timeout,
+      ]);
+      setMarketingPopup(popup);
+    } catch {
+      // Show local fallback immediately, then retry once in the background so
+      // the authoritative popup (with real qr_token + picked_char) replaces it.
+      setMarketingPopup(fallbackPopup);
+      call<MarketingPopupData>("get_marketing_popup", { orderId, tableNo: tableNo })
+        .then((p) => setMarketingPopup(p))
+        .catch(() => {});
+    }
+  }
+
   async function submitOrder() {
     if (!tableNo || cart.length === 0) return;
     setSubmitting(true);
@@ -671,38 +750,25 @@ export function SelfOrderPage() {
           })),
         })),
       });
+      const cartTotal = cart.reduce((s, i) => s + i.unit_price * i.qty, 0);
       setSuccessOrder(result);
       setCart([]);
       setCartOpen(false);
       fetchPastOrders();
-      // Fetch marketing popup with 3s timeout; on failure show local fallback
-      const DEFAULT_POPUP_CONTENT = JSON.stringify({ elements: [
-        { type: "fortune", seed_strategy: "per_order" },
-        { type: "character_collect", game_name: "集字兑奖", characters: ["恭","喜","发","财"], prize: "集齐四字兑换免费饮品", seed_strategy: "per_order", style: "box" },
-        { type: "quote", language: "multilingual" },
-      ]});
-      const fallbackPopup: MarketingPopupData = {
-        order_id: result.id, order_no: result.order_no,
-        table_no: tableNo ?? "", created_at: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-        amount_total: 0, template_content: DEFAULT_POPUP_CONTENT,
-      };
+      // Check for payment QR; if present, show overlay and defer marketing popup
       try {
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("timeout")), 3000)
-        );
-        const popup = await Promise.race([
-          call<MarketingPopupData>("get_marketing_popup", { orderId: result.id, tableNo: tableNo }),
-          timeout,
-        ]);
-        setMarketingPopup(popup);
+        const qrResp = await fetch("/api/payment_qr");
+        if (qrResp.ok) {
+          const qrData = await qrResp.json();
+          if (qrData.data) {
+            setPaymentOverlay({ qr: qrData.data, total: cartTotal });
+            return;
+          }
+        }
       } catch {
-        // Show local fallback immediately, then retry once in the background so
-        // the authoritative popup (with real qr_token + picked_char) replaces it.
-        setMarketingPopup(fallbackPopup);
-        call<MarketingPopupData>("get_marketing_popup", { orderId: result.id, tableNo: tableNo })
-          .then((p) => setMarketingPopup(p))
-          .catch(() => {});
+        // silent — proceed to marketing popup normally
       }
+      await fetchAndShowMarketingPopup(result.id, result.order_no);
     } catch (e) {
       alert(`下单失败：${e instanceof Error ? e.message : "请重试"}`);
       console.error(e);
@@ -956,6 +1022,43 @@ export function SelfOrderPage() {
           onSubmit={submitOrder}
           submitting={submitting}
         />
+      )}
+
+      {/* Payment QR overlay */}
+      {paymentOverlay && (
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-white">
+          <div className="flex flex-col items-center gap-5 px-6 w-full max-w-sm">
+            <div className="text-center">
+              <p className="text-lg font-bold text-gray-800">請掃碼付款</p>
+              <p className="text-3xl font-bold text-orange-500 mt-1">¥{fmt(paymentOverlay.total)}</p>
+            </div>
+            <img
+              src={`data:image/png;base64,${paymentOverlay.qr}`}
+              alt="收款碼"
+              className="w-56 h-56 rounded-2xl border-2 border-orange-200 object-contain shadow-lg"
+            />
+            <p className="text-sm text-gray-400 text-center">微信 / 支付寶 掃描左方二維碼</p>
+            <button
+              onClick={() => {
+                const overlay = paymentOverlay;
+                setPaymentOverlay(null);
+                if (successOrder) {
+                  fetchAndShowMarketingPopup(successOrder.id, successOrder.order_no);
+                }
+                void overlay;
+              }}
+              className="w-full py-4 rounded-2xl bg-orange-400 text-white font-bold text-base"
+            >
+              我已付款 ✓
+            </button>
+            <button
+              onClick={() => setPaymentOverlay(null)}
+              className="text-gray-400 text-sm py-2"
+            >
+              稍後付款
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

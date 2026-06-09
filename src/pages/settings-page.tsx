@@ -11,6 +11,7 @@ import { Settings, Database, Wifi, WifiOff, Monitor, Copy, Bug, RefreshCw, Trash
          ArrowUpCircle, Sparkles, Bug as BugIcon, Zap, HardDrive, Loader2, ShieldCheck, Eye, EyeOff,
          Radio, ServerCrash, Link2, Smartphone, AlertTriangle, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { type Role, ROLE_LABELS, ROLE_COLORS, ROLE_DESCRIPTIONS, getRolePinStatuses, saveRolePin } from "@/lib/roles";
 import { toast } from "sonner";
@@ -19,6 +20,7 @@ import { UpdateDialog } from "@/components/UpdateDialog";
 import type { UpdateInfo } from "@/components/UpdateDialog";
 import { PENDING_KEY } from "@/hooks/useAutoUpdate";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import type { WebServerStatus } from "@/types";
 
 const AUTO_UPDATE_KEY = "cuckoo_auto_update";
 const SKIP_KEY = "cuckoo_skipped_version";
@@ -351,11 +353,6 @@ const SYNC_CLIENT_ACTIVE_KEY = "cuckoo_sync_client_active";
 const SYNC_SHARED_SECRET_KEY = "cuckoo_sync_shared_secret";
 const SYNC_PROTOCOL_VERSION = "2";
 
-interface WebServerStatus {
-  running: boolean;
-  port: number | null;
-  url: string | null;
-}
 
 function WebServerCard() {
   const [status, setStatus] = useState<WebServerStatus>({ running: false, port: null, url: null });
@@ -924,222 +921,235 @@ export function SettingsPage({ connected }: SettingsPageProps) {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">系统设置</h2>
-        <p className="text-sm text-muted-foreground">系统信息与故障诊断</p>
+        <p className="text-sm text-muted-foreground">系统配置与网络管理</p>
       </div>
 
-      {/* System Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            系统信息
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-3">
-              <Monitor className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">应用版本</p>
-                <p className="text-xs text-muted-foreground">当前安装的版本</p>
+      <Tabs defaultValue="basic" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="basic">基本设置</TabsTrigger>
+          <TabsTrigger value="network">网络与同步</TabsTrigger>
+          <TabsTrigger value="security">安全与权限</TabsTrigger>
+          <TabsTrigger value="diagnostics">故障诊断</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="basic" className="space-y-6">
+          {/* System Info */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                系统信息
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <div className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3">
+                  <Monitor className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">应用版本</p>
+                    <p className="text-xs text-muted-foreground">当前安装的版本</p>
+                  </div>
+                </div>
+                <span className="text-sm font-mono text-muted-foreground">v{appVersion}</span>
               </div>
-            </div>
-            <span className="text-sm font-mono text-muted-foreground">v{appVersion}</span>
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-3">
-              <Database className="h-4 w-4 text-muted-foreground" />
-              <div>
-                <p className="text-sm font-medium">数据库状态</p>
-                <p className="text-xs text-muted-foreground">SQLite 本地存储</p>
+              <Separator />
+              <div className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3">
+                  <Database className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">数据库状态</p>
+                    <p className="text-xs text-muted-foreground">SQLite 本地存储</p>
+                  </div>
+                </div>
+                <Badge variant={dbStatus === "正常" ? "secondary" : "destructive"} className="text-xs">
+                  {dbStatus}
+                </Badge>
               </div>
-            </div>
-            <Badge variant={dbStatus === "正常" ? "secondary" : "destructive"} className="text-xs">
-              {dbStatus}
-            </Badge>
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-3">
-              {connected ? (
-                <Wifi className="h-4 w-4 text-primary" />
-              ) : (
-                <WifiOff className="h-4 w-4 text-destructive" />
-              )}
-              <div>
-                <p className="text-sm font-medium">后端连线</p>
-                <p className="text-xs text-muted-foreground">Tauri IPC 状态</p>
+              <Separator />
+              <div className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3">
+                  {connected ? (
+                    <Wifi className="h-4 w-4 text-primary" />
+                  ) : (
+                    <WifiOff className="h-4 w-4 text-destructive" />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium">后端连线</p>
+                    <p className="text-xs text-muted-foreground">Tauri IPC 状态</p>
+                  </div>
+                </div>
+                <span className={`text-sm font-medium ${connected ? "text-primary" : "text-destructive"}`}>
+                  {connected ? "已连线" : "未连线"}
+                </span>
               </div>
-            </div>
-            <span className={`text-sm font-medium ${connected ? "text-primary" : "text-destructive"}`}>
-              {connected ? "已连线" : "未连线"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
 
-      {/* Pending update card (shown when user dismissed the banner) */}
-      <PendingUpdateCard />
+          {/* Pending update card (shown when user dismissed the banner) */}
+          <PendingUpdateCard />
 
-      {/* 數據備份與恢復（合併為單一 Card） */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <HardDrive className="h-4 w-4" />
-            数据备份与恢复
-          </CardTitle>
-          <CardDescription>备份文件保存至 Documents/Cuckoo 备份/，恢复前自动创建当前备份</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="auto-backup-switch" className="flex flex-col gap-0.5 cursor-pointer">
-              <span className="text-sm font-medium">启动时自动备份</span>
-              <span className="text-xs text-muted-foreground">每次打开应用时自动创建带时间戳的备份</span>
-            </Label>
-            <Switch
-              id="auto-backup-switch"
-              checked={autoBackup}
-              onCheckedChange={(val) => {
-                setAutoBackup(val);
-                localStorage.setItem("cuckoo_auto_backup", val ? "true" : "false");
-              }}
-            />
-          </div>
-          <Separator />
-          <div className="grid grid-cols-3 gap-2">
-            <Button onClick={handleBackup} disabled={backupLoading} variant="outline">
-              {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <HardDrive className="h-4 w-4 mr-2" />}
-              立即备份
-            </Button>
-            <Button onClick={handleExportBackup} disabled={backupLoading} variant="outline">
-              {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
-              导出至外部
-            </Button>
-            <Button onClick={handleRestore} disabled={restoreLoading} variant="outline">
-              {restoreLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-              从备份恢复
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">「导出至外部」可另存至 iCloud Drive、USB 磁盘或其他位置，换机时使用「从备份恢复」载入</p>
-          {backupPath && (
-            <div className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground break-all">
-              已备份：{backupPath}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 恢復確認 Dialog */}
-      <Dialog open={!!restoreConfirmPath} onOpenChange={(v) => !v && setRestoreConfirmPath(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              确认恢复数据库
-            </DialogTitle>
-            <DialogDescription className="space-y-1 pt-1">
-              <span className="block">将从以下文件恢复：</span>
-              <span className="block font-mono text-xs break-all text-foreground">{restoreConfirmPath}</span>
-              <span className="block pt-1 text-destructive">当前数据将被替换，操作不可撤销。恢复前会自动备份一次。</span>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRestoreConfirmPath(null)}>取消</Button>
-            <Button variant="destructive" onClick={confirmRestore}>确认恢复</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* PAY 收款碼設定 */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Smartphone className="h-4 w-4" />
-            自助點單收款碼
-          </CardTitle>
-          <CardDescription>顧客下單後顯示此碼，引導掃碼付款</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {paymentQr ? (
-            <div className="flex items-center gap-4">
-              <img
-                src={`data:image/png;base64,${paymentQr}`}
-                alt="收款碼"
-                className="h-24 w-24 rounded-lg border object-contain"
-              />
-              <div className="flex flex-col gap-2">
-                <p className="text-xs text-muted-foreground">當前收款碼</p>
-                <label className="cursor-pointer">
-                  <Button variant="outline" size="sm" type="button" onClick={(e) => { e.preventDefault(); (e.currentTarget.nextElementSibling as HTMLInputElement)?.click(); }}>
-                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />更換圖片
-                  </Button>
-                  <input type="file" accept="image/*" className="hidden" onChange={handlePaymentQrUpload} disabled={paymentQrLoading} />
-                </label>
-                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleClearPaymentQr}>
-                  移除收款碼
+          {/* 數據備份與恢復（合併為單一 Card） */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <HardDrive className="h-4 w-4" />
+                数据备份与恢复
+              </CardTitle>
+              <CardDescription>备份文件保存至 Documents/Cuckoo 备份/，恢复前自动创建当前备份</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-backup-switch" className="flex flex-col gap-0.5 cursor-pointer">
+                  <span className="text-sm font-medium">启动时自动备份</span>
+                  <span className="text-xs text-muted-foreground">每次打开应用时自动创建带时间戳的备份</span>
+                </Label>
+                <Switch
+                  id="auto-backup-switch"
+                  checked={autoBackup}
+                  onCheckedChange={(val) => {
+                    setAutoBackup(val);
+                    localStorage.setItem("cuckoo_auto_backup", val ? "true" : "false");
+                  }}
+                />
+              </div>
+              <Separator />
+              <div className="grid grid-cols-3 gap-2">
+                <Button onClick={handleBackup} disabled={backupLoading} variant="outline">
+                  {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <HardDrive className="h-4 w-4 mr-2" />}
+                  立即备份
+                </Button>
+                <Button onClick={handleExportBackup} disabled={backupLoading} variant="outline">
+                  {backupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+                  导出至外部
+                </Button>
+                <Button onClick={handleRestore} disabled={restoreLoading} variant="outline">
+                  {restoreLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+                  从备份恢复
                 </Button>
               </div>
-            </div>
-          ) : (
-            <label className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed py-6 gap-2 cursor-pointer hover:bg-muted/50 transition-colors">
-              <Smartphone className="h-8 w-8 text-muted-foreground/50" />
-              <span className="text-sm text-muted-foreground">點擊上傳微信/支付寶收款碼</span>
-              <span className="text-xs text-muted-foreground/70">支援 PNG/JPG</span>
-              <input type="file" accept="image/*" className="hidden" onChange={handlePaymentQrUpload} disabled={paymentQrLoading} />
-            </label>
-          )}
-        </CardContent>
-      </Card>
+              <p className="text-xs text-muted-foreground">「导出至外部」可另存至 iCloud Drive、USB 磁盘或其他位置，换机时使用「从备份恢复」载入</p>
+              {backupPath && (
+                <div className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground break-all">
+                  已备份：{backupPath}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Auto-update settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ArrowUpCircle className="h-4 w-4" />
-            自動更新
-          </CardTitle>
-          <CardDescription>應用啓動後自動檢查 GitHub 是否有新版本</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="auto-update-switch" className="flex flex-col gap-0.5 cursor-pointer">
-              <span className="text-sm font-medium">啓動時自動檢查更新</span>
-              <span className="text-xs text-muted-foreground">有新版本時會在右下角彈出提示，可選擇立即更新或稍後在此查看</span>
-            </Label>
-            <Switch
-              id="auto-update-switch"
-              checked={autoUpdate}
-              onCheckedChange={handleAutoUpdateToggle}
-            />
-          </div>
-        </CardContent>
-      </Card>
+          {/* 恢復確認 Dialog — renders via portal, OK to keep inside tab content */}
+          <Dialog open={!!restoreConfirmPath} onOpenChange={(v) => !v && setRestoreConfirmPath(null)}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  确认恢复数据库
+                </DialogTitle>
+                <DialogDescription className="space-y-1 pt-1">
+                  <span className="block">将从以下文件恢复：</span>
+                  <span className="block font-mono text-xs break-all text-foreground">{restoreConfirmPath}</span>
+                  <span className="block pt-1 text-destructive">当前数据将被替换，操作不可撤销。恢复前会自动备份一次。</span>
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRestoreConfirmPath(null)}>取消</Button>
+                <Button variant="destructive" onClick={confirmRestore}>确认恢复</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
-      {/* Self-order web server */}
-      <WebServerCard />
+          {/* PAY 收款碼設定 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Smartphone className="h-4 w-4" />
+                自助點單收款碼
+              </CardTitle>
+              <CardDescription>顧客下單後顯示此碼，引導掃碼付款</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {paymentQr ? (
+                <div className="flex items-center gap-4">
+                  <img
+                    src={`data:image/png;base64,${paymentQr}`}
+                    alt="收款碼"
+                    className="h-24 w-24 rounded-lg border object-contain"
+                  />
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-muted-foreground">當前收款碼</p>
+                    <label className="cursor-pointer">
+                      <Button variant="outline" size="sm" type="button" onClick={(e) => { e.preventDefault(); (e.currentTarget.nextElementSibling as HTMLInputElement)?.click(); }}>
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />更換圖片
+                      </Button>
+                      <input type="file" accept="image/*" className="hidden" onChange={handlePaymentQrUpload} disabled={paymentQrLoading} />
+                    </label>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleClearPaymentQr}>
+                      移除收款碼
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed py-6 gap-2 cursor-pointer hover:bg-muted/50 transition-colors">
+                  <Smartphone className="h-8 w-8 text-muted-foreground/50" />
+                  <span className="text-sm text-muted-foreground">點擊上傳微信/支付寶收款碼</span>
+                  <span className="text-xs text-muted-foreground/70">支援 PNG/JPG</span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handlePaymentQrUpload} disabled={paymentQrLoading} />
+                </label>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* LAN sync */}
-      <LanSyncCard />
+          {/* Auto-update settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ArrowUpCircle className="h-4 w-4" />
+                自動更新
+              </CardTitle>
+              <CardDescription>應用啓動後自動檢查 GitHub 是否有新版本</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="auto-update-switch" className="flex flex-col gap-0.5 cursor-pointer">
+                  <span className="text-sm font-medium">啓動時自動檢查更新</span>
+                  <span className="text-xs text-muted-foreground">有新版本時會在右下角彈出提示，可選擇立即更新或稍後在此查看</span>
+                </Label>
+                <Switch
+                  id="auto-update-switch"
+                  checked={autoUpdate}
+                  onCheckedChange={handleAutoUpdateToggle}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Role PIN management */}
-      <RolePinCard />
+        <TabsContent value="network" className="space-y-6">
+          <WebServerCard />
+          <LanSyncCard />
+        </TabsContent>
 
-      {/* Error Log Panel */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bug className="h-4 w-4" />
-            错误记录
-          </CardTitle>
-          <CardDescription>
-            应用运行期间自动收集的前端错误。点击任一条目可展开详情，复制报告后发给开发者。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ErrorLogPanel appVersion={appVersion} />
-        </CardContent>
-      </Card>
+        <TabsContent value="security" className="space-y-6">
+          <RolePinCard />
+        </TabsContent>
+
+        <TabsContent value="diagnostics" className="space-y-6">
+          {/* Error Log Panel */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bug className="h-4 w-4" />
+                错误记录
+              </CardTitle>
+              <CardDescription>
+                应用运行期间自动收集的前端错误。点击任一条目可展开详情，复制报告后发给开发者。
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ErrorLogPanel appVersion={appVersion} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

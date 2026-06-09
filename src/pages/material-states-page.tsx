@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -100,8 +101,14 @@ export function MaterialStatesPage({
       getMaterialName(s.material_id).toLowerCase().includes(q);
   });
 
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/inventory")}>库存</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">材料状态</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/stocktakes")}>盘点</button>
+      </div>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">材料状态管理</h2>
@@ -168,7 +175,19 @@ export function MaterialStatesPage({
             </div>
             <div className="space-y-2">
               <Label>状态代码</Label>
-              <Input value={newStateCode} onChange={(e) => setNewStateCode(e.target.value)} placeholder="如: raw, processed" />
+              <Input
+                value={newStateCode}
+                onChange={(e) => setNewStateCode(e.target.value)}
+                list="state-code-presets"
+                placeholder="选择或输入代码"
+              />
+              <datalist id="state-code-presets">
+                <option value="raw">raw — 生料</option>
+                <option value="semi">semi — 半成品</option>
+                <option value="processed">processed — 加工品</option>
+                <option value="frozen">frozen — 冷凍</option>
+                <option value="ready">ready — 備料完成</option>
+              </datalist>
             </div>
             <div className="space-y-2">
               <Label>状态名称</Label>
@@ -217,7 +236,7 @@ export function MaterialStatesPage({
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>状态代码</Label>
-              <Input value={editStateCode} onChange={(e) => setEditStateCode(e.target.value)} />
+              <Input value={editStateCode} onChange={(e) => setEditStateCode(e.target.value)} list="state-code-presets" />
             </div>
             <div className="space-y-2">
               <Label>状态名称</Label>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { call as invoke } from "@/lib/transport";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -75,10 +76,21 @@ export function PurchaseOrdersPage({
   const [newExpectedDate, setNewExpectedDate] = useState("");
 
   const [addItemPoId, setAddItemPoId] = useState<number | null>(null);
-  const [addItemMaterialId, setAddItemMaterialId] = useState("");
-  const [addItemQty, setAddItemQty] = useState("1");
-  const [addItemUnitId, setAddItemUnitId] = useState("");
-  const [addItemCost, setAddItemCost] = useState("0");
+  const [addItemRows, setAddItemRows] = useState<{ materialId: string; qty: string; unitId: string; cost: string }[]>([]);
+
+  function openAddItem(poId: number) {
+    setAddItemPoId(poId);
+    setAddItemRows([{ materialId: "", qty: "1", unitId: "", cost: "0" }]);
+  }
+  function updateAddRow(i: number, key: string, val: string) {
+    setAddItemRows((prev) => prev.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
+  }
+  function addAddRow() {
+    setAddItemRows((prev) => [...prev, { materialId: "", qty: "1", unitId: "", cost: "0" }]);
+  }
+  function removeAddRow(i: number) {
+    setAddItemRows((prev) => prev.filter((_, idx) => idx !== i));
+  }
 
   const [receivePoId, setReceivePoId] = useState<number | null>(null);
   const [receiveExpiryDate, setReceiveExpiryDate] = useState("");
@@ -88,7 +100,7 @@ export function PurchaseOrdersPage({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft": return <Badge variant="outline">草稿</Badge>;
-      case "confirmed": return <Badge className="bg-blue-600">已确认</Badge>;
+      case "confirmed": return <Badge variant="default">已确认</Badge>;
       case "received": return <Badge variant="default">已收貨</Badge>;
       case "partial": return <Badge className="bg-amber-500">部分收貨</Badge>;
       case "cancelled": return <Badge variant="destructive">已取消</Badge>;
@@ -96,6 +108,7 @@ export function PurchaseOrdersPage({
     }
   };
 
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -103,6 +116,10 @@ export function PurchaseOrdersPage({
           <h2 className="text-2xl font-semibold tracking-tight">采购管理</h2>
           <p className="text-sm text-muted-foreground">管理采购单、收货入库</p>
         </div>
+      </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">采购单</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/suppliers")}>供应商 & 商品</button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -136,7 +153,7 @@ export function PurchaseOrdersPage({
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewOrder(order.id)}><Eye className="h-4 w-4" /></Button>
                           {order.status === "draft" && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => { setAddItemPoId(order.id); setAddItemMaterialId(""); setAddItemQty("1"); setAddItemCost("0"); }}><Plus className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500" onClick={() => openAddItem(order.id)}><Plus className="h-4 w-4" /></Button>
                           )}
                           {(order.status === "draft" || order.status === "partial") && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={async () => {
@@ -228,64 +245,79 @@ export function PurchaseOrdersPage({
       </div>
 
       <Dialog open={!!addItemPoId} onOpenChange={() => setAddItemPoId(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>添加采购材料</DialogTitle></DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>材料</Label>
-              <Select value={addItemMaterialId} onValueChange={setAddItemMaterialId}>
-                <SelectTrigger><SelectValue placeholder="选择材料" /></SelectTrigger>
-                <SelectContent>
-                  {materials.map((m) => <SelectItem key={m.id} value={m.id.toString()}>{m.name} ({m.code})</SelectItem>)}
-                </SelectContent>
-              </Select>
+          <div className="py-2 space-y-2">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-muted-foreground">
+                    <th className="text-left py-1.5 pr-2 font-medium w-[40%]">材料</th>
+                    <th className="text-left py-1.5 pr-2 font-medium w-[12%]">数量</th>
+                    <th className="text-left py-1.5 pr-2 font-medium w-[18%]">单位</th>
+                    <th className="text-left py-1.5 pr-2 font-medium w-[16%]">单价</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {addItemRows.map((row, i) => (
+                    <tr key={i} className="border-b last:border-b-0">
+                      <td className="py-1.5 pr-2">
+                        <Select value={row.materialId} onValueChange={(v) => updateAddRow(i, "materialId", v)}>
+                          <SelectTrigger className="h-8"><SelectValue placeholder="选择材料" /></SelectTrigger>
+                          <SelectContent>
+                            {materials.map((m) => <SelectItem key={m.id} value={m.id.toString()}>{m.name} ({m.code})</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <Input type="number" className="h-8 w-full" value={row.qty} onChange={(e) => updateAddRow(i, "qty", e.target.value)} step="0.01" min="0" />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <Select value={row.unitId} onValueChange={(v) => updateAddRow(i, "unitId", v)}>
+                          <SelectTrigger className="h-8"><SelectValue placeholder="单位" /></SelectTrigger>
+                          <SelectContent>
+                            {units.map((u) => <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <Input type="number" className="h-8 w-full" value={row.cost} onChange={(e) => updateAddRow(i, "cost", e.target.value)} step="0.01" min="0" />
+                      </td>
+                      <td className="py-1.5">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/60 hover:text-destructive" onClick={() => removeAddRow(i)} disabled={addItemRows.length === 1}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>数量</Label>
-                <Input type="number" value={addItemQty} onChange={(e) => setAddItemQty(e.target.value)} step="0.01" />
-              </div>
-              <div className="space-y-2">
-                <Label>单价</Label>
-                <Input type="number" value={addItemCost} onChange={(e) => setAddItemCost(e.target.value)} step="0.01" />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>单位（可选）</Label>
-              <Select value={addItemUnitId} onValueChange={setAddItemUnitId}>
-                <SelectTrigger><SelectValue placeholder="选择单位" /></SelectTrigger>
-                <SelectContent>
-                  {units.map((u) => <SelectItem key={u.id} value={u.id.toString()}>{u.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            <Button variant="outline" size="sm" className="w-full" onClick={addAddRow}>
+              <Plus className="h-3.5 w-3.5 mr-1" />新增一行
+            </Button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddItemPoId(null)}>取消</Button>
             <Button onClick={() => {
-              if (!addItemPoId || !addItemMaterialId) {
-                toast.error("请选择采购单和材料");
-                return;
+              if (!addItemPoId) return;
+              const validRows = addItemRows.filter(r => r.materialId);
+              if (validRows.length === 0) { toast.error("请至少选择一种材料"); return; }
+              for (const row of validRows) {
+                const qty = parseSafeFloat(row.qty);
+                const cost = parseSafeFloat(row.cost);
+                if (!qty || qty <= 0) { toast.error(`材料 ${materials.find(m => m.id.toString() === row.materialId)?.name || ""} 数量无效`); return; }
+                onAddItem({
+                  po_id: addItemPoId,
+                  material_id: parseInt(row.materialId),
+                  qty,
+                  unit_id: row.unitId ? parseInt(row.unitId) : null,
+                  cost_per_unit: cost ?? 0,
+                });
               }
-              const qty = parseSafeFloat(addItemQty);
-              const cost = parseSafeFloat(addItemCost);
-              if (qty === null || qty <= 0) {
-                toast.error("数量格式错误，请输入有效数字");
-                return;
-              }
-              if (cost === null || cost < 0) {
-                toast.error("单价格式错误，请输入有效数字");
-                return;
-              }
-              onAddItem({
-                po_id: addItemPoId,
-                material_id: parseInt(addItemMaterialId),
-                qty,
-                unit_id: addItemUnitId ? parseInt(addItemUnitId) : null,
-                cost_per_unit: cost,
-              });
               setAddItemPoId(null);
-            }}>添加</Button>
+            }}>添加 {addItemRows.filter(r => r.materialId).length} 项</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

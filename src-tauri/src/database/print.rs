@@ -396,34 +396,52 @@ impl Database {
                             let table_no = data.get("table_no").and_then(|t| t.as_str());
                             let order_id = data.get("order_id").and_then(|o| o.as_i64());
                             let seed = creative_fortune_seed(strategy, table_no, order_id, &date_str);
-                            let pct = seed % 100;
-                            let level = if pct < 20 { "小吉" } else if pct < 70 { "中吉" } else { "大吉" };
-                            let level_texts: Vec<&str> = FORTUNE_TEXTS.iter()
-                                .filter(|(l, _)| *l == level).map(|(_, t)| *t).collect();
-                            let fortune_text = level_texts.get(((seed / 100) as usize) % level_texts.len().max(1))
-                                .copied().unwrap_or("");
-                            let stars = if pct < 20 { "★" } else if pct < 70 { "★ ★" } else { "★ ★ ★" };
                             let width = if paper_size == "58mm" { 32 } else { 48 };
                             let dash = "─".repeat(width);
                             lines.push(dash.clone());
-                            lines.push(format!("       {} {} {} {}       ", stars, level, level, stars));
-                            lines.push(fortune_text.to_string());
+                            let custom: Vec<&str> = elem.get("custom_texts")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|s| s.as_str()).filter(|s| !s.is_empty()).collect())
+                                .unwrap_or_default();
+                            if !custom.is_empty() {
+                                let text = custom[seed as usize % custom.len()];
+                                lines.push(text.to_string());
+                            } else {
+                                let pct = seed % 100;
+                                let level = if pct < 20 { "小吉" } else if pct < 70 { "中吉" } else { "大吉" };
+                                let level_texts: Vec<&str> = FORTUNE_TEXTS.iter()
+                                    .filter(|(l, _)| *l == level).map(|(_, t)| *t).collect();
+                                let fortune_text = level_texts.get(((seed / 100) as usize) % level_texts.len().max(1))
+                                    .copied().unwrap_or("");
+                                let stars = if pct < 20 { "★" } else if pct < 70 { "★ ★" } else { "★ ★ ★" };
+                                lines.push(format!("       {} {} {} {}       ", stars, level, level, stars));
+                                lines.push(fortune_text.to_string());
+                            }
                             lines.push(dash);
                         }
                         "quote" => {
-                            let lang = elem.get("language").and_then(|l| l.as_str()).unwrap_or("multilingual");
                             let day_seed = chrono::Local::now().format("%Y%m%d").to_string().parse::<u64>().unwrap_or(0);
-                            let quotes: &[&str] = match lang {
-                                "en" => QUOTES_EN,
-                                "ja" => QUOTES_JA,
-                                "zh" => QUOTES_ZH,
-                                _ => match day_seed % 3 { 0 => QUOTES_ZH, 1 => QUOTES_EN, _ => QUOTES_JA },
-                            };
-                            let quote = quotes.get((day_seed as usize) % quotes.len().max(1))
-                                .copied().unwrap_or("");
                             let width = if paper_size == "58mm" { 32 } else { 48 };
                             lines.push("─".repeat(width));
-                            lines.push(quote.to_string());
+                            let custom: Vec<&str> = elem.get("custom_texts")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|s| s.as_str()).filter(|s| !s.is_empty()).collect())
+                                .unwrap_or_default();
+                            if !custom.is_empty() {
+                                let quote = custom[day_seed as usize % custom.len()];
+                                lines.push(quote.to_string());
+                            } else {
+                                let lang = elem.get("language").and_then(|l| l.as_str()).unwrap_or("multilingual");
+                                let quotes: &[&str] = match lang {
+                                    "en" => QUOTES_EN,
+                                    "ja" => QUOTES_JA,
+                                    "zh" => QUOTES_ZH,
+                                    _ => match day_seed % 3 { 0 => QUOTES_ZH, 1 => QUOTES_EN, _ => QUOTES_JA },
+                                };
+                                let quote = quotes.get((day_seed as usize) % quotes.len().max(1))
+                                    .copied().unwrap_or("");
+                                lines.push(quote.to_string());
+                            }
                             lines.push("─".repeat(width));
                         }
                         "art" => {
@@ -444,6 +462,13 @@ impl Database {
                             lines.push(String::new());
                             lines.push("  [自訂圖像]".to_string());
                             lines.push(String::new());
+                        }
+                        "marketing_image" => {
+                            // Images cannot be rendered in text-only ESC/POS output
+                            let alt = elem.get("alt").and_then(|a| a.as_str()).unwrap_or("");
+                            if !alt.is_empty() {
+                                lines.push(format!("  [{}]", alt));
+                            }
                         }
                         "discount_coupon" => {
                             render_discount_coupon(elem, data, paper_size, &mut lines);

@@ -54,6 +54,7 @@ struct Ctx {
     role_auth_path: PathBuf,
     sessions: Sessions,
     menu_cache: MenuCache,
+    data_dir: PathBuf,
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ pub fn start_web_server(
 
     let running_clone = running.clone();
     let ctx = Ctx {
+        data_dir: role_auth_path.parent().map(|p| p.to_path_buf()).unwrap_or_default(),
         db,
         dist_dir,
         role_auth_path,
@@ -161,6 +163,17 @@ fn dispatch_api(
     body: &[u8],
     ctx: &Ctx,
 ) -> (&'static str, String) {
+    // GET /api/payment_qr — served to customer browsers (no POST required)
+    if method == "GET" && route == "/api/payment_qr" {
+        let config = ctx.data_dir.join("payment-config.json");
+        let body = if config.exists() {
+            std::fs::read_to_string(&config).unwrap_or_else(|_| r#"{"data":null}"#.to_string())
+        } else {
+            r#"{"data":null}"#.to_string()
+        };
+        return ("200 OK", body);
+    }
+
     if method != "POST" {
         return ("405 Method Not Allowed", json_err("use POST"));
     }

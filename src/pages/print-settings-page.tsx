@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { call as invoke } from "@/lib/transport";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -776,11 +777,16 @@ export function PrintSettingsPage() {
     setAddDialogOpen(true);
   }
 
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">打印设置</h2>
         <p className="text-sm text-muted-foreground">管理打印机、连接配置和打印任务</p>
+      </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">打印中心</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/print-tickets")}>票据格式</button>
       </div>
 
       {/* Auto-print setting */}

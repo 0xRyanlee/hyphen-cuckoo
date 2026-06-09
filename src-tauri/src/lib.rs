@@ -442,6 +442,8 @@ pub fn run() {
             commands::get_web_server_status,
             commands::stop_web_server,
             commands::restart_web_server,
+            // 圖片工具
+            commands::load_image_as_data_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,7 @@ export function StocktakesPage({
     }
   };
 
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -81,6 +83,11 @@ export function StocktakesPage({
           <h2 className="text-2xl font-semibold tracking-tight">库存盘点</h2>
           <p className="text-sm text-muted-foreground">管理库存盘点、差异调整</p>
         </div>
+      </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/inventory")}>库存</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/material-states")}>材料状态</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">盘点</button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -112,7 +119,13 @@ export function StocktakesPage({
                       <TableCell className="text-xs text-muted-foreground">{st.created_at}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewStocktake(st.id)}><Eye className="h-4 w-4" /></Button>
+                          {st.status === "draft" ? (
+                            <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => onViewStocktake(st.id)}>
+                              开始填写 →
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewStocktake(st.id)}><Eye className="h-4 w-4" /></Button>
+                          )}
                           {st.status === "draft" && (
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => onCompleteStocktake(st.id)}><CheckCircle className="h-4 w-4" /></Button>
                           )}

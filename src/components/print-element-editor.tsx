@@ -4,6 +4,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { open } from "@tauri-apps/plugin-dialog";
+import { call as invoke } from "@/lib/transport";
 import type { PrintElement } from "@/pages/print-templates-page";
 
 export function ElementEditorFields({
@@ -36,22 +38,44 @@ export function ElementEditorFields({
       {elem.type === "blank_lines" && (
         <div><Label className="text-xs">空行数量</Label><Input type="number" min={1} max={10} value={Number(elem.count ?? 1)} onChange={e => onChange({ ...elem, count: parseInt(e.target.value) || 1 })} className="h-8 text-xs mt-1 w-24" /></div>
       )}
-      {elem.type === "fortune" && (
+      {elem.type === "fortune" && (<>
         <div><Label className="text-xs">种子策略</Label>
           <Select value={String(elem.seed_strategy ?? "daily")} onValueChange={v => onChange({ ...elem, seed_strategy: v })}>
             <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="daily">全店同日</SelectItem><SelectItem value="per_table">每桌不同</SelectItem><SelectItem value="per_order">每单唯一</SelectItem></SelectContent>
           </Select>
         </div>
-      )}
-      {elem.type === "quote" && (
+        <div>
+          <Label className="text-xs">自定义运势库（每行一条，留空用系统默认 15 条）</Label>
+          <Textarea
+            value={((elem.custom_texts as string[] | undefined) ?? []).join("\n")}
+            onChange={e => onChange({ ...elem, custom_texts: e.target.value.split("\n").map(s => s.trim()).filter(Boolean) })}
+            rows={4}
+            className="text-xs mt-1 font-mono"
+            placeholder={"今日吉星高照，美食带来好运。\n凡事不急，好事自来。\n小吉亦是福，平稳是福。"}
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">有内容时优先使用，忽略大/中/小吉分级，直接随机</p>
+        </div>
+      </>)}
+      {elem.type === "quote" && (<>
         <div><Label className="text-xs">语言</Label>
           <Select value={String(elem.language ?? "multilingual")} onValueChange={v => onChange({ ...elem, language: v })}>
             <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="multilingual">多语轮替</SelectItem><SelectItem value="zh">中文</SelectItem><SelectItem value="en">英文</SelectItem><SelectItem value="ja">日文</SelectItem></SelectContent>
           </Select>
         </div>
-      )}
+        <div>
+          <Label className="text-xs">自定义语录库（每行一条，留空用系统默认）</Label>
+          <Textarea
+            value={((elem.custom_texts as string[] | undefined) ?? []).join("\n")}
+            onChange={e => onChange({ ...elem, custom_texts: e.target.value.split("\n").map(s => s.trim()).filter(Boolean) })}
+            rows={4}
+            className="text-xs mt-1 font-mono"
+            placeholder={"人间有味是清欢 — 苏轼\nEvery meal is a love letter.\n食べることは生きること"}
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">有内容时忽略语言设置，直接从此池随机取</p>
+        </div>
+      </>)}
       {elem.type === "discount_coupon" && (<>
         <div className="grid grid-cols-2 gap-2">
           <div><Label className="text-xs">折扣类型</Label>
@@ -155,6 +179,70 @@ export function ElementEditorFields({
           onClick={() => { const eggs = [...((elem.eggs as { keyword: string; message: string }[]) ?? []), { keyword: "", message: "" }]; onChange({ ...elem, eggs }); }}>
           + 添加触发规则
         </Button>
+      </>)}
+      {elem.type === "marketing_image" && (<>
+        <div>
+          <Label className="text-xs">图片 URL（直接引用）</Label>
+          <div className="flex gap-2 mt-1">
+            <Input
+              value={String(elem.url ?? "")}
+              onChange={e => onChange({ ...elem, url: e.target.value })}
+              className="h-8 text-xs flex-1"
+              placeholder="https://example.com/image.jpg"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs shrink-0"
+              disabled={!elem.url}
+              onClick={async () => {
+                try {
+                  const dataUrl = await invoke<string>("load_image_as_data_url", { source: String(elem.url) });
+                  onChange({ ...elem, image_data: dataUrl });
+                } catch (e) {
+                  console.error("下载失败", e);
+                }
+              }}
+            >
+              下载到本地
+            </Button>
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs">或从本地文件选择</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs mt-1 w-full"
+            onClick={async () => {
+              const selected = await open({
+                multiple: false,
+                filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+              });
+              if (selected && typeof selected === "string") {
+                try {
+                  const dataUrl = await invoke<string>("load_image_as_data_url", { source: selected });
+                  onChange({ ...elem, image_data: dataUrl });
+                } catch (e) {
+                  console.error("读取失败", e);
+                }
+              }
+            }}
+          >
+            选择本地图片
+          </Button>
+          {!!elem.image_data && (
+            <div className="mt-2 rounded border overflow-hidden">
+              <img src={String(elem.image_data)} alt="预览" className="w-full object-cover max-h-32" />
+            </div>
+          )}
+        </div>
+        <div>
+          <Label className="text-xs">说明文字（选填）</Label>
+          <Input value={String(elem.alt ?? "")} onChange={e => onChange({ ...elem, alt: e.target.value })} className="h-8 text-xs mt-1" placeholder="店家宣传图" />
+        </div>
       </>)}
       {["separator", "items", "art", "image_block"].includes(elem.type) && (
         <p className="text-xs text-muted-foreground py-1">此元件无需额外配置。</p>

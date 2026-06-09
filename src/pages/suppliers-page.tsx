@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -113,6 +114,7 @@ export function SuppliersPage({
     setAddProductOpen(false);
   }
 
+  const navigate = useNavigate();
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -120,6 +122,10 @@ export function SuppliersPage({
           <h2 className="text-2xl font-semibold tracking-tight">采购渠道管理</h2>
           <p className="text-sm text-muted-foreground">管理商品与采购渠道（本地 / 网络）</p>
         </div>
+      </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/purchase-orders")}>采购单</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">供应商 & 商品</button>
       </div>
 
       <Card>
@@ -304,7 +310,16 @@ export function SuppliersPage({
             </div>
             <div className="space-y-2">
               <Label>供应商</Label>
-              <Input value={newProductSupplier} onChange={(e) => setNewProductSupplier(e.target.value)} placeholder="如：东海鲜物贸易" />
+              <Select value={newProductSupplier} onValueChange={setNewProductSupplier}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择供应商" />
+                </SelectTrigger>
+                <SelectContent>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>采购渠道</Label>
@@ -388,7 +403,16 @@ export function SuppliersPage({
             </div>
             <div className="space-y-2">
               <Label>供应商</Label>
-              <Input value={editProductSupplier} onChange={(e) => setEditProductSupplier(e.target.value)} placeholder="供应商名称" />
+              <Select value={editProductSupplier} onValueChange={setEditProductSupplier}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择供应商" />
+                </SelectTrigger>
+                <SelectContent>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>渠道</Label>

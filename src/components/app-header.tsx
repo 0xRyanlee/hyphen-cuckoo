@@ -8,6 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { call as invoke } from "@/lib/transport";
 
 interface Notification {
@@ -55,6 +56,7 @@ export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing =
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+  const navigate = useNavigate();
 
   function toggleTheme() {
     const html = document.documentElement;
@@ -112,6 +114,13 @@ export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing =
     } catch (e) {
       console.error("删除通知失败:", e);
     }
+  }
+
+  function getNotificationPath(n: Notification): string | null {
+    if (!n.ref_type) return null;
+    if (n.ref_type === "inventory_batch" || n.ref_type === "material") return "/inventory";
+    if (n.ref_type === "order") return "/orders";
+    return null;
   }
 
   return (
@@ -184,7 +193,11 @@ export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing =
                       className={`group flex items-start gap-3 px-3 py-2.5 hover:bg-accent/50 cursor-pointer transition-colors duration-150 ${
                         !n.is_read ? "bg-accent/20" : ""
                       }`}
-                      onClick={() => !n.is_read && handleMarkRead(n.id)}
+                      onClick={async () => {
+                        if (!n.is_read) await handleMarkRead(n.id);
+                        const path = getNotificationPath(n);
+                        if (path) { navigate(path); setDropdownOpen(false); }
+                      }}
                     >
                       <div className="mt-0.5 shrink-0">
                         {severityIcons[n.severity] || severityIcons.info}

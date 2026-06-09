@@ -16,6 +16,7 @@ import { useState, useEffect } from "react";
 import { call as invoke } from "@/lib/transport";
 import { toast } from "sonner";
 import { parseSafeFloat } from "@/lib/utils";
+import type { Customer } from "@/types/index";
 
 interface OrderItem {
   id: number;
@@ -77,6 +78,8 @@ interface OrdersPageProps {
   onLoadModifiers: (order_item_id: number) => Promise<OrderItemModifier[]>;
   onMarkReady: (id: number) => void;
   onUpdatePayment: (id: number, payment_status: string, payment_method: string | null, amount_paid: number) => void;
+  customers?: Customer[];
+  onAddLoyaltyPoints?: (customerId: number, orderId: number, delta: number, reason: string) => Promise<void>;
   onPrintReceipt?: (id: number) => void;
   onRefundOrderItem?: (orderId: number, itemId: number) => Promise<number>;
   onLoadMore: () => void;
@@ -100,6 +103,8 @@ export function OrdersPage({
   onLoadModifiers,
   onMarkReady,
   onUpdatePayment,
+  customers = [],
+  onAddLoyaltyPoints,
   onPrintReceipt,
   onRefundOrderItem,
   onLoadMore,
@@ -140,6 +145,7 @@ export function OrdersPage({
   const [paymentStatus, setPaymentStatus] = useState("paid");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [paymentAmountPaid, setPaymentAmountPaid] = useState("");
+  const [paymentCustomerId, setPaymentCustomerId] = useState<string>("");
 
   const [itemModifiers, setItemModifiers] = useState<Record<number, OrderItemModifier[]>>({});
   const [refundConfirmItemId, setRefundConfirmItemId] = useState<number | null>(null);
@@ -616,7 +622,7 @@ export function OrdersPage({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+      <Dialog open={paymentDialogOpen} onOpenChange={(open) => { setPaymentDialogOpen(open); if (!open) setPaymentCustomerId(""); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>收款登记</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
@@ -649,14 +655,41 @@ export function OrdersPage({
               <Label>实收金额</Label>
               <Input type="number" step="0.01" value={paymentAmountPaid} onChange={(e) => setPaymentAmountPaid(e.target.value)} />
             </div>
+            {customers.length > 0 && (
+              <div className="space-y-2">
+                <Label>关联顾客（可选，记录后自动累积积分）</Label>
+                <Select value={paymentCustomerId} onValueChange={setPaymentCustomerId}>
+                  <SelectTrigger><SelectValue placeholder="不关联顾客" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">不关联</SelectItem>
+                    {customers.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name}{c.phone ? ` · ${c.phone}` : ""} · {c.points} 积分
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>取消</Button>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!paymentTargetOrder) return;
               const amt = parseFloat(paymentAmountPaid);
               if (isNaN(amt) || amt < 0) { toast.error("请输入有效金额"); return; }
               onUpdatePayment(paymentTargetOrder.id, paymentStatus, paymentStatus === "unpaid" ? null : paymentMethod, amt);
+              if (paymentCustomerId && paymentStatus === "paid" && onAddLoyaltyPoints) {
+                try {
+                  const points = Math.floor(amt);
+                  if (points > 0) {
+                    await onAddLoyaltyPoints(Number(paymentCustomerId), paymentTargetOrder.id, points, "收款积分");
+                  }
+                } catch {
+                  // loyalty points failure is non-blocking
+                }
+              }
+              setPaymentCustomerId("");
               setPaymentDialogOpen(false);
             }}>确认收款</Button>
           </DialogFooter>

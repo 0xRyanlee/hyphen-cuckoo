@@ -4,6 +4,6 @@
   "description": "Permissions for the main Cuckoo window.",
   "windows": ["main"],
   "permissions": [
-    "core:default", "dialog:default", "dialog:allow-open", "dialog:allow-save"
+    "core:default", "dialog:default", "dialog:allow-open", "dialog:allow-save", "shell:allow-open"
   ]
 }

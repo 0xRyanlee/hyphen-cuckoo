@@ -347,6 +347,11 @@ function handleAdjust() {
           </Button>
         </div>
       </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">库存</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/material-states")}>材料状态</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/stocktakes")}>盘点</button>
+      </div>
 
 {lowStockItems.length > 0 && (
         <Card className="border-destructive/50">

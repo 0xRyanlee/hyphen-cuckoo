@@ -211,11 +211,9 @@ loading = false,
               <div className="space-y-3">
                 <Skeleton className="h-[250px] w-full" />
               </div>
-            ) : chartData.length === 0 ? (
-              <EmptyState icon={BarChart3} title="暂无数据" description="库存数据将在此显示" />
             ) : (
               <ChartContainer config={inventoryChartConfig} className="h-[250px] w-full">
-                <AreaChart data={chartData}>
+                <AreaChart data={chartData.length > 0 ? chartData : [{ name: "—", qty: 0 }]}>
                   <defs>
                     <linearGradient id="fillQty" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="var(--color-qty)" stopOpacity={0.8} />
@@ -267,34 +265,33 @@ loading = false,
               <div className="space-y-3">
                 <Skeleton className="h-[200px] w-full" />
               </div>
-            ) : statusData.length === 0 ? (
-              <EmptyState icon={ShoppingCart} title="暂无数据" description="订单状态分布将在此显示" />
             ) : (
               <div className="flex items-center gap-6">
                 <ChartContainer config={statusChartConfig} className="h-[200px] w-[50%]">
                   <PieChart>
                     <Pie
-                      data={statusData}
+                      data={statusData.length > 0 ? statusData : [{ name: "暂无订单", value: 1 }]}
                       cx="50%"
                       cy="50%"
                       innerRadius={50}
                       outerRadius={80}
-                      paddingAngle={4}
+                      paddingAngle={statusData.length > 0 ? 4 : 0}
                       dataKey="value"
-                      label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
+                      label={statusData.length > 0 ? ({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%` : undefined}
                     >
-                      {statusData.map((_, index) => (
+                      {statusData.length > 0 ? statusData.map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
+                      )) : <Cell fill="hsl(var(--muted))" />}
                     </Pie>
-                    <ChartTooltip
-                      indicator="dot"
-                      formatter={(value: unknown) => [`${value}`, "订单数"]}
-                    />
+                    {statusData.length > 0 && (
+                      <ChartTooltip indicator="dot" formatter={(value: unknown) => [`${value}`, "订单数"]} />
+                    )}
                   </PieChart>
                 </ChartContainer>
                 <div className="space-y-2 flex-1">
-                  {statusData.map((s, i) => (
+                  {statusData.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">暂无订单数据</p>
+                  ) : statusData.map((s, i) => (
                     <div key={s.name} className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
                         <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />

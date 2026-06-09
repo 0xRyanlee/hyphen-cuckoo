@@ -710,6 +710,10 @@ export function RecipesPage({
           <p className="text-sm text-muted-foreground">围绕材料、半成品、成品和菜单绑定，统一管理配方结构与成本</p>
         </div>
       </div>
+      <div className="flex border-b border-border">
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground" onClick={() => navigate("/materials")}>材料管理</button>
+        <button className="-mb-px pb-2 px-4 text-sm font-medium border-b-2 border-primary text-primary">配方</button>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>

@@ -17,13 +17,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Plus, Edit2, Trash2, QrCode, Download, Copy, RefreshCw } from "lucide-react";
-import type { RestaurantTable } from "@/types";
-
-interface WebServerStatus {
-  running: boolean;
-  port: number | null;
-  url: string | null;
-}
+import { open as openUrl } from "@tauri-apps/plugin-shell";
+import type { RestaurantTable, WebServerStatus } from "@/types";
 
 interface TableQrDialogProps {
   table: RestaurantTable;
@@ -207,6 +202,7 @@ export function TablesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<RestaurantTable | null>(null);
   const [qrTable, setQrTable] = useState<RestaurantTable | null>(null);
+  const [deleteTableConfirm, setDeleteTableConfirm] = useState<RestaurantTable | null>(null);
   const [manualIp, setManualIp] = useState(() => localStorage.getItem(MANUAL_IP_KEY) ?? "");
   const [editingIp, setEditingIp] = useState(false);
   const [ipDraft, setIpDraft] = useState("");
@@ -289,13 +285,19 @@ export function TablesPage() {
   };
 
   const handleDelete = async (table: RestaurantTable) => {
-    if (!confirm(`确定删除桌号 ${table.table_no}？`)) return;
+    setDeleteTableConfirm(table);
+  };
+
+  const confirmDeleteTable = async () => {
+    if (!deleteTableConfirm) return;
     try {
-      await invoke("delete_restaurant_table", { id: table.id });
+      await invoke("delete_restaurant_table", { id: deleteTableConfirm.id });
       toast.success("已删除");
       load();
     } catch (e) {
       toast.error(String(e));
+    } finally {
+      setDeleteTableConfirm(null);
     }
   };
 
@@ -405,6 +407,20 @@ export function TablesPage() {
                 )}
               </div>
             )}
+            {effectiveUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={async () => {
+                  const firstTable = tables[0];
+                  const tableNo = firstTable ? firstTable.table_no || String(firstTable.id) : "1";
+                  await openUrl(`${effectiveUrl}/#/table/${tableNo}`);
+                }}
+              >
+                预览顾客端（在浏览器打开）
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -491,6 +507,17 @@ export function TablesPage() {
           onClose={() => setQrTable(null)}
         />
       )}
+
+      <Dialog open={!!deleteTableConfirm} onOpenChange={() => setDeleteTableConfirm(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>确认删除桌号</DialogTitle></DialogHeader>
+          <p className="py-4 text-sm text-muted-foreground">确定要删除桌号「{deleteTableConfirm?.table_no}」吗？此操作不可撤销。</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTableConfirm(null)}>取消</Button>
+            <Button variant="destructive" onClick={confirmDeleteTable}>删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

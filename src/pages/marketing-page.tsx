@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search, BarChart3, Pencil, ChevronUp } from "lucide-react";
+import { Save, Eye, Smartphone, Printer, Sparkles, Zap, ClipboardCheck, Search, BarChart3, Pencil, ChevronUp, CheckCircle2, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { ELEMENT_CATEGORIES, getElementLabel, getElementBadgeColor, getElementSummary, type PrintElement } from "./print-templates-page";
@@ -447,12 +447,12 @@ export function MarketingPage() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b px-6 py-4 flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold flex items-center gap-2">
+          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />营销中心
-          </h1>
+          </h2>
           <p className="text-sm text-muted-foreground">
             统一管理收据、厨房单、自助点单确认页的营销元件
           </p>
@@ -462,7 +462,7 @@ export function MarketingPage() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div>
         <Tabs defaultValue="popup">
           <TabsList className="mb-6">
             <TabsTrigger value="popup" className="gap-1.5">
@@ -616,7 +616,11 @@ export function MarketingPage() {
                   <div className="border rounded-lg overflow-hidden">
                     <div className={`flex items-center justify-between px-4 py-2 text-sm font-medium ${verifyResult.already_redeemed ? "bg-muted text-foreground" : "bg-primary/10 text-primary"}`}>
                       <span>订单：{verifyResult.order_no}</span>
-                      <span>{verifyResult.already_redeemed ? "✅ 已兑奖" : "⏳ 未兑奖"}</span>
+                      <span className="flex items-center gap-1">
+                        {verifyResult.already_redeemed
+                          ? <><CheckCircle2 className="h-4 w-4 text-green-600" />已兑奖</>
+                          : <><Clock className="h-4 w-4 text-amber-500" />未兑奖</>}
+                      </span>
                     </div>
                     <div className="p-3 max-h-64 overflow-y-auto"
                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(verifyResult.popup_html ?? "") }} />

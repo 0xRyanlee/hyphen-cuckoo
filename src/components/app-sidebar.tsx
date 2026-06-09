@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Truck, ClipboardList, Factory, FileBox, BarChart3, Printer, Monitor, Layers, SlidersHorizontal, Receipt, Users, ShieldCheck, LayoutGrid } from "lucide-react";
+import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Factory, FileBox, BarChart3, Printer, Monitor, SlidersHorizontal, Receipt, Users, ShieldCheck, LayoutGrid } from "lucide-react";
 import { type Role, ROLE_LABELS, checkAccess } from "@/lib/roles";
 
 const navGroups = [
@@ -44,17 +44,14 @@ const navGroups = [
       { id: "materials", label: "材料管理", icon: Package },
       { id: "recipes", label: "配方", icon: ChefHat },
       { id: "inventory", label: "库存", icon: Warehouse },
-      { id: "stocktakes", label: "库存盘点", icon: ClipboardList },
       { id: "reports", label: "数据报表", icon: BarChart3 },
     ],
   },
   {
     label: "进货 / 生产",
     items: [
-      { id: "suppliers", label: "供应商", icon: Truck },
-      { id: "purchase-orders", label: "采购单", icon: FileBox },
+      { id: "purchase-orders", label: "进货管理", icon: FileBox },
       { id: "production-orders", label: "生产单", icon: Factory },
-      { id: "material-states", label: "材料状态", icon: Layers },
     ],
   },
   {
@@ -82,9 +79,10 @@ interface AppSidebarProps {
   notificationCount?: number;
   currentRole?: Role;
   onOpenRoleSwitch?: () => void;
+  onLogout?: () => void;
 }
 
-export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificationCount = 0, currentRole = "owner", onOpenRoleSwitch }: AppSidebarProps) {
+export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificationCount = 0, currentRole = "owner", onOpenRoleSwitch, onLogout }: AppSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
@@ -183,7 +181,7 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
                 切换角色
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">
+              <DropdownMenuItem className="text-destructive" onClick={onLogout}>
                 <LogOut className="mr-2 h-4 w-4" />
                 退出登录
               </DropdownMenuItem>

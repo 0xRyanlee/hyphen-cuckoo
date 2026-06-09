@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { toast } from "sonner";
 import { Plus, QrCode, Trash2, Download, ImagePlus, X } from "lucide-react";
 import { StyledQR } from "@/components/styled-qr";
+import type { WebServerStatus } from "@/types";
 
 interface Campaign {
   id: number;
@@ -22,11 +23,6 @@ interface Campaign {
   cover_image?: string | null;
   claimed?: number;
   redeemed?: number;
-}
-
-interface WebServerStatus {
-  running: boolean;
-  url: string | null;
 }
 
 function discountText(t: string, v: number): string {
