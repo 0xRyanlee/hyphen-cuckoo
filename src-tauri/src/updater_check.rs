@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 const GITHUB_API: &str =
-    "https://api.github.com/repos/0xRyanlee/Cuckoo/releases/latest";
+    "https://api.github.com/repos/0xRyanlee/hyphen-cuckoo/releases/latest";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UpdateInfo {

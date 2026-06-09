@@ -24,7 +24,7 @@
 
 ### 安装
 
-1. 从 [Releases](https://github.com/0xRyanlee/Cuckoo/releases) 下载对应平台的安装包
+1. 从 [Releases](https://github.com/0xRyanlee/hyphen-cuckoo/releases) 下载对应平台的安装包
 2. **macOS**：打开 `.dmg`，将 Cuckoo 拖入「应用程序」文件夹
 3. **Windows**：双击 `.exe` 安装程序，按提示完成安装
 

@@ -2404,7 +2404,7 @@ pub fn download_and_open_update(url: String, app: tauri::AppHandle) -> Result<()
     #[cfg(not(target_os = "android"))]
     {
         require_roles(&app.state::<AppState>(), &[UserRole::Owner], "安装更新")?;
-        if !url.starts_with("https://github.com/0xRyanlee/Cuckoo/releases/") {
+        if !url.starts_with("https://github.com/0xRyanlee/hyphen-cuckoo/releases/") {
             return Err("更新下载地址无效".to_string());
         }
         std::thread::spawn(move || {

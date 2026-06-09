@@ -58,7 +58,7 @@
 | 代號 | 分類 | 問題描述 | 修復摘要 |
 |------|------|----------|----------|
 | #14 | Rust | `setup_panic_hook` 每次崩潰覆蓋 crash.log，歷史軌跡丟失 | 改用 `OpenOptions::new().create(true).append(true)` 追加寫入，保留全部崩潰歷史 |
-| #15 | Rust（安全） | `download_and_open_update` 接受任意 URL，存在 RCE 風險 | 加 URL 白名單守衛：僅允許 `https://github.com/0xRyanlee/Cuckoo/releases/` 前綴，否則立即回傳錯誤 |
+| #15 | Rust（安全） | `download_and_open_update` 接受任意 URL，存在 RCE 風險 | 加 URL 白名單守衛：僅允許 `https://github.com/0xRyanlee/hyphen-cuckoo/releases/` 前綴，否則立即回傳錯誤 |
 | #16 | Rust（安全） | `TsplBuilder::text` / `text_with_rotation` / `barcode` / `qr_code` 未轉義 `"` 和 `\r\n`，存在 TSPL 注入 | 新增 `tspl_escape` 輔助函數：`replace('"', "\\\"").replace(['\r', '\n'], "")` |
 | #17 | Rust | `export_report_csv` 字串欄位（分類名、商品名、原料名）未包裹引號，含逗號時格式錯位 | 新增 `csv_quote` 函數：`format!("\"{}\"", s.replace('"', "\"\""))`，套用於所有字串欄位 |
 | #18 | TS | `exportAllCSV` 原料消耗 CSV 標頭 `["成本", "订单数"]` 與實際欄位（平均成本、總成本）不符 | 修正為 `["平均成本", "总成本"]`，並修正解構變數名稱 |
@@ -152,7 +152,7 @@
 ### [x] 15. 任意安裝包下載與遠端代碼執行安全隱患 (RCE) ✅ 已修復
 **根因**: `commands.rs` 中的 `download_and_open_update(url: String)` 接口直接接受來自前端傳入的任何 `url` 字符串，並在後台線程中下載並運行它。如果前端存在 XSS 漏洞或 WebView 被惡意注入，攻擊者可以呼叫此 API 下載並執行任意惡意軟件，造成嚴重的 RCE 安全隱患。
 **解方選項**:
-- **解方 A (URL 白名單)**: 在 `download_and_open_update` 中對 `url` 進行嚴格校驗，僅允許以 `https://github.com/0xRyanlee/Cuckoo/releases/` 開頭的 GitHub Release 官方下載地址，拒絕任何其他非授權的 URL。
+- **解方 A (URL 白名單)**: 在 `download_and_open_update` 中對 `url` 進行嚴格校驗，僅允許以 `https://github.com/0xRyanlee/hyphen-cuckoo/releases/` 開頭的 GitHub Release 官方下載地址，拒絕任何其他非授權的 URL。
 - **解方 B (包簽名驗證)**: 下載安裝包後，在執行前驗證其哈希值（Hash）或數字簽名（Signature），確保包沒有被篡改。
 
 ### [x] 16. TSPL 標籤列印指令注入漏洞 (TSPL Injection) ✅ 已修復
