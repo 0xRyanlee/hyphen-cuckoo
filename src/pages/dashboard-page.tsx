@@ -31,6 +31,11 @@ interface DashboardProps {
     material_name: string;
     available_qty: number;
   }>;
+  materials?: Array<{
+    id: number;
+    name: string;
+    min_qty?: number;
+  }>;
   loading?: boolean;
 }
 
@@ -42,14 +47,17 @@ export function DashboardPage({
   menuItemCount = 0,
   orders,
   inventorySummary,
+  materials = [],
 loading = false,
 }: DashboardProps) {
   const wizard = useSetupWizard(menuItemCount);
   const [timeRange, setTimeRange] = useState<"today" | "week" | "month" | "all">("today");
   const [todayTopItems, setTodayTopItems] = useState<[string, number, number, number][]>([]);
   const [marketingStats, setMarketingStats] = useState<{ redemptions_today: number; coupons_issued_today: number; coupons_redeemed_today: number } | null>(null);
-  const LOW_STOCK_THRESHOLD = 10;
-  const lowStockItems = inventorySummary.filter((s) => s.available_qty < LOW_STOCK_THRESHOLD);
+  const DEFAULT_LOW_STOCK_THRESHOLD = 10;
+  const minQtyMap = Object.fromEntries(materials.map((m) => [m.id, m.min_qty ?? DEFAULT_LOW_STOCK_THRESHOLD]));
+  const getMinQty = (materialId: number) => minQtyMap[materialId] ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  const lowStockItems = inventorySummary.filter((s) => s.available_qty < getMinQty(s.material_id));
 
   // 時間篩選邏輯
   const now = new Date();
@@ -173,7 +181,7 @@ loading = false,
           </CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-8 w-16 mb-1" /> : <div className={`text-2xl font-bold ${lowStockItems.length > 0 ? "text-destructive" : ""}`}>{lowStockItems.length}</div>}
-            <p className="text-xs text-muted-foreground">低于 {LOW_STOCK_THRESHOLD} 的材料</p>
+            <p className="text-xs text-muted-foreground">低于最低庫存的材料</p>
           </CardContent>
         </Card>
 
@@ -359,7 +367,7 @@ loading = false,
               <AlertTriangle className="h-4 w-4" />
               库存预警
             </CardTitle>
-            <CardDescription>可用库存低于 {LOW_STOCK_THRESHOLD} 的材料</CardDescription>
+            <CardDescription>可用库存低于各材料最低庫存的材料</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -376,6 +384,7 @@ loading = false,
                   <TableRow>
                     <TableHead>材料</TableHead>
                     <TableHead className="text-right">可用量</TableHead>
+                    <TableHead className="text-right">最低庫存</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -384,6 +393,9 @@ loading = false,
                       <TableCell className="font-medium">{summary.material_name}</TableCell>
                       <TableCell className="text-right text-destructive font-medium">
                         {summary.available_qty.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground text-xs">
+                        {getMinQty(summary.material_id)}
                       </TableCell>
                     </TableRow>
                   ))}

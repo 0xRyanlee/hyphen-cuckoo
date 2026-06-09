@@ -1,4 +1,5 @@
-import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle, X, Sun, Moon, RefreshCw } from "lucide-react";
+import { Bell, AlertTriangle, AlertCircle, Info, CheckCircle, X, Sun, Moon, RefreshCw, ShieldCheck } from "lucide-react";
+import { type Role, ROLE_LABELS, ROLE_COLORS } from "@/lib/roles";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ interface AppHeaderProps {
   onSearchChange: (query: string) => void;
   onRefresh: () => void;
   refreshing?: boolean;
+  currentRole?: Role;
+  onOpenRoleSwitch?: () => void;
 }
 
 const severityIcons: Record<string, React.ReactNode> = {
@@ -51,7 +54,7 @@ function timeAgo(dateStr: string): string {
   return `${diffDay} 天前`;
 }
 
-export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing = false }: AppHeaderProps) {
+export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing = false, currentRole = "owner", onOpenRoleSwitch }: AppHeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -141,6 +144,16 @@ export function AppHeader({ searchQuery, onSearchChange, onRefresh, refreshing =
       </div>
 
       <div className="flex items-center gap-1">
+        {currentRole !== "owner" && (
+          <button
+            onClick={onOpenRoleSwitch}
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors hover:opacity-80 ${ROLE_COLORS[currentRole] ?? "bg-muted text-muted-foreground border-border"}`}
+            title="切换角色"
+          >
+            <ShieldCheck className="h-3 w-3" />
+            {ROLE_LABELS[currentRole]}
+          </button>
+        )}
         <Button
           variant="ghost"
           size="icon"

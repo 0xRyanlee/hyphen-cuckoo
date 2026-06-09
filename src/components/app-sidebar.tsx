@@ -22,11 +22,30 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Factory, FileBox, BarChart3, Printer, Monitor, SlidersHorizontal, Receipt, Users, ShieldCheck, LayoutGrid } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { MoreHorizontal, Package, ChefHat, Warehouse, FileText, ShoppingCart, Settings, Home, LogOut, CreditCard, Factory, FileBox, BarChart3, Printer, Monitor, SlidersHorizontal, Receipt, Users, ShieldCheck, LayoutGrid, GripVertical } from "lucide-react";
 import { type Role, ROLE_LABELS, checkAccess } from "@/lib/roles";
+import { useState, useCallback } from "react";
 
-const navGroups = [
+const NAV_GROUPS_DEFAULT = [
   {
+    id: "frontend",
     label: "前台操作",
     items: [
       { id: "pos", label: "POS 点餐", icon: CreditCard },
@@ -37,6 +56,7 @@ const navGroups = [
     ],
   },
   {
+    id: "backend",
     label: "后台管理",
     items: [
       { id: "dashboard", label: "仪表板", icon: Home },
@@ -48,6 +68,7 @@ const navGroups = [
     ],
   },
   {
+    id: "supply",
     label: "进货 / 生产",
     items: [
       { id: "purchase-orders", label: "进货管理", icon: FileBox },
@@ -55,12 +76,14 @@ const navGroups = [
     ],
   },
   {
+    id: "marketing",
     label: "营销",
     items: [
       { id: "marketing", label: "营销中心", icon: Monitor },
     ],
   },
   {
+    id: "settings",
     label: "设置",
     items: [
       { id: "attributes", label: "属性模板", icon: SlidersHorizontal },
@@ -70,6 +93,99 @@ const navGroups = [
     ],
   },
 ];
+
+const NAV_ORDER_KEY = "cuckoo_sidebar_group_order";
+
+function loadGroupOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(NAV_ORDER_KEY);
+    if (raw) {
+      const order = JSON.parse(raw) as string[];
+      const defaultIds = NAV_GROUPS_DEFAULT.map((g) => g.id);
+      if (order.length === defaultIds.length && defaultIds.every((id) => order.includes(id))) {
+        return order;
+      }
+    }
+  } catch { /* ignore */ }
+  return NAV_GROUPS_DEFAULT.map((g) => g.id);
+}
+
+interface SortableGroupProps {
+  group: typeof NAV_GROUPS_DEFAULT[0];
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+  isCollapsed: boolean;
+  errorCount: number;
+  notificationCount: number;
+  isEditMode: boolean;
+}
+
+function SortableNavGroup({
+  group, activeTab, onTabChange, isCollapsed, errorCount, notificationCount, isEditMode,
+  currentRole,
+}: SortableGroupProps & { currentRole: Role }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const visibleItems = group.items.filter((item) => checkAccess(currentRole, item.id));
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <SidebarGroup>
+        {!isCollapsed && (
+          <SidebarGroupLabel className="text-xs text-muted-foreground flex items-center gap-1">
+            {isEditMode && (
+              <span
+                {...attributes}
+                {...listeners}
+                className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground"
+              >
+                <GripVertical className="h-3 w-3" />
+              </span>
+            )}
+            {group.label}
+          </SidebarGroupLabel>
+        )}
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {visibleItems.map((item) => {
+              const showErrorBadge = item.id === "settings" && errorCount > 0;
+              const showNotificationBadge = item.id === "dashboard" && notificationCount > 0;
+              return (
+                <SidebarMenuItem key={item.id}>
+                  <SidebarMenuButton
+                    onClick={() => !isEditMode && onTabChange(item.id)}
+                    isActive={activeTab === item.id}
+                    tooltip={item.label}
+                    className={isEditMode ? "cursor-default" : ""}
+                  >
+                    {item.icon && <item.icon className="h-4 w-4" />}
+                    <span className="flex-1">{item.label}</span>
+                    {showErrorBadge && (
+                      <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
+                        {errorCount > 99 ? "99+" : errorCount}
+                      </span>
+                    )}
+                    {showNotificationBadge && (
+                      <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                        {notificationCount > 99 ? "99+" : notificationCount}
+                      </span>
+                    )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+    </div>
+  );
+}
 
 interface AppSidebarProps {
   activeTab: string;
@@ -85,6 +201,33 @@ interface AppSidebarProps {
 export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificationCount = 0, currentRole = "owner", onOpenRoleSwitch, onLogout }: AppSidebarProps) {
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [groupOrder, setGroupOrder] = useState<string[]>(loadGroupOrder);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const orderedGroups = groupOrder
+    .map((id) => NAV_GROUPS_DEFAULT.find((g) => g.id === id))
+    .filter(Boolean) as typeof NAV_GROUPS_DEFAULT;
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setGroupOrder((prev) => {
+      const oldIdx = prev.indexOf(String(active.id));
+      const newIdx = prev.indexOf(String(over.id));
+      const next = arrayMove(prev, oldIdx, newIdx);
+      localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  function toggleEditMode() {
+    setIsEditMode((v) => !v);
+  }
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border">
@@ -94,58 +237,45 @@ export function AppSidebar({ activeTab, onTabChange, errorCount = 0, notificatio
             <span className="text-xs font-bold">C</span>
           </div>
           {!isCollapsed && (
-            <div className="flex flex-col gap-0.5 leading-none">
+            <div className="flex flex-col gap-0.5 leading-none flex-1 min-w-0">
               <span className="font-semibold text-sm">Cuckoo</span>
               <span className="text-xs text-muted-foreground">餐饮作业系统</span>
             </div>
+          )}
+          {!isCollapsed && (
+            <button
+              onClick={toggleEditMode}
+              className={`text-xs px-1.5 py-0.5 rounded transition-colors shrink-0 ${isEditMode ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              title="自定义排序"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
       </SidebarHeader>
 
       <SidebarContent>
-        {navGroups.map((group) => {
-          const visibleItems = group.items.filter(item => checkAccess(currentRole, item.id));
-          if (visibleItems.length === 0) return null;
-          return (
-            <SidebarGroup key={group.label}>
-              {!isCollapsed && (
-                <SidebarGroupLabel className="text-xs text-muted-foreground">
-                  {group.label}
-                </SidebarGroupLabel>
-              )}
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {visibleItems.map((item) => {
-                    const showErrorBadge = item.id === "settings" && errorCount > 0;
-                    const showNotificationBadge = item.id === "dashboard" && notificationCount > 0;
-                    return (
-                      <SidebarMenuItem key={item.id}>
-                        <SidebarMenuButton
-                          onClick={() => onTabChange(item.id)}
-                          isActive={activeTab === item.id}
-                          tooltip={item.label}
-                        >
-                          {item.icon && <item.icon className="h-4 w-4" />}
-                          <span className="flex-1">{item.label}</span>
-                          {showErrorBadge && (
-                            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
-                              {errorCount > 99 ? "99+" : errorCount}
-                            </span>
-                          )}
-                          {showNotificationBadge && (
-                            <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-                              {notificationCount > 99 ? "99+" : notificationCount}
-                            </span>
-                          )}
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          );
-        })}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={groupOrder} strategy={verticalListSortingStrategy}>
+            {orderedGroups.map((group) => (
+              <SortableNavGroup
+                key={group.id}
+                group={group}
+                activeTab={activeTab}
+                onTabChange={onTabChange}
+                isCollapsed={isCollapsed}
+                errorCount={errorCount}
+                notificationCount={notificationCount}
+                isEditMode={isEditMode}
+                currentRole={currentRole}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-border p-4">

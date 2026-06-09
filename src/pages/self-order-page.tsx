@@ -135,12 +135,24 @@ function ItemCard({
         {/* Thumbnail */}
         <div className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden">
           {item.image_path ? (
-            <img src={item.image_path} alt={item.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className={`w-full h-full bg-gradient-to-br ${colorClass} flex items-center justify-center`}>
-              <span className="text-white text-xl font-bold">{item.name[0]}</span>
-            </div>
-          )}
+            <img
+              src={item.image_path}
+              alt={item.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                const t = e.currentTarget;
+                t.style.display = "none";
+                const fb = t.nextElementSibling as HTMLElement | null;
+                if (fb) fb.style.display = "flex";
+              }}
+            />
+          ) : null}
+          <div
+            className={`w-full h-full bg-gradient-to-br ${colorClass} items-center justify-center`}
+            style={{ display: item.image_path ? "none" : "flex" }}
+          >
+            <span className="text-white text-xl font-bold">{item.name[0]}</span>
+          </div>
         </div>
         {/* Info */}
         <div className="flex-1 min-w-0 flex flex-col justify-between">

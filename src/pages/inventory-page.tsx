@@ -453,13 +453,21 @@ function handleAdjust() {
                       const isExpired = expiryDate && expiryDate < now;
                       const daysLeft = expiryDate ? Math.ceil((expiryDate.getTime() - now.getTime()) / 86400000) : null;
                       const isExpiringSoon = !isExpired && daysLeft !== null && daysLeft <= 7;
+                      const isLowStock = batch.quantity < getMinQty(batch.material_id);
                       return (
-                      <TableRow key={batch.id} className={isExpired ? "bg-destructive/5" : isExpiringSoon ? "bg-amber-500/5" : ""}>
+                      <TableRow key={batch.id} className={isExpired ? "bg-destructive/5" : isExpiringSoon ? "bg-amber-500/5" : isLowStock ? "bg-destructive/5" : ""}>
                         <TableCell>
-                          <div className="font-mono text-xs">{batch.lot_no}</div>
+                          <div className="font-mono text-xs flex items-center gap-1.5">
+                            {batch.lot_no}
+                            {isLowStock && (
+                              <span className="inline-flex items-center rounded-full bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                                低庫存
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-muted-foreground">{getMaterialName(batch.material_id)}</div>
                         </TableCell>
-                        <TableCell className="text-right">{batch.quantity.toFixed(2)}</TableCell>
+                        <TableCell className={`text-right ${isLowStock ? "text-destructive font-medium" : ""}`}>{batch.quantity.toFixed(2)}</TableCell>
                         <TableCell>
                           {batch.expiry_date ? (
                             <span className={`text-xs font-mono ${isExpired ? "text-destructive font-medium" : isExpiringSoon ? "text-amber-500 font-medium" : "text-muted-foreground"}`}>

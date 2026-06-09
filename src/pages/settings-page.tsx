@@ -808,6 +808,9 @@ export function SettingsPage({ connected }: SettingsPageProps) {
   const [restoreConfirmPath, setRestoreConfirmPath] = useState<string | null>(null);
   const [paymentQr, setPaymentQr] = useState<string | null>(null);
   const [paymentQrLoading, setPaymentQrLoading] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateCheckResult, setUpdateCheckResult] = useState<"no_update" | UpdateInfo | null>(null);
+  const [manualUpdateDialog, setManualUpdateDialog] = useState(false);
 
   useEffect(() => {
     invoke<string | null>("get_payment_qr").then((d) => setPaymentQr(d ?? null)).catch(() => {});
@@ -911,6 +914,29 @@ export function SettingsPage({ connected }: SettingsPageProps) {
     }
   }
 
+  async function handleManualCheckUpdate() {
+    setCheckingUpdate(true);
+    setUpdateCheckResult(null);
+    try {
+      const info = await invoke<UpdateInfo | null>("check_for_update");
+      if (info) {
+        const skipped = localStorage.getItem(SKIP_KEY);
+        if (skipped === info.new_version) {
+          setUpdateCheckResult("no_update");
+        } else {
+          setUpdateCheckResult(info);
+          setManualUpdateDialog(true);
+        }
+      } else {
+        setUpdateCheckResult("no_update");
+      }
+    } catch {
+      toast.error("检查更新失败，请检查网络连接");
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
   function handleAutoUpdateToggle(val: boolean) {
     setAutoUpdate(val);
     localStorage.setItem(AUTO_UPDATE_KEY, val ? "true" : "false");
@@ -990,7 +1016,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
 
           {/* 數據備份與恢復（合併為單一 Card） */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <HardDrive className="h-4 w-4" />
                 数据备份与恢复
@@ -1059,7 +1085,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
 
           {/* PAY 收款碼設定 */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Smartphone className="h-4 w-4" />
                 自助點單收款碼
@@ -1107,7 +1133,7 @@ export function SettingsPage({ connected }: SettingsPageProps) {
               </CardTitle>
               <CardDescription>應用啓動後自動檢查 GitHub 是否有新版本</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label htmlFor="auto-update-switch" className="flex flex-col gap-0.5 cursor-pointer">
                   <span className="text-sm font-medium">啓動時自動檢查更新</span>
@@ -1119,8 +1145,52 @@ export function SettingsPage({ connected }: SettingsPageProps) {
                   onCheckedChange={handleAutoUpdateToggle}
                 />
               </div>
+              <Separator />
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium">手動檢查更新</span>
+                  <span className="text-xs text-muted-foreground">
+                    {updateCheckResult === "no_update"
+                      ? "已是最新版本"
+                      : updateCheckResult && typeof updateCheckResult === "object"
+                      ? `發現新版本 ${updateCheckResult.new_version}`
+                      : "立即從 GitHub 檢查是否有新版本"}
+                  </span>
+                </div>
+                <Button
+                  variant={updateCheckResult && typeof updateCheckResult === "object" ? "default" : "outline"}
+                  size="sm"
+                  disabled={checkingUpdate || updateCheckResult === "no_update"}
+                  onClick={
+                    updateCheckResult && typeof updateCheckResult === "object"
+                      ? () => setManualUpdateDialog(true)
+                      : handleManualCheckUpdate
+                  }
+                >
+                  {checkingUpdate ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-2" />檢查中…</>
+                  ) : updateCheckResult === "no_update" ? (
+                    <><ArrowUpCircle className="h-4 w-4 mr-2" />已是最新</>
+                  ) : updateCheckResult && typeof updateCheckResult === "object" ? (
+                    <><ArrowUpCircle className="h-4 w-4 mr-2" />立即更新</>
+                  ) : (
+                    <><RefreshCw className="h-4 w-4 mr-2" />檢查更新</>
+                  )}
+                </Button>
+              </div>
             </CardContent>
           </Card>
+          {manualUpdateDialog && updateCheckResult && typeof updateCheckResult === "object" && (
+            <UpdateDialog
+              info={updateCheckResult}
+              onDismiss={() => setManualUpdateDialog(false)}
+              onSkip={() => {
+                localStorage.setItem(SKIP_KEY, updateCheckResult.new_version);
+                setManualUpdateDialog(false);
+                setUpdateCheckResult("no_update");
+              }}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="network" className="space-y-6">

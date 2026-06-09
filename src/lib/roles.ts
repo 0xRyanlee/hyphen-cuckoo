@@ -17,10 +17,10 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 };
 
 export const ROLE_COLORS: Record<Role, string> = {
-  owner: "bg-secondary text-secondary-foreground",
-  cashier: "bg-secondary text-secondary-foreground",
-  chef: "bg-secondary text-secondary-foreground",
-  warehouse: "bg-secondary text-secondary-foreground",
+  owner: "bg-secondary text-secondary-foreground border-secondary",
+  cashier: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800",
+  chef: "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800",
+  warehouse: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800",
 };
 
 export const ROLE_ALLOWED_PAGES: Record<Role, string[] | "*"> = {
